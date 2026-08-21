@@ -10,11 +10,15 @@ This page is the short contract; the rest of the specification is depth.
 | Envelope | The living set of checkable acceptability conditions, layered from hard invariants down to operational constraints. |
 | Definitional | The running machine is specified by the envelope plus the history that produced it, not by an unrecorded snowflake state. |
 | Reconstructible | A fresh Arch install plus git history plus the envelope yields a machine that satisfies the same conditions. |
-| Proposer | The privileged agent that synthesises diffs, package transactions, and envelope patches. |
+| Proposer | The privileged agent that synthesises diffs, package transactions, and envelope patches. A systemd service, not a self. |
 | Checker | An independent process that mechanically validates proposals. It cannot be talked into a pass. |
+| Intent | What was asked, or which envelope clause / machine goal drove a proposal. Natural language. Not a programming language. |
+| Oracle | A mechanical predicate the checker re-runs independently. No oracle set, no enactment. |
+| Machine goal | A durable, checkable objective about the machine (reconstructibility, package-list sync, snapshot policy). Not a motive. |
+| Moment | One complete do-loop of work: context, tool calls, results, until stop. A logging grain, not an episode of a life. |
 | Definition surface | The conversational interface through which the human injects intent, inspects the envelope, and pulls the brake. |
 | System-intent repository | `/srv/aios/state` — git history of privileged installs, unit files, and snapper ids. |
-| Skill | A crystallized, reusable pattern on disk (`SKILL.md`), born from successful history, loaded on demand. |
+| Skill | A crystallized, reusable playbook on disk (`SKILL.md`), born from successful work, loaded on demand. |
 | Enactment | A checker-passed merge plus, for system changes, a snapper window. Not a live mutation. |
 | Emergency brake | A mechanical interlock: stop the proposer, freeze privileged writes. Human-only. |
 
@@ -35,7 +39,10 @@ layer one and requires explicit human authority.
    hard invariants; conflicts are raised.
 8. The human is not used as CI. The agent verifies.
 9. Undeclared live state is a defect.
-10. Grow complexity only when the basic loop is proven useful.
+10. No privileged proposal without oracles. A diff with a story is not a
+    proposal.
+11. The proposing model does not decide what memory is worth keeping.
+12. Grow complexity only when the basic loop is proven useful.
 
 ## Repository map
 
@@ -63,7 +70,7 @@ docs/reference.md
 /srv/aios/
   AGENTS.md
   envelope/                 # conditions (git)
-  memory/                   # interaction store (git)
+  memory/                   # operational history (git)
   skills/                   # SKILL.md tree (git)
   agent/                    # proposer (git)
   checker/                  # validator (git)
