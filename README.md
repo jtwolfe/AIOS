@@ -65,18 +65,20 @@ is proven useful.
 | Document | Subject |
 | --- | --- |
 | [AGENTS.md](AGENTS.md) | Contract for any AI working on this project or on a running machine |
-| [docs/architecture.md](docs/architecture.md) | Two surfaces, desktop client, proposer/checker, machine goals, layout |
-| [docs/desktop.md](docs/desktop.md) | Shell as client, failure handoff, optional work runtime |
+| [docs/envelope/hard-invariants.md](docs/envelope/hard-invariants.md) | Canonical hard invariants. The checker loads this file. |
+| [docs/architecture.md](docs/architecture.md) | Two surfaces, operator client, privilege boundary, proposer/checker, layout |
+| [docs/desktop.md](docs/desktop.md) | Operator client (summon/notify), failure handoff, optional work runtime |
 | [docs/arch-linux.md](docs/arch-linux.md) | Why Arch, pacman, btrfs/snapper, reconstructibility |
 | [docs/acceptability.md](docs/acceptability.md) | Envelope layers, mechanical checks, human authority |
 | [docs/memory.md](docs/memory.md) | Operational history, findability by concern, skills, temporal validity |
 | [docs/agent-loop.md](docs/agent-loop.md) | Privileged agent execution loop; intent and oracles |
 | [docs/git-standards.md](docs/git-standards.md) | Local git as the enactment law |
 | [docs/software-acquisition.md](docs/software-acquisition.md) | pacman, lockfiles, synthesis — the AI is the installer |
-| [docs/bootstrap.md](docs/bootstrap.md) | Trusted payload and conversational installer |
+| [docs/bootstrap.md](docs/bootstrap.md) | Trusted payload, TTY-first installer, recovery, seed materialisation |
 | [docs/grok-build.md](docs/grok-build.md) | Mapping the Grok Build sandbox contract onto a whole OS |
-| [docs/reference.md](docs/reference.md) | Glossary, hard invariants, repository map |
+| [docs/reference.md](docs/reference.md) | Glossary, invariant index, repository map |
 | [seed/work-runtime](seed/work-runtime/README.md) | Reconstructible application the OS agent synthesises if opted in |
+| [seed/work-runtime-bots](seed/work-runtime-bots/README.md) | Optional unprivileged fleet extension |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Human and agent contribution path |
 
 ## Key Elements
@@ -85,29 +87,34 @@ is proven useful.
 
 A minimal trusted payload (USB or network, `archiso`-shaped) verifies against
 the target machine and drops the user into a conversational interface that
-*is* the installer. Two first-class questions: *what is this machine for?*,
-and *do you want to work with AI agents on this system?*. High-level intent
-becomes the first envelope. Skipping the work-runtime question is not a yes.
+*is* the installer. The first definition surface is a TTY. Two first-class
+questions: *what is this machine for?*, and *do you want to work with AI
+agents on this system?*. High-level intent becomes the first envelope.
+Skipping the work-runtime question is not a yes. Interrupted bootstrap
+resumes from a snapshot. Seed trees are copied onto the machine so later
+reconstruction does not need a remote.
 
 ### Two Surfaces
 
-- **Conversational definition surface** — how the human injects intent,
-  refines conditions, requests new capability, and inspects the current
-  envelope. Natural language. No new language runtime.
+- **Definition surface** — how the human injects intent, refines conditions,
+  requests new capability, and inspects the current envelope. Natural
+  language. No new language runtime. Same contract on GUI, TTY, tmux, or SSH.
 - **Background privileged agent** — an always-on worker with deep
   observation and enactment rights. Every privileged action must pass
   mechanical validation against the current conditions before execution. It
   is a systemd service, not a presence.
 
-The desktop is a *client* of those surfaces: launcher intents and failure
-toasts that open the definition surface already briefed. An optional work
-runtime, if synthesised from seed, is user-space software on the managed box.
+The **operator client** is a *client* of those surfaces: summon and notify.
+It is whatever the envelope installed. An optional work runtime, if
+synthesised from seed, is user-space software on the managed box and files
+intents at `/run/aios/intent.sock`. The kernel, not a prompt, enforces the
+privilege boundary.
 
 ### Rules Engine
 
 Acceptability conditions are layered:
 
-- Hard invariants (few, stable, mechanically enforceable)
+- Hard invariants (few, stable, mechanically enforceable — one canonical file)
 - Derived conditions (from human statements)
 - Operational constraints (generated during work, including machine goals)
 - Meta-rules (governing how the envelope itself may change)

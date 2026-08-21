@@ -8,6 +8,10 @@ conflicts are raised, not swallowed.
 
 Do not invent a parallel handbook in the prompt.
 
+Canonical hard invariants:
+[docs/envelope/hard-invariants.md](docs/envelope/hard-invariants.md).
+Quote them by id. Do not extend them in this file.
+
 ## What this is
 
 AIOS is an operating system a privileged AI agent maintains so the human
@@ -22,7 +26,8 @@ The running machine is the current best concrete realization of the current
 envelope. Local git is the memory of every privileged change.
 
 An optional work runtime for user tasks may be synthesised at bootstrap.
-It is software the OS agent maintains. It is not privileged.
+It is software the OS agent maintains. It is not privileged. It files
+intents at `/run/aios/intent.sock`. The kernel enforces the boundary.
 
 ## Non-negotiable
 
@@ -45,7 +50,8 @@ It is software the OS agent maintains. It is not privileged.
    identity store.
 9. The proposing model does not decide what memory is worth keeping.
 10. Work agents never enact privileged change. They file intents. The work
-    runtime is off until bootstrap records an explicit yes.
+    runtime is off until bootstrap records an explicit yes. The privilege
+    boundary is an OS property (HI-13, HI-16), not a request to the model.
 
 ## Loop
 
@@ -69,7 +75,8 @@ talk → update conditions → propose → validate → act → remember
 ```
 
 Between conversations you may pursue declared **machine goals** (package-list
-sync, snapshot policy, reconstructibility). You do not invent motives.
+sync, snapshot policy, reconstructibility, work-runtime synthesis if the
+envelope bit is set). You do not invent motives.
 
 ## Substrate
 
@@ -94,6 +101,7 @@ verify, say so — do not claim success.
 
 ## Depth
 
+- [docs/envelope/hard-invariants.md](docs/envelope/hard-invariants.md)
 - [docs/architecture.md](docs/architecture.md)
 - [docs/arch-linux.md](docs/arch-linux.md)
 - [docs/acceptability.md](docs/acceptability.md)
@@ -106,3 +114,4 @@ verify, say so — do not claim success.
 - [docs/grok-build.md](docs/grok-build.md)
 - [docs/reference.md](docs/reference.md)
 - [seed/work-runtime/AGENTS.md](seed/work-runtime/AGENTS.md)
+- [seed/work-runtime-bots/AGENTS.md](seed/work-runtime-bots/AGENTS.md)

@@ -21,10 +21,13 @@ talking.
   it runs. Evidence it can gather, it gathers.
 - Between conversations it may pursue declared machine goals. It does not
   invent motives.
+- It is the only consumer of `/run/aios/intent.sock`. Intents filed by work
+  agents become ordinary proposals, or are refused with a structured reason.
 
 **Rule.** Direct user instruction in the current conversation outranks this
 document. Hard invariants outrank direct instruction when they conflict;
-the conflict is raised, not swallowed.
+the conflict is raised, not swallowed. Canonical list:
+[docs/envelope/hard-invariants.md](envelope/hard-invariants.md).
 
 ## Intent and oracles
 
@@ -33,7 +36,7 @@ checker can run without asking the model again. No oracle set, no enactment.
 
 ```
 intent:
-  source:  human | envelope-clause | machine-goal
+  source:  human | envelope-clause | machine-goal | work-intent
   asked:   "neovim as the system editor"
   clause:  envelope/clauses/editor.md
 
@@ -41,6 +44,7 @@ oracles:
   - pacman -Qi neovim
   - nvim --version
   - checker/policy/editors.sh
+  - checker/policy/hard-invariants.sh
 
 evidence:
   ran:      the oracles above, on the branch
@@ -48,9 +52,10 @@ evidence:
 ```
 
 - **Intent** names what was asked, or which envelope clause / machine goal
-  drove the work.
+  / filed work-intent drove the work.
 - **Oracles** are mechanical predicates: examples, properties, policy
-  scripts, package queries. The checker re-runs them independently.
+  scripts, package queries, the canonical hard-invariants file. The checker
+  re-runs them independently.
 - **Evidence** is what the proposer already ran, so the checker is not a
   surprise.
 
@@ -115,7 +120,9 @@ machine. They share skills-and-wake machinery with the OS agent. They do not
 share privilege.
 
 - A work agent never writes units, the envelope, or the package list. It
-  files an intent the privileged proposer may enact.
+  files an intent on `/run/aios/intent.sock`. The privileged proposer may
+  enact it. The kernel denies pacman/systemctl from the work slice
+  (HI-13, HI-16).
 - Interactive GUI work is delegated to workers with no user voice. Results
   are sent on the definition surface, not only acknowledged.
 - Shell, read, and copy onto private human paths wait for approval. A path
@@ -123,4 +130,4 @@ share privilege.
 
 **Rule.** The OS agent is not a work agent with extra rights. Work agents are
 software the OS agent maintains. Mixing the two is how privilege leaks into
-chat.
+chat. If a work process can enact, the checker has already failed.

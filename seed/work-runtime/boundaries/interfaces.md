@@ -24,6 +24,9 @@ Plain model text is not delivered.
 | routine | Create / expire standing orders. Cron or listeners, never both. |
 | skill follow | After reading the body this turn. |
 
+Work processes run in `aios-work.slice` (`NoNewPrivileges`,
+`ProtectSystem=strict`). They cannot see privileged trees.
+
 ## Operator computer
 
 Approval-gated.
@@ -39,7 +42,15 @@ Approval-gated.
 
 | Surface | Purpose |
 | --- | --- |
-| file intent | Request a privileged change. The work runtime does not enact it. |
+| file intent | Write a structured intent to `/run/aios/intent.sock`. The OS agent is the only consumer. The work runtime does not enact privileged change. |
+
+An intent is a record, not a shell: asked, clause if any, suggested oracles,
+paths. The privileged proposer turns accepted intents into ordinary
+proposals (branch, oracles, checker). A refused intent returns a structured
+reason on the definition surface.
+
+Calling `pacman` or `systemctl` from this tree is not an interface. The
+kernel denies it (HI-13, HI-16).
 
 ## Web and MCP
 

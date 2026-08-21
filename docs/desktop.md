@@ -1,22 +1,22 @@
 # Desktop
 
-People do things on computers. The operator-facing client of the OS agent is
+People do things on computers. The operator client of the OS agent is
 present from day one. A work runtime for user tasks is optional, opted into
 at bootstrap, and never privileged.
 
 **Nothing here is DE- or WM-shaped.** Hyprland, GNOME, KDE, a pure TTY, or a
-tmux/screen session are all valid *clients* of the same contracts. The envelope
-chooses which client is installed. The definition surface and the work runtime
-do not care.
+tmux/screen session are all valid *operator clients* of the same contracts.
+The envelope chooses which client is installed. The definition surface and
+the work runtime do not care.
 
 ## Three authorities
 
-Do not collapse these. The OS agent administers the machine. The interaction
-surface summons and notifies. User-work agents, if enabled, do user work. Same
+Do not collapse these. The OS agent administers the machine. The operator
+client summons and notifies. User-work agents, if enabled, do user work. Same
 box. Different rights.
 
-1. **Operator surface** — human authority, private paths, emergency brake.
-   Whatever client is installed summons and notifies. Nothing here is
+1. **Operator** — human authority, private paths, emergency brake. Reached
+   through the operator client, which summons and notifies. Nothing here is
    privileged.
 2. **Managed substrate** — the OS agent, envelope, git, checker, and
    snapper. System mutation happens only here.
@@ -25,13 +25,15 @@ box. Different rights.
 
 **Rule.** System mutation — packages, units, envelope, network policy — is
 only the OS agent, under git, checker, and snapper. A work agent that needs
-a package files an intent. It does not pacman.
+a package files an intent on `/run/aios/intent.sock`. It does not pacman.
+The kernel denies it if it tries (HI-13, HI-16).
 
-## Interaction surface as client
+## Operator client
 
-Integrate an operator-facing client from bootstrap, not as a later plugin. The
-client is how the human finds OS intents and is told when the machine fails.
-It has no privilege of its own.
+Integrate an operator client from bootstrap, not as a later plugin. Until a
+graphical client is installed, that client is the TTY definition surface the
+payload already started. The client is how the human finds OS intents and is
+told when the machine fails. It has no privilege of its own.
 
 The contracts are transport-agnostic:
 
@@ -77,7 +79,9 @@ system?* No is a complete answer. The machine is still AIOS.
 
 When yes, the privileged agent synthesises a user-space application from
 [`seed/work-runtime`](../seed/work-runtime/README.md) — the same way it
-synthesises any other program: branch, oracles, checker, git. The runtime is
+synthesises any other program: branch, oracles, checker, git. Completing that
+synthesis is a machine goal: bootstrap is not done until the live tree exists
+under `/srv/aios/src/work-runtime` as its own git repository. The runtime is
 integral to the project as a seed, not as a second operating system. It is
 not tied to a desktop environment.
 
@@ -111,7 +115,9 @@ privileged-change seatbelt, not the agent sandbox.
 
 The seed is the reconstructible application. On a yes at bootstrap, the OS
 agent treats it as a synthesis job under `/srv/aios/src/work-runtime`. The
-seed is not a live deployment and not a roster of people.
+seed is not a live deployment and not a roster of people. The trusted payload
+has already materialised the seed trees into `/srv/aios/seeds`, so synthesis
+does not fetch GitHub.
 
 ```
 seed/work-runtime/

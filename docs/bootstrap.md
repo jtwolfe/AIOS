@@ -15,24 +15,30 @@ therefore stays small, signed, and boring.
   signature the human can check out of band.
 - It installs a minimal Arch: btrfs, snapper, systemd, git, pacman, a
   network, and the privileged agent plus checker at known hashes.
+- It copies the project seed trees (work-runtime, work-runtime-bots, the
+  canonical hard-invariants file) into `/srv/aios/seeds` as local git
+  objects. Later reconstruction does not need a remote (HI-17).
 - It does not install a desktop, a theme, or a development zoo. Those are
   envelope-driven later.
 
 **Constraint.** The payload is allowed to be less free than the running
-system. Room comes after a checkable root of trust exists.
+system. Room comes after a checkable root of trust exists. The first
+definition surface is always a TTY — there is no graphical operator client
+yet.
 
 ## Conversational installer
 
 After the minimal root is up, the human is not handed a list of packages to
-tick. They are handed a conversation.
+tick. They are handed a conversation on the TTY definition surface.
 
 - “What is this machine for?” is a first-class question. The answer becomes
   derived conditions, not a hostname only.
 - “Do you want to work with AI agents on this system?” is the other
   first-class question. No leaves the OS agent as the only agent. Yes compiles
   a work-runtime clause and the privileged agent synthesises the work runtime
-  from [`seed/work-runtime`](../seed/work-runtime/README.md). See
-  [docs/desktop.md](desktop.md).
+  from the already-materialised [`seed/work-runtime`](../seed/work-runtime/README.md).
+  Completing that synthesis is a machine goal: bootstrap is not finished until
+  the live tree exists. See [docs/desktop.md](desktop.md).
 - Vetoes are collected early: what the agent must never do, which networks
   it may join, whether it may speak to remotes.
 - The installer shows the compiled envelope in plain language and waits for
@@ -44,31 +50,52 @@ This is the Grok Build idea that the human should not be asked to operate
 the sandbox plumbing. They see a product surface. The agent sees disks,
 unit files, and git.
 
+## Recovery
+
+The conversational installer is itself a privileged unit with a known
+restart policy. Bootstrap is interruptible.
+
+- Partial progress is snapshotted under
+  `/srv/aios/state/bootstrap-in-progress` — accepted answers, the last
+  compiled envelope draft, the last snapper id.
+- If the human walks away, the network dies, or the unit restarts, the next
+  boot resumes from that snapshot and re-presents the last accepted
+  questions. Skipping is still not a yes.
+- If the human rejects the compiled envelope, the payload’s snapper window
+  is the rollback. The machine is not left half-installed with undeclared
+  live state.
+- The emergency brake works during bootstrap: stop the proposer, freeze
+  privileged writes. The TTY definition surface remains.
+
 ## First envelope
 
-The first envelope always contains, at minimum, the hard invariants in the
-reference: git-backed enactment, proposer/checker split, snapper, no
-`curl | sh`, human emergency brake, local source of truth. The
+The first envelope always contains, at minimum, the canonical hard
+invariants from [`docs/envelope/hard-invariants.md`](envelope/hard-invariants.md),
+copied onto the machine as `/srv/aios/envelope/hard-invariants.md`. The
 conversational answers add derived conditions on top — purpose, vetoes, and
 the work-runtime bit.
 
 Only then does the agent propose the rest: users, ssh, editor, language
-toolchains, the shape of `/srv/aios`, and if opted in, synthesis of the work
-runtime under `/srv/aios/src/work-runtime`. Each proposal is a branch. The
-first day is not a blank cheque.
+toolchains, the shape of `/srv/aios`, an operator client if the envelope
+asks for one, and if opted in, synthesis of the work runtime under
+`/srv/aios/src/work-runtime`. Each proposal is a branch. The first day is
+not a blank cheque.
 
 ## Reconstruct from history
 
 Bootstrap is also how a machine is rebuilt. A lost disk is not a lost
-operating system if the remotes of `/srv/aios` and the envelope survive.
+operating system if the remotes of `/srv/aios` and the envelope survive —
+and a reconstruct with the network down still works if those remotes were
+already local, because the payload materialised the seeds.
 
 1. Run the trusted payload on new hardware.
-2. Clone the local-of-record remotes.
+2. Clone the local-of-record remotes, or use the seeds already on the
+   payload if remotes are unreachable.
 3. Check out the envelope at the desired commit. The checker verifies it
-   against meta-rules.
+   against meta-rules, including the canonical hard-invariants file.
 4. Replay system-intent from `state/` with snapper windows, skipping
    hardware-specific commits the checker marks inapplicable.
-5. Resume the conversational surface. Memory is the same store. The
+5. Resume the definition surface (TTY first). Memory is the same store. The
    work-runtime bit is whatever the envelope still says.
 
 If that replay cannot produce a machine that satisfies the envelope, the

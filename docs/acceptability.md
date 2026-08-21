@@ -11,7 +11,11 @@ constitution. Outer layers are few and stable. Inner layers are allowed to
 move.
 
 1. **Hard invariants** — few, stable, mechanically enforceable. Change only
-   with explicit human authority.
+   with explicit human authority. Canonical file:
+   [`docs/envelope/hard-invariants.md`](envelope/hard-invariants.md)
+   (`/srv/aios/envelope/hard-invariants.md` on a running machine). The
+   checker loads it. Other documents quote ids. They do not extend the list
+   in prose.
 2. **Meta-rules** — how the envelope itself may change. Stricter than
    ordinary derived conditions.
 3. **Derived conditions** — compiled from human statements. Trackable back
@@ -27,6 +31,10 @@ A proposal’s **oracles** are the predicates the checker will re-run for that
 change. Envelope conditions are the standing oracles of the machine. Same
 idea at two timescales.
 
+**Rule.** A new hard invariant is a patch to the canonical file, accepted on
+the definition surface, checked against meta-rules. It is not a sentence
+added to architecture.md.
+
 ## Checkable means mechanical
 
 A condition that can only be evaluated by asking a model “does this seem
@@ -38,6 +46,8 @@ control.
 - File-presence, permission, and hash checks.
 - Package-set diffs against the declared list.
 - Policy scripts in the checker repository.
+- OS-level denial (cgroup, capabilities, filesystem) for the privilege
+  boundary — not a request that the work agent “please don’t pacman.”
 
 **Rule.** Prefer independent checkers over a second opinion from the same
 model that proposed the change. Shared memory is allowed. Shared judgement
@@ -52,7 +62,7 @@ itself under meta-rules:
 - Envelope patches are git diffs in `/srv/aios/envelope`, never in-memory
   edits.
 - Promoting a constraint into a hard invariant requires explicit human
-  authority on the definition surface.
+  authority on the definition surface and a patch to the canonical file.
 - Demoting or deleting a hard invariant is the same: human authority,
   recorded, with a reason that remains in memory.
 - The agent may propose envelope changes. The checker validates the patch
