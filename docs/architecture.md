@@ -38,6 +38,24 @@ a Grok Build preview is the user’s entire view of a sandbox. The agent does
 the work; the human sets conditions and judges outcomes, and is not used as a
 substitute for mechanical QA.
 
+## Desktop and work
+
+Those two surfaces are the OS. The desktop is a client of them, present from
+bootstrap: a launcher that can open OS intents, and notifications that hand
+system failure to the definition surface already briefed. See
+[docs/desktop.md](desktop.md).
+
+People also do user work on the machine. That is optional. Bootstrap asks
+whether to synthesise a work runtime. If yes, it lives under
+`/srv/aios/src/work-runtime` as an ordinary synthesised application: skills,
+connectors, workers, an approval-gated bridge to private human paths. It is
+not privileged. It files intents at the OS agent when it needs packages,
+units, or policy.
+
+Do not grow a personality, a roster of selves, or a second cloud computer so
+the OS can “have teammates.” Work agents are user-space software on a managed
+box.
+
 ## Proposer and checker
 
 Validation is separated from proposal. The proposing intelligence and the
@@ -89,6 +107,7 @@ unless noted. Nested `AGENTS.md` files apply to their subtree.
   checker/               # independent validator (git)
   state/                 # system-intent log: installs, units, snapshots (git)
   src/                   # synthesised projects; each a git repo
+    work-runtime/        # optional; only if bootstrap opted in
   etc-mirror/            # etckeeper remote of /etc (git)
 ```
 
