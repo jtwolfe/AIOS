@@ -21,6 +21,9 @@ privileged agent is a systemd service, not a self.
 The running machine is the current best concrete realization of the current
 envelope. Local git is the memory of every privileged change.
 
+An optional work runtime for user tasks may be synthesised at bootstrap.
+It is software the OS agent maintains. It is not privileged.
+
 ## Non-negotiable
 
 1. Never enact a privileged change that fails mechanical validation against
@@ -41,6 +44,8 @@ envelope. Local git is the memory of every privileged change.
 8. Do not invent a parallel envelope, skill tree, architecture, language, or
    identity store.
 9. The proposing model does not decide what memory is worth keeping.
+10. Work agents never enact privileged change. They file intents. The work
+    runtime is off until bootstrap records an explicit yes.
 
 ## Loop
 
@@ -97,5 +102,7 @@ verify, say so — do not claim success.
 - [docs/git-standards.md](docs/git-standards.md)
 - [docs/software-acquisition.md](docs/software-acquisition.md)
 - [docs/bootstrap.md](docs/bootstrap.md)
+- [docs/desktop.md](docs/desktop.md)
 - [docs/grok-build.md](docs/grok-build.md)
 - [docs/reference.md](docs/reference.md)
+- [seed/work-runtime/AGENTS.md](seed/work-runtime/AGENTS.md)
