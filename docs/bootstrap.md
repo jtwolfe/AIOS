@@ -28,10 +28,17 @@ tick. They are handed a conversation.
 
 - “What is this machine for?” is a first-class question. The answer becomes
   derived conditions, not a hostname only.
+- “Do you want to work with AI agents on this system?” is the other
+  first-class question. No leaves the OS agent as the only agent. Yes compiles
+  a work-runtime clause and the privileged agent synthesises the work runtime
+  from [`seed/work-runtime`](../seed/work-runtime/README.md). See
+  [docs/desktop.md](desktop.md).
 - Vetoes are collected early: what the agent must never do, which networks
   it may join, whether it may speak to remotes.
 - The installer shows the compiled envelope in plain language and waits for
   acceptance before privileged enactment begins.
+
+Skipping the work-runtime question is not a yes. Default is administer-only.
 
 This is the Grok Build idea that the human should not be asked to operate
 the sandbox plumbing. They see a product surface. The agent sees disks,
@@ -42,11 +49,13 @@ unit files, and git.
 The first envelope always contains, at minimum, the hard invariants in the
 reference: git-backed enactment, proposer/checker split, snapper, no
 `curl | sh`, human emergency brake, local source of truth. The
-conversational answers add derived conditions on top.
+conversational answers add derived conditions on top — purpose, vetoes, and
+the work-runtime bit.
 
 Only then does the agent propose the rest: users, ssh, editor, language
-toolchains, the shape of `/srv/aios`. Each proposal is a branch. The first
-day is not a blank cheque.
+toolchains, the shape of `/srv/aios`, and if opted in, synthesis of the work
+runtime under `/srv/aios/src/work-runtime`. Each proposal is a branch. The
+first day is not a blank cheque.
 
 ## Reconstruct from history
 
@@ -59,7 +68,8 @@ operating system if the remotes of `/srv/aios` and the envelope survive.
    against meta-rules.
 4. Replay system-intent from `state/` with snapper windows, skipping
    hardware-specific commits the checker marks inapplicable.
-5. Resume the conversational surface. Memory is the same store.
+5. Resume the conversational surface. Memory is the same store. The
+   work-runtime bit is whatever the envelope still says.
 
 If that replay cannot produce a machine that satisfies the envelope, the
 unreplayable step is a bug in enactment, not a reason to keep undocumented
