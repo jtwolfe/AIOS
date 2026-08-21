@@ -17,6 +17,11 @@ This page is the short contract; the rest of the specification is depth.
 | Machine goal | A durable, checkable objective about the machine (reconstructibility, package-list sync, snapshot policy). Not a motive. |
 | Moment | One complete do-loop of work: context, tool calls, results, until stop. A logging grain, not an episode of a life. |
 | Definition surface | The conversational interface through which the human injects intent, inspects the envelope, and pulls the brake. |
+| Desktop surface | Shell as a client of the OS agent: launcher intents, failure toasts, definition-surface window. No privilege. |
+| Work runtime | Optional user-space application synthesised from `seed/work-runtime` when bootstrap opts in. Never privileged. |
+| Wake | One model invocation. The host injects skills, tools, operational notes, and (for the OS agent) envelope plus machine goals. The model is stateless per turn. |
+| Failure handoff | System-scoped failure opens the definition surface with a structured payload (unit, journal, commit, clause). Not a free-form chat seed. |
+| Operator bridge | Approval-gated shell, read, and copy onto the human’s private paths. A path on one side is not visible on the other. |
 | System-intent repository | `/srv/aios/state` — git history of privileged installs, unit files, and snapper ids. |
 | Skill | A crystallized, reusable playbook on disk (`SKILL.md`), born from successful work, loaded on demand. |
 | Enactment | A checker-passed merge plus, for system changes, a snapper window. Not a live mutation. |
@@ -43,6 +48,10 @@ layer one and requires explicit human authority.
     proposal.
 11. The proposing model does not decide what memory is worth keeping.
 12. Grow complexity only when the basic loop is proven useful.
+13. Work agents never enact privileged change. They file intents.
+14. System-scoped failure hands a structured payload to the OS agent, not a
+    random coding CLI.
+15. The work runtime is off until bootstrap records an explicit yes.
 
 ## Repository map
 
@@ -60,8 +69,10 @@ docs/agent-loop.md
 docs/git-standards.md
 docs/software-acquisition.md
 docs/bootstrap.md
+docs/desktop.md
 docs/grok-build.md
 docs/reference.md
+seed/work-runtime/
 ```
 
 ### A running machine
@@ -76,4 +87,5 @@ docs/reference.md
   checker/                  # validator (git)
   state/                    # system intent, packages.txt (git)
   src/                      # one git repo per synthesised project
+    work-runtime/           # optional; bootstrap opt-in
 ```
