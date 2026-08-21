@@ -110,6 +110,7 @@ verify, say so — do not claim success.
 - [docs/git-standards.md](docs/git-standards.md)
 - [docs/software-acquisition.md](docs/software-acquisition.md)
 - [docs/bootstrap.md](docs/bootstrap.md)
+- [docs/implementation.md](docs/implementation.md)
 - [docs/desktop.md](docs/desktop.md)
 - [docs/grok-build.md](docs/grok-build.md)
 - [docs/reference.md](docs/reference.md)

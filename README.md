@@ -75,6 +75,7 @@ is proven useful.
 | [docs/git-standards.md](docs/git-standards.md) | Local git as the enactment law |
 | [docs/software-acquisition.md](docs/software-acquisition.md) | pacman, lockfiles, synthesis — the AI is the installer |
 | [docs/bootstrap.md](docs/bootstrap.md) | Trusted payload, TTY-first installer, recovery, seed materialisation |
+| [docs/implementation.md](docs/implementation.md) | Full installer plan: phases P0–P10, work packages, VM then metal |
 | [docs/grok-build.md](docs/grok-build.md) | Mapping the Grok Build sandbox contract onto a whole OS |
 | [docs/reference.md](docs/reference.md) | Glossary, invariant index, repository map |
 | [seed/work-runtime](seed/work-runtime/README.md) | Reconstructible application the OS agent synthesises if opted in |

@@ -80,6 +80,7 @@ docs/software-acquisition.md
 docs/bootstrap.md
 docs/desktop.md
 docs/grok-build.md
+docs/implementation.md
 docs/reference.md
 docs/envelope/hard-invariants.md   # canonical; checker loads this
 seed/work-runtime/

@@ -15,7 +15,7 @@ routines. Not a person. Not a second operating system. Not privileged.
 ## Non-negotiable
 
 1. Never enact privileged system change from this tree. File an intent at
-   the OS agent instead (packages, units, envelope, network policy).
+   `/run/aios/intent.sock`. The OS agent is the only consumer (HI-13, HI-16).
 2. A proposal inside this tree is still intent plus oracles. No oracle set,
    no merge. The OS checker still runs.
 3. Local git. No unversioned live mutations. No commit to `main` as the
