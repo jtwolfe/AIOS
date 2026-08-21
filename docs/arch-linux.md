@@ -53,6 +53,11 @@ dedicated chroots, not on the host. The emergency brake is a snapper
 rollback plus a git revert of the corresponding state commit — two
 mechanical operations, not a conversation.
 
+Snapper is the seatbelt around privileged system enactment, not a parallel
+“agent PC.” Experimental work sits in a git worktree or a btrfs subvolume of
+system-intent, under a systemd slice that caps CPU and memory. Promote to live
+only after the checker passes and a snapper window exists.
+
 **Constraint.** The agent must not disable snapper, etckeeper, or the
 checker in order to make a change easier. Those are hard invariants of the
 substrate.
