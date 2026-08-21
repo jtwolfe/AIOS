@@ -28,7 +28,8 @@ same process.
 
 - **Conversational definition surface** — how the human injects intent,
   refines conditions, requests capability, inspects the envelope, and pulls
-  the emergency brake. Natural language. No new language runtime.
+  the emergency brake. Natural language. No new language runtime. Transport
+  may be a GUI session, a TTY, a tmux pane, or SSH — same contract.
 - **Background privileged agent** — an always-on worker with deep
   observation and enactment rights. It proposes. It does not validate itself.
   It is a systemd service, not a presence.
@@ -38,12 +39,13 @@ a Grok Build preview is the user’s entire view of a sandbox. The agent does
 the work; the human sets conditions and judges outcomes, and is not used as a
 substitute for mechanical QA.
 
-## Desktop and work
+## Operator client and work
 
-Those two surfaces are the OS. The desktop is a client of them, present from
-bootstrap: a launcher that can open OS intents, and notifications that hand
-system failure to the definition surface already briefed. See
-[docs/desktop.md](desktop.md).
+Those two surfaces are the OS. An operator-facing client of them is present
+from bootstrap: a way to summon OS intents and to receive system failure
+already briefed. See [docs/desktop.md](desktop.md). The client is whatever the
+envelope installed — GNOME, KDE, Hyprland, i3, pure shell. AIOS does not
+require a particular DE or WM.
 
 People also do user work on the machine. That is optional. Bootstrap asks
 whether to synthesise a work runtime. If yes, it lives under
@@ -54,7 +56,8 @@ units, or policy.
 
 Do not grow a personality, a roster of selves, or a second cloud computer so
 the OS can “have teammates.” Work agents are user-space software on a managed
-box.
+box. Multi-agent fleets, when needed, are an optional extension
+(`seed/work-runtime-bots`), still under the same privilege boundary.
 
 ## Proposer and checker
 
@@ -108,6 +111,7 @@ unless noted. Nested `AGENTS.md` files apply to their subtree.
   state/                 # system-intent log: installs, units, snapshots (git)
   src/                   # synthesised projects; each a git repo
     work-runtime/        # optional; only if bootstrap opted in
+    work-runtime-bots/   # optional extension; multi-agent fleets
   etc-mirror/            # etckeeper remote of /etc (git)
 ```
 
