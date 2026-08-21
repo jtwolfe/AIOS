@@ -19,7 +19,10 @@ Grok Build maps onto AIOS as follows.
 - Triage before scaffolding → not every utterance is an install
 - Auth and data off until needed → grow complexity only when the loop is proven
 - Non-overlapping parallel ownership → proposer and checker; split surfaces
+- Always-on teammate with its own computer → optional work runtime on the managed machine; OS agent stays privileged
 - Quality bar is non-negotiable → conditions are checkable, not advisory
+
+The work runtime, when synthesised from `seed/work-runtime`, is a Grok Build-shaped application *on* the machine. It is not the machine.
 
 ## AGENTS.md as contract
 
