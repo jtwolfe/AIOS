@@ -56,6 +56,57 @@ Key chords, palettes, and notification daemons belong to the installed client
 (GNOME, KDE, Hyprland, i3, plain shell). Document them in the client’s own
 files. Do not hard-code them into the OS contract.
 
+## Views (TUI now, GUI later)
+
+The first client is a **TUI**. A later GUI is a restyle of the same views:
+visually similar, **identical functionality**. Inventing a second information
+architecture for the GUI is a fail.
+
+Grok Build’s TUI is fullscreen and mouse-interactive; the first `https://`
+URL on the login path is clickable. AIOS copies that: clickable view tabs,
+roster rows, accept/reject, login URL, when the terminal allows. **Every
+clickable has a keyboard equivalent** so serial/QEMU fixtures and a dumb
+TTY stay complete.
+
+One TUI family. Three modes: installer, OS, work. Bots is a view inside
+work (second envelope bit), not a fourth personality. Shared chrome names
+the mode. Mixing OS tools into a work view is L-14.
+
+Copy **shape**, not product:
+
+- Installer + OS ← Grok Build: conversation is not the whole product.
+  Envelope, oracles, snapper, packages sit beside (or stacked under) chat.
+- Work + bots ← Grokbot/InsideMan *structure*: sidebar list, transcript,
+  info pane. Roster entries are jobs (path, slice, skill, state), not
+  selves. No avatars, no identity store, no “computer preview of a person.”
+
+### Catalog (L-18)
+
+Stable ids. A later GUI uses these names.
+
+| Id | Mode | What the human sees | Required actions |
+| --- | --- | --- | --- |
+| `chrome` | all | Which surface (installer / OS / work), brake, send | switch mode (if allowed), brake, send |
+| `conversation` | all | Transcript. Explicit send. Questions end the turn. | send, attach (if the seed allows) |
+| `questions` | installer | Purpose, work-runtime opt-in, operator login, vetoes | answer, skip (skip ≠ yes) |
+| `envelope` | installer, OS | HI file + derived clauses, in plain language | accept, reject (installer); inspect (OS) |
+| `accept` | installer | Explicit accept / reject of the compiled envelope | accept, reject |
+| `recovery` | installer | Last step, snapper id, accepted answers | resume |
+| `intents` | OS | Pending OS work | open conversation on an intent |
+| `notify` | OS | Four-field failure payload | open OS conversation with payload |
+| `snapper` | OS | Last windows | inspect |
+| `packages` | OS | `packages.txt` vs live | inspect |
+| `login` | OS, work | Device-code: URL + user code. Waiting. | start, cancel. Never paste a token |
+| `skills` | work | Catalog. Body must be read this turn to follow | open body, follow |
+| `connectors` | work | MCP status. Connect is a card, not chat | connect, disconnect |
+| `bridge` | work | Approval for private-path shell/read/copy | approve, deny |
+| `store` | work | Notes, routines, connectors as git in the work tree | inspect |
+| `roster` | work + bots bit | Jobs: path, slice, skill, state | open job |
+| `job` | work + bots bit | One job: send, standing orders, handoff payload | send, stop. No avatar |
+
+A view not in this table is a docs patch first. The GUI hole (P11) is
+“no graphical client in the payload,” not “we never named the screens.”
+
 ## Failure handoff
 
 A process crash, a unit entering failed, a pacman transaction abort, disk or

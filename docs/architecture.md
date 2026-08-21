@@ -45,8 +45,9 @@ same process.
 
 - **Definition surface** — how the human injects intent, refines conditions,
   requests capability, inspects the envelope, and pulls the emergency brake.
-  Natural language. No new language runtime. Transport may be a GUI session,
-  a TTY, a tmux pane, or SSH — same contract.
+  Natural language. No new language runtime. v1 transport is the TUI
+  (named views in [docs/desktop.md](desktop.md)). A later GUI uses the
+  same view ids. TTY, tmux, or SSH host that TUI — same contract.
 - **Background privileged agent** — an always-on worker with deep
   observation and enactment rights. It proposes. It does not validate itself.
   It is a systemd service, not a presence.

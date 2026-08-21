@@ -29,7 +29,12 @@ yet.
 ## Conversational installer
 
 After the minimal root is up, the human is not handed a list of packages to
-tick. They are handed a conversation on the TTY definition surface.
+tick. They are handed the **TUI in installer mode** — the same view catalog
+the OS client will use ([docs/desktop.md](desktop.md) L-18). Conversation is
+one view. The compiled envelope, questions, accept/reject, and recovery are
+views of their own. That is the Grok Build idea that the human should not be
+asked to operate the sandbox plumbing, while still seeing *our* objects
+(envelope, snapper, HI), not only a chat.
 
 - “What is this machine for?” is a first-class question. The answer becomes
   derived conditions, not a hostname only.
@@ -41,14 +46,15 @@ tick. They are handed a conversation on the TTY definition surface.
   the live tree exists. See [docs/desktop.md](desktop.md).
 - Vetoes are collected early: what the agent must never do, which networks
   it may join, whether it may speak to remotes.
-- The installer shows the compiled envelope in plain language and waits for
+- The installer shows the compiled envelope in the envelope view and waits for
   acceptance before privileged enactment begins.
+- Live Grok login (device-code, another device) is **after** accept, not
+  during unsigned firstboot.
 
 Skipping the work-runtime question is not a yes. Default is administer-only.
+Every installer action has a keyboard path so a serial VM can finish
+bootstrap. Mouse and clickable URLs are extra when the terminal allows.
 
-This is the Grok Build idea that the human should not be asked to operate
-the sandbox plumbing. They see a product surface. The agent sees disks,
-unit files, and git.
 
 ## Recovery
 

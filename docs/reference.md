@@ -17,8 +17,10 @@ expected to find. This page quotes the contract; it does not extend it.
 | Oracle | A mechanical predicate the checker re-runs independently. No oracle set, no enactment. |
 | Machine goal | A durable, checkable objective about the machine (reconstructibility, package-list sync, snapshot policy, work-runtime synthesis if opted in). Not a motive. |
 | Moment | One complete do-loop of work: context, tool calls, results, until stop. A logging grain, not an episode of a life. |
-| Definition surface | The conversational channel through which the human injects intent, inspects the envelope, and pulls the brake. Same contract on GUI, TTY, tmux, or SSH. |
-| Operator client | Whatever summons the definition surface and delivers system notifications. GNOME, KDE, Hyprland, i3, TTY, tmux: clients of summon and notify. No privilege. |
+| Definition surface | The conversational channel through which the human injects intent, inspects the envelope, and pulls the brake. v1 is the TUI; a later GUI uses the same view ids. |
+| Operator client | Whatever summons the definition surface and delivers system notifications. TUI first. GNOME, KDE, Hyprland later restyle the same views. No privilege. |
+| View | A named region of the operator client (envelope, notify, roster, login, …). Keyboard-complete. Mouse/clickable when the terminal allows. Catalog in [desktop.md](desktop.md). |
+| Device-code login | Live Grok OAuth: TTY prints a URL and user code; the human finishes on a phone or other PC. Token file `0600`, not in git or chat. Same flow as `grok login --device-auth`. |
 | Work runtime | Optional user-space application synthesised from `seed/work-runtime` when bootstrap opts in. Never privileged. Files intents on `/run/aios/intent.sock`. |
 | Work-runtime-bots | Optional extension of the work runtime for multi-agent fleets. Still unprivileged. Still files intents only. |
 | Wake | One model invocation. The host injects skills, tools, operational notes, and (for the OS agent) envelope plus machine goals. The model is stateless per turn. |

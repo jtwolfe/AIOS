@@ -16,3 +16,9 @@ and [boundaries/interfaces.md](boundaries/interfaces.md). Skills are loaded
 on demand.
 
 Related: [docs/desktop.md](../../docs/desktop.md), [docs/bootstrap.md](../../docs/bootstrap.md).
+
+The live work app is the TUI in work mode (L-18): conversation, skills,
+connectors, bridge, store, login. Bots, if the second bit is on, add roster
+and job views. Same ids a later GUI will use. Live Grok login is device-code
+on another device, with a token file the OS agent cannot share.
+

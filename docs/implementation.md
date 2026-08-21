@@ -57,11 +57,11 @@ image this plan ships. An implementer who “just adds” one is drifting.
 
 | Hole | Why it is out | How it re-enters |
 | --- | --- | --- |
-| Graphical operator client in the payload | TTY is the first client. GNOME/KDE/Hyprland/tmux are envelope-driven synthesis after TTY is proven. | Envelope proposal, own phase, own oracles. |
+| Graphical operator client in the payload | TTY TUI is the first client (L-18). GNOME/KDE/Hyprland/tmux GUI is a later restyle of the same views. | Envelope proposal, own phase, own oracles. Same view ids. |
 | In-place OS upgrade | Reconstruct from payload + git is the v1 path. | Later envelope clause, own oracles. |
 | Multi-operator / multi-seat | One operator login (L-13). | Envelope patch. |
 | Default LUKS on the VM image | VM must stay fixture-scriptable. | Asked on metal (P10), not implied. |
-| Paid live API in CI | Fixture covers every oracle. | Human opt-in on a live box. |
+| Paid live API in CI | Fixture covers every oracle. | Human L-17 login on a live box after accept. |
 | Bots enabled by work-runtime yes | Second envelope bit, asked later, default off. | P8.13. |
 | InsideMan identity, channels, desktops-as-screens, personhood | Transfers are wake, skills, connectors, workers, bridge, routines. Nothing else. | Never, without an envelope rewrite. |
 
@@ -105,15 +105,17 @@ is a docs patch on this file, not a silent drift in code.
 | L-05 | Intent transport | `/run/aios/intent.sock` via `aios-intent.socket`. `SOCK_STREAM`. One JSON object per connection, then close. Mode `0660`, owner `aios-agent`, group `aios-work`. Agent is the only consumer. Not a shell. |
 | L-06 | Work slice | Every work unit: `Slice=aios-work.slice`, `User=aios-work`, `NoNewPrivileges=yes`, `ProtectSystem=strict`, `CapabilityBoundingSet=`, `InaccessiblePaths=` privileged trees. Denial is the kernel, not a prompt (HI-13, HI-16). |
 | L-07 | Disk (VM default) | 32G qcow2, GPT. 1G ESP vfat `/boot`. Rest btrfs: `@` → `/`, `@home` → `/home`, `@srv` → `/srv`, `@var_log` → `/var/log`, `@snapshots` for snapper. zram swap. Metal may add a swap partition; that commit is hardware-specific (P10). |
-| L-08 | Provider | `agent/provider/` has two implementations: `fixture` (default in `tests/vm`) and `live` (urllib to an envelope-approved URL). Tests never require a paid API. Checker imports no provider. |
-| L-09 | First surface | TTY. `getty` autologin on `tty1` → `aios-installer` during bootstrap, then `aios` (summon) after accept. No display manager in the payload. |
+| L-08 | Provider | Two implementations: `fixture` (default in `tests/vm`) and `live`. Live is Grok device-code OAuth (L-17), not a pasted API key. Tests never require a paid API or a browser. Checker imports no provider. |
+| L-09 | First surface | TTY **TUI**. `getty` autologin on `tty1` → installer TUI during bootstrap, then the same TUI in OS mode after accept. No display manager in the payload. Views are L-18. |
 | L-10 | Signing | minisign. Public key in `payload/minisign.pub` and printed on the out-of-band README. Unsigned images must not leave the workstation (P1.2). |
 | L-11 | Time/locale until envelope | UTC, `en_US.UTF-8`, hostname `aios`. Envelope may change these as ordinary proposals. |
 | L-12 | Emergency brake | TTY command `aios brake`: stop and mask `aios-agent.service`, freeze `enact`, write `/srv/aios/state/brake`. Installer stays up. Human-only. |
 | L-13 | Operator login | Bootstrap creates one non-root human login. After accept, `tty1` autologin is that user. No sudo to enact. They may run `/usr/lib/aios/bin/aios` (summon, status, brake). Service uids stay `nologin`. Root is recovery only. |
 | L-14 | Two surfaces | OS definition surface and work definition surface are different sessions. Summon names which. A work turn does not receive privileged tools. An OS turn does not run in `aios-work.slice`. One chat with both rights is a fail. |
 | L-15 | Workspace write set | Before any work unit is enabled, this plan and the envelope name the directories a work process may write. Slice `ReadWritePaths` equals that set plus tmp. Operator home outside the set is the approval-gated bridge. Privileged trees stay `InaccessiblePaths`. Shipping P8 while the slice only writes `/srv/aios/src/work-runtime` *and* claiming user work in `~/src` is a fail. |
-| L-16 | Work provider | The work runtime has its own provider config and secret path. The work uid cannot read the privileged agent's key. Fixture is default in the VM. Live is envelope-approved and optional. |
+| L-16 | Work provider | The work runtime has its own provider config and secret path. The work uid cannot read the privileged agent's token. Fixture is default in the VM. Live is L-17 on a separate token file. |
+| L-17 | Live Grok login | Same browser OAuth as Grok Build (`grok login --device-auth`): TTY prints a verification URL and user code; the human opens that URL on a **phone or other PC**, completes sign-in at `auth.x.ai` / grok.com, the box polls until confirmed. Token file mode `0600`, not in git, not in the transcript. The AIOS box does not open a local browser (no DE in v1). Refused if the envelope vetoed remotes. First live login is after envelope accept. Fixture covers the matrix. OS token and work token are different files (L-16). |
+| L-18 | Views | One named view catalog for installer, OS, work, and bots. TUI is v1. GUI is a later restyle of the **same** view ids and actions (visual similarity, identical functionality). Every action has a keyboard path. Mouse and clickable URLs (Grok Build TUI) when the terminal supports them. Serial/QEMU fixtures are keyboard-complete. |
 
 The slice drop-in later in this file is the **floor** (write the work-runtime tree only). P8.2 must patch L-15 and that drop-in together. They are not allowed to disagree.
 
@@ -366,9 +368,10 @@ Skipping `work_runtime` is not a yes. Default `false`.
 The proposer talks to a model through `agent/aios_agent/provider`.
 
 - **fixture** — scripted turns under `tests/vm/fixtures/`. Default in
-  the VM harness. No network.
-- **live** — `urllib` to an envelope-approved endpoint and key path.
-  Never required for a green mechanical test.
+  the VM harness. No network. No browser.
+- **live** — Grok device-code OAuth (L-17). TTY prints URL + user code;
+  human finishes on another device; token file `0600`. Never a pasted
+  key in chat. Never required for a green mechanical test.
 
 The checker has no provider and must not import `aios_agent.provider`.
 
@@ -420,9 +423,11 @@ skip a row because the first slice worked.
 | Software acquisition | P4 | A package install is a commit + `packages.txt` + snapper. |
 | Verbatim memory | P4 | Memory files are raw exchanges (HI-11). |
 | Machine goals | P4, P8 | Restart resumes goals. Work synthesis only if the bit is set. |
-| Conversational installer | P5 | Two questions. Skip ≠ yes. Recover from kill. Reject rolls back. |
+| Conversational installer | P5 | Two questions. Skip ≠ yes. Recover from kill. Reject rolls back. TUI views (L-18), not a raw script. |
 | Operator login | P5 | One non-root login (L-13). Autologin after accept. No sudo to enact. |
-| First envelope | P5 | HI file + purpose + vetoes + work bit. Human accept is the merge. |
+| First envelope | P5 | HI file + purpose + vetoes + work bit. Human accept is the merge. Envelope is a **view**, not only a chat blob. |
+| Live Grok login | L-17, P4, P8.10 | Device-code. URL + user code on TTY. Finish on a phone or other PC. Token not in git or chat. |
+| TUI / view catalog | L-18, P5, P7, P8 | Named views. Keyboard-complete. Mouse/clickable URLs when the terminal allows. GUI later uses the same ids. |
 | intent.sock | P6 | Work process can file; agent is the only consumer; not a shell. |
 | Kernel privilege | P6 | `pacman` from the slice fails as permission (HI-13, HI-16). |
 | OS summon / notify / brake | P7 | Four-field payload. `aios brake`. No key chord in the OS contract. |
@@ -480,15 +485,16 @@ this plan already names every product surface that v1 will ship.
 **Depends.** Human merge of the docs stack when ready. Proposer does not
 merge to `main`.
 
-**Must close.** None left open: L-01…L-16 and the coverage table are
+**Must close.** None left open: L-01…L-18 and the coverage table are
 the closures. A new daemon that is not in the units list is a docs
-patch first (HI-12).
+patch first (HI-12). A new view that is not in L-18 is a docs patch
+first.
 
 **Deliverables**
 
 - Complete spec on `docs/implementation` (this file plus the stacked
   docs). `docs/precision` is the parent of this branch.
-- This file: L-01…L-16, coverage table, HI oracle map, v1 holes.
+- This file: L-01…L-18, coverage table, HI oracle map, v1 holes.
 - Future code trees named above.
 
 **Oracles**
@@ -506,7 +512,7 @@ surface, which phase accepts it and which oracle fails if they skip it.
 | --- | --- | --- |
 | P0.1 | Keep the spec tip current | `docs/implementation` remains complete until a human merges PRs 1–5. |
 | P0.2 | Name the implementation trees | payload, agent, checker, installer, intent, operator-client, tests/vm. |
-| P0.3 | Lock implementer decisions | L-01…L-16. Code that contradicts them is a docs patch first. |
+| P0.3 | Lock implementer decisions | L-01…L-18. Code that contradicts them is a docs patch first. |
 | P0.4 | Coverage | Every v1 surface has a phase and an oracle in this file. |
 
 ## P1 — Trusted payload
@@ -693,48 +699,56 @@ without a human running pacman.
 
 ## P5 — Conversational installer
 
-**Goal.** TTY definition surface that compiles the first envelope from
-two questions plus an operator login, with recovery.
+**Goal.** The TUI in **installer** mode compiles the first envelope from
+two questions plus an operator login, with recovery. Not a raw question
+script.
 
 **Depends.** P4.
 
 **Must close.** Operator username: asked, or derived from purpose, and
 written to `answers.json`. Bots is **not** a first-envelope question.
+Installer uses L-18 views: `conversation`, `questions`, `envelope`,
+`accept`, `recovery`, `chrome`. Live Grok login is **not** during
+unsigned firstboot (L-17: after accept).
 
 **Deliverables**
 
-- `installer/` — `aios-installer.service`, restart on-failure, TTY-bound
-  on `tty1`.
+- `installer/` — `aios-installer.service`, restart on-failure, TTY TUI
+  on `tty1`. Same view catalog the OS client will use (L-18).
 - Questions: purpose; work-runtime opt-in; operator login name.
   Skipping work-runtime is not a yes. Default administer-only.
 - Vetoes: never-do, networks, remotes.
-- Compiled envelope in plain language, including the HI file. Wait for
-  explicit accept.
+- Envelope **view** shows the compiled HI file + derived clauses. Wait
+  for explicit accept. Accept/Reject are first-class actions (keyboard
+  and clickable).
 - Operator login created on accept (L-13). No sudoers for enact.
 - Recovery directory: `answers.json`, `envelope.draft.md`, `snapper_pre`,
-  `step`.
+  `step`. Recovery is a view, not only a log line.
 - Reject → snapper rollback. No half-installed undeclared state.
-- Emergency brake works during bootstrap (`aios brake`).
+- Emergency brake in chrome during bootstrap.
 
 **Oracles**
 
 - Kill installer mid-question; reboot; last accepted answers reappear.
 - Unset work-runtime bit → no work-runtime unit (HI-15).
 - Reject envelope → snapper undo; `packages.txt` matches pre-conversation.
-- First surface is TTY even if a GPU is present.
+- First surface is the TUI even if a GPU is present. No display manager.
 - After accept, `tty1` autologin is the operator, not root, not
   `aios-agent`.
 - Operator cannot `sudo enact`.
 - `answers.json` has no `bots` key, or `bots` is false.
+- Envelope view is reachable without scrolling the transcript.
+- Every installer action has a keyboard path (serial fixture).
 
-**Done.** A human can finish bootstrap in a VM by answering the questions
-and accepting an envelope. The box has someone to log in as.
+**Done.** A human can finish bootstrap in a VM inside the TUI. The box
+has someone to log in as. The same TUI becomes OS mode; it is not a
+throwaway wizard.
 
 | WP | Title | Delivers |
 | --- | --- | --- |
-| P5.1 | TTY definition surface | Installer on getty; same wake contract as later OS clients. |
-| P5.2 | Envelope compiler | Purpose + vetoes + work bit + HI file. |
-| P5.3 | Recovery snapshot | `bootstrap-in-progress` + resume on boot. |
+| P5.1 | Installer TUI | L-18 installer views on getty. Same catalog as later OS. |
+| P5.2 | Envelope compiler | Purpose + vetoes + work bit + HI file as the envelope view. |
+| P5.3 | Recovery snapshot | `bootstrap-in-progress` + resume on boot + recovery view. |
 | P5.4 | Operator login | One non-root user, no enact sudo (L-13). |
 
 ## P6 — Privilege boundary
@@ -775,48 +789,54 @@ accidentally become the OS agent.
 | P6.2 | Work slice | `aios-work.slice` + drop-in for any work unit. |
 | P6.3 | Denial oracles | Checker tests that attempt pacman from the slice and expect fail. |
 
-## P7 — Operator client (TTY)
+## P7 — Operator client (TUI)
 
-**Goal.** Summon and notify exist. The first client is the TTY. No DE
-required. Summon names **which** surface (OS vs work).
+**Goal.** Summon and notify exist. The first client is the TUI (L-18).
+No DE required. Summon names **which** surface (OS vs work). GUI later
+is a restyle of these views, not a second app.
 
 **Depends.** P5.
 
 **Must close.** How the operator names the surface (`aios` vs
 `aios work`, a flag, two commands). Graphical clients stay a v1 hole.
+Every L-18 OS view is reachable from chrome.
 
 **Deliverables**
 
-- `operator-client/tty` — `aios` (summon, status, brake) and notify.
+- `operator-client/tty` — TUI: summon, status, brake, notify, **login**.
+- OS views: `chrome`, `conversation`, `envelope`, `intents`, `notify`,
+  `snapper`, `packages`, `login`, `brake`.
 - Failure payload: unit, journal slice, state commit, snapper id,
-  matching clause.
-- OS intents: explain failed unit, pending envelope, last snapper,
-  open the OS definition surface.
+  matching clause. Notify view, not a coding CLI.
 - Work summon is refused if the envelope bit is off. If on, it opens
-  the work surface, not the OS agent (L-14).
-- Graphical clients (GNOME/KDE/Hyprland/tmux adapters) are later
-  envelope-driven synthesis. Not in the payload. Not a hole if listed
-  in P11 known limitations.
+  work views, not OS tools (L-14).
+- Keyboard-complete. Mouse and clickable URLs (Grok Build TUI) when the
+  terminal supports them.
+- Graphical clients (GNOME/KDE/Hyprland) are later restyles of L-18.
+  Not in the payload.
 
 **Oracles**
 
 - Fail a dummy unit → notification carries the four fields and opens the
-  OS-agent wake, not a coding CLI (HI-14).
-- Summon OS from the TTY opens envelope + memory + OS skills +
-  privileged tools.
+  notify + OS conversation views (HI-14).
+- Summon OS opens envelope + memory + OS skills + privileged tools.
 - Summon work with the bit off is refused with a reason.
 - No key chord is hard-coded into the OS contract.
-- `aios brake` stops and masks the proposer; the TTY stays.
+- `aios brake` stops and masks the proposer; the TUI stays.
+- Envelope, snapper, and packages are reachable without scrolling chat.
+- Serial fixture: every OS action works with keys only.
 
-**Done.** The human can find OS work and be told when the machine fails,
-on a box with no desktop, and cannot mix OS privilege into a work turn.
+**Done.** The human can find OS work on a box with no desktop, see our
+objects as views, and cannot mix OS privilege into a work turn.
 
 | WP | Title | Delivers |
 | --- | --- | --- |
-| P7.1 | Summon | TTY command that names OS vs work. |
-| P7.2 | Notify | systemd failure → structured payload → OS surface. |
-| P7.3 | Brake | `aios brake` stops and masks the proposer; installer stays. |
-| P7.4 | Surface split | Work summon is a different session (L-14). Bit-off refuses. |
+| P7.1 | Summon | TUI command that names OS vs work. |
+| P7.2 | Notify | systemd failure → notify view → OS conversation. |
+| P7.3 | Brake | `aios brake` in chrome; installer/TUI stays. |
+| P7.4 | Surface split | Work summon is a different session (L-14). |
+| P7.5 | OS views | L-18 OS catalog. Keyboard-complete. Clickable when possible. |
+| P7.6 | Login view | L-17 device-code. URL + code. Token not in transcript. |
 
 ## P8 — Work-runtime (every transferred surface)
 
@@ -867,7 +887,11 @@ incomplete, even if a daemon starts.
   A question ends the turn.
 - Following a skill without reading its body this turn fails.
 - If a Connector exists for a service, it is used. A token pasted into
-  chat fails. Work uid cannot read the OS provider key (L-16).
+  chat fails. Work uid cannot read the OS provider token (L-16, L-17).
+- Work TUI views (L-18): `conversation`, `skills`, `connectors`,
+  `bridge`, `store`, `login`. Bots, if the second bit is on: `roster`,
+  `job`. Sidebar list + transcript + info pane (Grokbot *structure*,
+  jobs not selves).
 - A Worker has no user-visible voice. Its result is sent on the work
   surface. It cannot enact.
 - A routine is cron **or** listeners, never both. It is a file in the
@@ -896,12 +920,14 @@ failing this phase.
 | P8.6 | Connectors | MCP preferred. Secrets not in chat. Not the OS key. |
 | P8.7 | Workers | No voice. Result sent. Cannot enact. |
 | P8.8 | Routines | Cron xor listeners. Persisted. Disable leaves git. |
-| P8.9 | Operator bridge | Approval, verbatim copy, not a mount. |
-| P8.10 | Work provider | Own fixture/live. Work uid cannot read the privileged key. |
-| P8.11 | Work store | Notes/skills/routines/connectors as git in the work tree. |
+| P8.9 | Operator bridge | Approval **view**. Verbatim copy, not a mount. |
+| P8.10 | Work provider | Own fixture/live. L-17 device-code. Work uid cannot read the OS token. |
+| P8.11 | Work store | Notes/skills/routines/connectors as git in the work tree. Store view. |
 | P8.12 | Disable | Envelope patch stops units. Git remains. |
 | P8.13 | Bots | Second bit. Jobs not selves. VM work is an intent. Handoff schema. |
 | P8.14 | Fixture album | One scripted turn per surface above. Each is a vm-work-* oracle. |
+| P8.15 | Work views | L-18 work catalog. Keyboard-complete. Same ids a later GUI will use. |
+| P8.16 | Bots views | Roster + job card. No avatars. Structure copied; identity refused. |
 
 ## P9 — VM harness
 
@@ -947,6 +973,11 @@ P11 requires the full matrix.
 - `vm-bots-off`: work-runtime yes does not start bots units.
 - `vm-bots-job`: with bit on, a job is path+slice+skill; `virsh` from
   the slice fails; a VM start is an intent.
+- `vm-tui-keys`: installer + OS actions complete over serial with no
+  mouse. Envelope view reachable without chat scroll.
+- `vm-login-oob`: live-login fixture prints a URL and user code; no
+  token in the transcript; token file not in git. Remotes-veto refuses
+  login.
 - `vm-secrets` / `vm-pii`: scans green on the running tree.
 
 **Done.** A failed invariant is a red test on the workstation, not a
@@ -959,6 +990,7 @@ conversation. A skipped P8 surface is a red test, not a note.
 | P9.3 | Reconstruct and deny | `vm-reconstruct-offline`, `vm-privilege-deny`. |
 | P9.4 | Work matrix | `vm-work-*` and `vm-bots-*` for every P8 oracle. |
 | P9.5 | Scans | `vm-secrets`, `vm-pii`. |
+| P9.6 | TUI and login | `vm-tui-keys`, `vm-login-oob`. |
 
 ## P10 — Bare metal
 
@@ -1125,7 +1157,10 @@ file (and, if needed, the envelope) first:
 - Mixing OS and work turns in one session (L-14).
 - A work-slice write set that disagrees with the declared workspace
   (L-15).
-- A work provider that shares the privileged agent's key (L-16).
+- A work provider that shares the privileged agent's token (L-16).
+- Pasting an API key as the live login path (L-17).
+- A view that is not in the L-18 catalog, or a GUI that does not share
+  those ids.
 - Bots enabled by work-runtime yes.
 - Personhood, channels, identity stores, or a second envelope “the
   fleet lives in.”

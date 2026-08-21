@@ -21,6 +21,8 @@ Grok Build maps onto AIOS as follows.
 - Non-overlapping parallel ownership → proposer and checker; split surfaces
 - Always-on teammate with its own computer → optional work runtime on the managed machine; OS agent stays privileged
 - Quality bar is non-negotiable → conditions are checkable, not advisory
+- Browser / device-code login → live Grok login is `grok login --device-auth` on a TTY (L-17)
+- Fullscreen mouse TUI, clickable URLs → AIOS TUI (L-18); GUI later is the same views
 
 The work runtime, when synthesised from `seed/work-runtime`, is a Grok Build-shaped application *on* the machine. It is not the machine.
 
@@ -49,3 +51,40 @@ Done means shown. The Grok Build bar — production build, typecheck, real rende
 - The conversational surface can explain the change from operational history without inventing a reason.
 
 A brand warning in Grok Build is treated as not-done. An envelope warning in AIOS is treated the same. Advisory theatre is how corrigibility dies.
+
+## Live login (device-code)
+
+Grok Build’s default is to open a browser at `auth.x.ai`. Headless and
+remote sessions use `grok login --device-auth` (alias `--device-code`):
+the terminal prints a verification URL and a user code; the human opens
+that URL on **any device**, completes sign-in, and the process polls until
+confirmed. Tokens land in a `0600` file, not in the transcript. The TUI
+turns the first `https://` URL into a clickable sign-in link.
+
+AIOS has no local browser in v1. Live provider **is** that device-code
+path (L-17):
+
+1. After envelope accept, and only if remotes are not vetoed.
+2. TUI `login` view shows the URL and user code (clickable when the
+   terminal allows; always printed as text for a phone or other PC).
+3. Human finishes in a browser elsewhere. The box polls.
+4. Token file `0600`. OS agent and work runtime have **different** files
+   (L-16). Not in git. `secrets-scan` fails if a token hits a repo.
+5. The agent never asks for a password or a pasted API key in chat.
+   (Grokbot/InsideMan: connect card; operator signs in; agent never sees
+   the password.)
+
+Fixture remains the VM default. CI never requires this flow.
+
+## TUI
+
+Grok Build runs as a fullscreen, mouse-interactive TUI. AIOS v1 is the
+same class of client, not a readline REPL.
+
+- Named views in [desktop.md](desktop.md) (L-18).
+- Mouse and clickable elements when the terminal supports them.
+- Keyboard path for every action (serial fixtures, dumb TTY).
+- A later GUI uses the same view ids and actions. Visual similarity,
+  identical functionality. The graphical-client hole is “not in the
+  payload,” not “undefined screens.”
+

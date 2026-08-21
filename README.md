@@ -67,7 +67,7 @@ is proven useful.
 | [AGENTS.md](AGENTS.md) | Contract for any AI working on this project or on a running machine |
 | [docs/envelope/hard-invariants.md](docs/envelope/hard-invariants.md) | Canonical hard invariants. The checker loads this file. |
 | [docs/architecture.md](docs/architecture.md) | Two surfaces, operator client, privilege boundary, proposer/checker, layout |
-| [docs/desktop.md](docs/desktop.md) | Operator client (summon/notify), failure handoff, optional work runtime |
+| [docs/desktop.md](docs/desktop.md) | Operator client, TUI views, live Grok login, optional work runtime |
 | [docs/arch-linux.md](docs/arch-linux.md) | Why Arch, pacman, btrfs/snapper, reconstructibility |
 | [docs/acceptability.md](docs/acceptability.md) | Envelope layers, mechanical checks, human authority |
 | [docs/memory.md](docs/memory.md) | Operational history, findability by concern, skills, temporal validity |
@@ -76,7 +76,7 @@ is proven useful.
 | [docs/software-acquisition.md](docs/software-acquisition.md) | pacman, lockfiles, synthesis — the AI is the installer |
 | [docs/bootstrap.md](docs/bootstrap.md) | Trusted payload, TTY-first installer, recovery, seed materialisation |
 | [docs/implementation.md](docs/implementation.md) | Full installer plan: phases P0–P11, coverage, work-runtime oracles, public release |
-| [docs/grok-build.md](docs/grok-build.md) | Mapping the Grok Build sandbox contract onto a whole OS |
+| [docs/grok-build.md](docs/grok-build.md) | Grok Build contract, device-code login, TUI mapping |
 | [docs/reference.md](docs/reference.md) | Glossary, invariant index, repository map |
 | [seed/work-runtime](seed/work-runtime/README.md) | Reconstructible application the OS agent synthesises if opted in |
 | [seed/work-runtime-bots](seed/work-runtime-bots/README.md) | Optional unprivileged fleet extension |
