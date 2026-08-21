@@ -168,9 +168,14 @@ such synthesis job.
 
 ## Status
 
-Early conceptual capture. This repository records the high-level intent.
-Concrete implementation, MVP scoping, and experiments will follow — through
-the loop, not around it.
+Specification is complete on the stacked docs branches (`docs/foundational`
+through `docs/implementation`, PRs 1–5). The proposer does not merge to
+`main`. A human merges when ready.
+
+The installer plan is [`docs/implementation.md`](docs/implementation.md):
+phases P0–P10, locked implementer decisions, schemas, HI oracles, and a
+QEMU recipe. Code trees (`payload/`, `agent/`, `checker/`, …) are created
+when their phase starts. Until then this repository is the specification.
 
 ## License
 
