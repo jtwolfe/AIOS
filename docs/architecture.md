@@ -1,8 +1,9 @@
 # Architecture
 
 The running machine is the current best concrete realization of the current
-rule set, maintained by the AI. Architecture is a set of durable splits, not
-a pile of daemons.
+rule set, maintained by the AI so the human does not have to administer it.
+Architecture is a set of durable splits, not a pile of daemons and not a
+personality.
 
 ## Definitional system
 
@@ -27,9 +28,10 @@ same process.
 
 - **Conversational definition surface** — how the human injects intent,
   refines conditions, requests capability, inspects the envelope, and pulls
-  the emergency brake.
-- **Background privileged agent** — a long-running service with deep
+  the emergency brake. Natural language. No new language runtime.
+- **Background privileged agent** — an always-on worker with deep
   observation and enactment rights. It proposes. It does not validate itself.
+  It is a systemd service, not a presence.
 
 The conversational surface is the human’s entire view, in the same sense that
 a Grok Build preview is the user’s entire view of a sandbox. The agent does
@@ -39,20 +41,38 @@ substitute for mechanical QA.
 ## Proposer and checker
 
 Validation is separated from proposal. The proposing intelligence and the
-checking mechanism share memory but are not the same process. This is the
-architectural expression of “prefer mechanical, independently checkable
-validation over asking the model again.”
+checking mechanism share the operational store but are not the same process.
+This is the architectural expression of “prefer mechanical, independently
+checkable validation over asking the model again.”
 
 - The **proposer** may be creative, wide-ranging, and allowed to fail. Its
-  outputs are diffs, package transactions, unit files, and envelope patches.
-- The **checker** is narrow and boring. It runs tests, typecheckers, policy
-  scripts, pacman transaction audits, and envelope predicates. It cannot be
-  talked into a pass.
+  outputs are diffs, package transactions, unit files, and envelope patches —
+  each carrying intent plus oracles.
+- The **checker** is narrow and boring. It runs the oracles: tests,
+  typecheckers, policy scripts, pacman transaction audits, envelope
+  predicates. It cannot be talked into a pass.
 
 Ownership of surfaces does not overlap. The proposer does not merge its own
 branches. The checker does not synthesise features. Parallel work by tools
 or subagents follows the same rule: shared contract first, non-overlapping
 paths, then integrate.
+
+## Machine goals
+
+A small, durable set of objectives about the *machine* sits next to the
+envelope as operational constraints the background agent may pursue without
+a chat turn: keep the explicit package list in sync, snapper before
+privileged writes, never break reconstructibility, honour update windows.
+
+These are not motives. They are not a self. They do not live in a separate
+identity store. If a goal cannot be checked, it is not a machine goal — it
+is a wish, and wishes belong on the definition surface until they compile
+into predicates.
+
+Natural language on the definition surface, mechanical predicates in the
+checker, git as the record. That is the stack. Do not add a language runtime
+so the OS can “speak intent.” The closed loop (intent → oracles → verify →
+emit) is the transfer; a new language is not.
 
 ## On-disk layout
 
@@ -63,7 +83,7 @@ unless noted. Nested `AGENTS.md` files apply to their subtree.
 /srv/aios/
   AGENTS.md              # machine-wide agent contract
   envelope/              # current conditions (git)
-  memory/                # interaction store (git)
+  memory/                # operational history (git)
   skills/                # crystallized SKILL.md files (git)
   agent/                 # privileged proposer (git)
   checker/               # independent validator (git)
