@@ -1,11 +1,14 @@
 # Implementation plan
 
-Turn the specification into a real OS installer. Test it in a VM on the
-workstation. Bare metal comes last.
+Turn the specification into a real OS installer. Prove every product
+surface in a VM. Public release is the end of this plan. Bare metal is
+last extra proof, not a substitute for the release bar.
 
-This is a plan, not a second architecture. If a daemon, file, or control
-path is required, it is named here and will be named in the envelope before
-it is relied upon. Canonical invariants remain
+This is a plan of **requirements, questions, and oracles**, not a second
+architecture and not a source tree of daemons. If a daemon, file, or
+control path is required, it is named here and will be named in the
+envelope before it is relied upon. Code that appears without a phase,
+a must-close, and an oracle is drift. Canonical invariants remain
 [docs/envelope/hard-invariants.md](envelope/hard-invariants.md).
 
 The complete spec currently lives at the tip of `docs/implementation`
@@ -14,16 +17,28 @@ to `main`. A human merges the docs stack (PRs 1–5) when ready.
 
 ## Goal
 
-A signed `archiso` payload that:
+A stranger can download a **signed** `archiso` payload, verify it out of
+band, boot a VM, answer two questions, and have a machine that satisfies
+HI-01…17. That machine is public-release ready.
 
 1. Verifies itself and the target machine.
 2. Installs a minimal Arch (btrfs, snapper, systemd, git, pacman) with
    **no desktop**.
 3. Drops a TTY **definition surface** that *is* the installer.
 4. Compiles the first envelope from two questions (purpose; work-runtime
-   opt-in) plus vetoes.
+   opt-in) plus vetoes. Creates one operator login.
 5. Leaves a reconstructible `/srv/aios` whose privileged agent proposes
    and whose checker, a different process, enacts.
+6. If work-runtime was yes: every transferred user-work surface has a
+   green oracle (wake, skills, connectors, workers, routines, bridge,
+   store, surface split, workspace write set). If no: no work units.
+7. The payload contains no secrets and no PII. Known limitations are
+   listed. Graphical operator clients are not in the image.
+
+Bare metal (P10) is the same payload on real hardware after the VM
+matrix is green. Public release (P11) is the signed artifacts plus that
+green matrix. Finishing this plan means the installer is done, not that
+a first slice exists.
 
 ## Non-goals
 
@@ -35,6 +50,21 @@ A signed `archiso` payload that:
 - Rewriting the kernel.
 - AUR as the default path.
 
+## Explicit v1 holes
+
+Named so they are not accidental omissions. They are **out** of the
+image this plan ships. An implementer who “just adds” one is drifting.
+
+| Hole | Why it is out | How it re-enters |
+| --- | --- | --- |
+| Graphical operator client in the payload | TTY is the first client. GNOME/KDE/Hyprland/tmux are envelope-driven synthesis after TTY is proven. | Envelope proposal, own phase, own oracles. |
+| In-place OS upgrade | Reconstruct from payload + git is the v1 path. | Later envelope clause, own oracles. |
+| Multi-operator / multi-seat | One operator login (L-13). | Envelope patch. |
+| Default LUKS on the VM image | VM must stay fixture-scriptable. | Asked on metal (P10), not implied. |
+| Paid live API in CI | Fixture covers every oracle. | Human opt-in on a live box. |
+| Bots enabled by work-runtime yes | Second envelope bit, asked later, default off. | P8.13. |
+| InsideMan identity, channels, desktops-as-screens, personhood | Transfers are wake, skills, connectors, workers, bridge, routines. Nothing else. | Never, without an envelope rewrite. |
+
 ## Order of proof
 
 ```
@@ -44,14 +74,20 @@ payload boots TTY
       → agent proposes under git
         → installer compiles first envelope (recoverable)
           → kernel denies work-slice privilege
-            → summon/notify on TTY
-              → optional work-runtime from local seeds
-                → QEMU matrix green
-                  → bare metal
+            → summon/notify on TTY (OS surface)
+              → optional work-runtime: every transferred surface
+                → QEMU matrix green (including work-yes and work-no)
+                  → signed public artifacts
+                    → bare metal
 ```
 
 Do not start P10 because P9 is exciting. Do not synthesise a desktop
-because the TTY installer is ugly.
+because the TTY installer is ugly. Do not call the image releasable
+because `vm-smoke` passed — `vm-smoke` is administer-only.
+
+**First useful loop** (prove the OS, not the product): P1–P5 plus
+`vm-smoke` / `vm-recover`. **Release loop**: that, plus P6–P8, the full
+P9 matrix, P11. Metal is extra.
 
 ---
 
@@ -62,7 +98,7 @@ is a docs patch on this file, not a silent drift in code.
 
 | ID | Decision | Lock |
 | --- | --- | --- |
-| L-01 | Language | Agent, installer, intent consumer, TTY client: Python 3 from official Arch `python`. Checker driver: Python 3 stdlib only. Policy oracles: POSIX `sh`. VM harness: POSIX `sh` + Python 3 + qemu. No third-party Python deps in MVP. No new language runtime (HI-12). |
+| L-01 | Language | Agent, installer, intent consumer, TTY client, **and the work runtime once synthesised**: Python 3 from official Arch `python`. Checker driver: Python 3 stdlib only. Policy oracles: POSIX `sh`. VM harness: POSIX `sh` + Python 3 + qemu. No third-party Python deps in v1. No new language runtime (HI-12). |
 | L-02 | Identities | systemd-sysusers: `aios-agent`, `aios-checker`, `aios-work`. Separate uids. No shared supplementary group that can write privileged trees. |
 | L-03 | Privileged repos | Bare git at `/srv/aios/git/<name>.git` owned by `aios-checker`. Agent worktrees at `/srv/aios/<name>` with push only to `refs/heads/agent/*`. `reference-transaction` + `update` hooks deny `aios-agent` on `refs/heads/main` and deny force-push of published refs (HI-02, HI-03). |
 | L-04 | Enact helper | `aios-agent` is not root. The only root path is `/usr/lib/aios/bin/enact`, a small allowlisted helper (pacman, snapper create, systemctl for `aios-*` units). sudoers: `aios-agent ALL=(root) NOPASSWD: /usr/lib/aios/bin/enact`. `aios-work` has no sudoers line. |
@@ -74,6 +110,12 @@ is a docs patch on this file, not a silent drift in code.
 | L-10 | Signing | minisign. Public key in `payload/minisign.pub` and printed on the out-of-band README. Unsigned images must not leave the workstation (P1.2). |
 | L-11 | Time/locale until envelope | UTC, `en_US.UTF-8`, hostname `aios`. Envelope may change these as ordinary proposals. |
 | L-12 | Emergency brake | TTY command `aios brake`: stop and mask `aios-agent.service`, freeze `enact`, write `/srv/aios/state/brake`. Installer stays up. Human-only. |
+| L-13 | Operator login | Bootstrap creates one non-root human login. After accept, `tty1` autologin is that user. No sudo to enact. They may run `/usr/lib/aios/bin/aios` (summon, status, brake). Service uids stay `nologin`. Root is recovery only. |
+| L-14 | Two surfaces | OS definition surface and work definition surface are different sessions. Summon names which. A work turn does not receive privileged tools. An OS turn does not run in `aios-work.slice`. One chat with both rights is a fail. |
+| L-15 | Workspace write set | Before any work unit is enabled, this plan and the envelope name the directories a work process may write. Slice `ReadWritePaths` equals that set plus tmp. Operator home outside the set is the approval-gated bridge. Privileged trees stay `InaccessiblePaths`. Shipping P8 while the slice only writes `/srv/aios/src/work-runtime` *and* claiming user work in `~/src` is a fail. |
+| L-16 | Work provider | The work runtime has its own provider config and secret path. The work uid cannot read the privileged agent's key. Fixture is default in the VM. Live is envelope-approved and optional. |
+
+The slice drop-in later in this file is the **floor** (write the work-runtime tree only). P8.2 must patch L-15 and that drop-in together. They are not allowed to disagree.
 
 ---
 
@@ -309,6 +351,7 @@ Inputs (recovery-durable):
 {
   "purpose": "…",
   "work_runtime": false,
+  "operator_login": "operator",
   "vetoes": { "never": [], "networks": [], "remotes": false },
   "step": "questions",
   "snapper_pre": 1,
@@ -356,6 +399,50 @@ The checker re-runs them without the model.
 | HI-15 | `policy/hi-15-work-default-off.sh` | No work units unless envelope bit. |
 | HI-16 | `policy/hi-16-os-privilege.sh` | Slice flags, inaccessible paths, socket mode. |
 | HI-17 | `policy/hi-17-seeds-local.sh` | Seeds present as git with nic down. |
+| extra | `policy/secrets-scan.sh` | No tokens, keys, `.env` in git or the payload. |
+| extra | `policy/pii-scan.sh` | No personal names, emails, phones, addresses in the tree. |
+
+## Coverage
+
+Every product surface this plan is allowed to ship. If a row has no
+oracle by P9, the plan is not finished. An implementer does not get to
+skip a row because the first slice worked.
+
+| Area | Phase | Acceptance (must be an oracle, not a story) |
+| --- | --- | --- |
+| Signed, reproducible payload | P1, P11 | Image builds from a pin. minisign verifies. No DE in the list. |
+| No secrets / no PII in image | P1, P3 | `secrets-scan` and `pii-scan` green on payload and git. |
+| Disk, snapper, etckeeper | P2 | Layout per L-07. snapper list. etckeeper clean. |
+| Local seeds | P2, P8 | Work-runtime and bots seeds present with nic down (HI-17). |
+| Checker split | P3 | No-oracle patch rejected. Checker has no provider. |
+| Git hooks | P3 | Proposer cannot update `main`. No force-push. |
+| Privileged agent loop | P4 | Fixture turn: triage → skills → branch → oracles → checker → memory. |
+| Software acquisition | P4 | A package install is a commit + `packages.txt` + snapper. |
+| Verbatim memory | P4 | Memory files are raw exchanges (HI-11). |
+| Machine goals | P4, P8 | Restart resumes goals. Work synthesis only if the bit is set. |
+| Conversational installer | P5 | Two questions. Skip ≠ yes. Recover from kill. Reject rolls back. |
+| Operator login | P5 | One non-root login (L-13). Autologin after accept. No sudo to enact. |
+| First envelope | P5 | HI file + purpose + vetoes + work bit. Human accept is the merge. |
+| intent.sock | P6 | Work process can file; agent is the only consumer; not a shell. |
+| Kernel privilege | P6 | `pacman` from the slice fails as permission (HI-13, HI-16). |
+| OS summon / notify / brake | P7 | Four-field payload. `aios brake`. No key chord in the OS contract. |
+| Surface split | P7, P8 | Summon names OS vs work. Mixed-privilege chat fails (L-14). |
+| Work synthesis | P8.1 | Yes + nic down → live git exists. No → no work units (HI-15). |
+| Workspace write set | P8.2 | Declared set is writable. Outside it, no write without bridge approval. |
+| Wake + explicit send | P8.4 | Inject order from the seed. Plain model text is not delivered. |
+| Skills | P8.5 | Following a skill without reading its body this turn fails. |
+| Connectors | P8.6 | MCP used when present. Secret not in chat. Work uid cannot read OS key. |
+| Workers | P8.7 | No user voice. Result is sent on the work surface. Cannot enact. |
+| Routines | P8.8 | Cron xor listeners on one standing order. Persisted. Disable leaves git. |
+| Operator bridge | P8.9 | Shell/read/copy on private paths wait for approval. Copy is verbatim. |
+| Work provider | P8.10 | Own fixture. Work uid cannot read the privileged key path (L-16). |
+| Work store | P8.11 | Notes, skills, routines, connectors are git in the work tree, not OS memory. |
+| Disable work runtime | P8.12 | Envelope patch stops units. Git remains. HI-15 holds. |
+| Bots extension | P8.13 | Second bit, default off. Jobs are path+slice+skill. VM work is an intent. |
+| Reconstruct offline | P9 | Envelope satisfied with nic unplugged. |
+| Full VM matrix | P9 | Every target below red-fails on oracle miss. |
+| Public artifacts | P11 | Signed ISO, hashes, operator README, known limitations, version. |
+| Bare metal | P10 | Same payload. After P9 green. Hardware-specific commits marked. |
 
 ---
 
@@ -370,48 +457,57 @@ The checker re-runs them without the model.
    Init bare git under `/srv/aios/git`. Materialise worktrees.
 5. Enable `aios-installer.service` on `getty@tty1` autologin. Reboot
    to disk.
-6. Installer on TTY: purpose; work-runtime (skip = no); vetoes. After
-   every accepted answer, write `bootstrap-in-progress/`.
+6. Installer on TTY: purpose; work-runtime (skip = no); vetoes; operator
+   login name. After every accepted answer, write `bootstrap-in-progress/`.
+   Bots is **not** asked here.
 7. Show compiled envelope in plain language. Wait for explicit
    `accept`. Reject → snapper undo to `snapper_pre`. Kill/reboot →
    resume from the snapshot (HI-09, recovery).
 8. Checker merges the first envelope to `envelope` `main` under the
-   human-accept record. Agent unit starts. Installer stops.
+   human-accept record. Create the operator login (L-13). Agent unit
+   starts. Installer stops. `tty1` autologin becomes the operator.
 9. If work-runtime was yes, synthesis is a machine goal (P8) and
-   bootstrap is not finished until that git exists.
+   bootstrap is not finished until that git exists and P8 oracles
+   that do not need a live model are green.
 
 ---
 
 ## P0 — Source of truth
 
-**Goal.** The tree implementation grows from is the current spec tip.
+**Goal.** The tree implementation grows from is the current spec tip, and
+this plan already names every product surface that v1 will ship.
 
 **Depends.** Human merge of the docs stack when ready. Proposer does not
 merge to `main`.
+
+**Must close.** None left open: L-01…L-16 and the coverage table are
+the closures. A new daemon that is not in the units list is a docs
+patch first (HI-12).
 
 **Deliverables**
 
 - Complete spec on `docs/implementation` (this file plus the stacked
   docs). `docs/precision` is the parent of this branch.
-- This file, including locked decisions L-01…L-12 and the HI oracle map.
+- This file: L-01…L-16, coverage table, HI oracle map, v1 holes.
 - Future code trees named above.
 
 **Oracles**
 
 - `docs/envelope/hard-invariants.md` exists and is the only HI list.
 - `seed/work-runtime` and `seed/work-runtime-bots` exist.
-- README specification table names this plan.
+- README specification table names this plan as P0–P11.
+- Coverage table has a row for every transferred work-runtime surface.
 - README status is no longer “early conceptual capture” on this branch.
 
-**Done.** An implementer can clone the spec tip and know where every new
-daemon will live, which uid owns it, and which oracle fails if they drift,
-before writing it.
+**Done.** An implementer can clone the spec tip and know, for every
+surface, which phase accepts it and which oracle fails if they skip it.
 
 | WP | Title | Delivers |
 | --- | --- | --- |
 | P0.1 | Keep the spec tip current | `docs/implementation` remains complete until a human merges PRs 1–5. |
 | P0.2 | Name the implementation trees | payload, agent, checker, installer, intent, operator-client, tests/vm. |
-| P0.3 | Lock implementer decisions | L-01…L-12 in this file. Code that contradicts them is a docs patch first. |
+| P0.3 | Lock implementer decisions | L-01…L-16. Code that contradicts them is a docs patch first. |
+| P0.4 | Coverage | Every v1 surface has a phase and an oracle in this file. |
 
 ## P1 — Trusted payload
 
@@ -419,6 +515,10 @@ before writing it.
 then installs a minimal Arch with no desktop.
 
 **Depends.** P0.
+
+**Must close.** What is pinned (bootstrap tarball URL + sha256). What
+the image must not contain (secrets, PII, DEs, enabled sshd). Version
+string location (`os-release` or equivalent).
 
 **Deliverables**
 
@@ -431,9 +531,10 @@ then installs a minimal Arch with no desktop.
 - Self-checksum plus minisign signature the human can check out of band.
 - First-boot: TTY autologin to the installer, not a graphical session.
 - `payload/hashes.txt` — pinned sha256 of agent, checker, installer,
-  seeds, hard-invariants, enact.
+  seeds, hard-invariants, enact, sysusers, units.
 - `payload/build.sh` — reproducible image build from this repository,
   pinned Arch bootstrap tarball URL + sha256.
+- Seeds copied into the airootfs so P2 does not fetch GitHub.
 
 **Oracles**
 
@@ -441,9 +542,13 @@ then installs a minimal Arch with no desktop.
 - QEMU boot reaches a TTY installer, not a DE.
 - Checksum matches `hashes.txt`. Signature verifies.
 - No `hyprland`, `gnome`, `plasma`, `sddm`, or `gdm` in the image list.
+- `openssh.service` is disabled.
+- `secrets-scan` and `pii-scan` green on the image contents.
+- Seeds for work-runtime and work-runtime-bots are inside the image.
 
 **Done.** A QEMU VM boots the image to a TTY installer prompt. The payload
-is smaller and less free than the running system.
+is smaller and less free than the running system. It is fit to become
+the public artifact after later phases, not a throwaway demo ISO.
 
 | WP | Title | Delivers |
 | --- | --- | --- |
@@ -451,6 +556,7 @@ is smaller and less free than the running system.
 | P1.2 | Self-verify | Checksum + minisign; out-of-band steps in `payload/README.md`. |
 | P1.3 | TTY firstboot | getty autologin → `aios-firstboot`. No display manager. |
 | P1.4 | Pinned blobs | `hashes.txt` for agent, checker, installer, seeds, HI file, enact. |
+| P1.5 | Clean image | No secrets, no PII, sshd disabled, no DE. |
 
 ## P2 — Machine skeleton
 
@@ -458,6 +564,9 @@ is smaller and less free than the running system.
 snapper and etckeeper are on.
 
 **Depends.** P1.
+
+**Must close.** Bare-repo names (already listed). Operator home exists
+even before the login is created (subvolume `@home`).
 
 **Deliverables**
 
@@ -469,10 +578,13 @@ snapper and etckeeper are on.
 - Seeds copied into `/srv/aios/seeds` as git objects (HI-17).
 - `state/packages.txt` from `pacman -Qqe`.
 - Machine-wide `AGENTS.md` installed from this project.
+- sysusers and tmpfiles from the payload. Hook templates may be empty
+  until P3, but the paths exist.
 
 **Oracles**
 
-- Network down: seeds contain work-runtime and hard-invariants.
+- Network down: seeds contain work-runtime, work-runtime-bots, and
+  hard-invariants.
 - `snapper list` works. etckeeper is clean after first commit.
 - `git -C /srv/aios/git/envelope.git rev-parse main` succeeds.
 - `packages.txt` equals `pacman -Qqe`.
@@ -483,7 +595,7 @@ before any conversation.
 | WP | Title | Delivers |
 | --- | --- | --- |
 | P2.1 | Disk and snapper | btrfs subvolumes + timeline + pre-enactment hook. |
-| P2.2 | Git trees | Bare repos + worktrees + README + `.gitignore` + hooks. |
+| P2.2 | Git trees | Bare repos + worktrees + README + `.gitignore` + hook paths. |
 | P2.3 | Seed materialisation | Copy payload seeds; verify offline. |
 
 ## P3 — Checker MVP
@@ -493,16 +605,21 @@ pass. No model in this unit.
 
 **Depends.** P2.
 
+**Must close.** Proposal schema location (`schema.py` + `intent/schema.json`
+may wait until P6; the checker already rejects missing oracles).
+
 **Deliverables**
 
 - `checker/` source. `/srv/aios/checker`. `aios-checker.service`,
   uid `aios-checker`.
 - Proposal schema (`schema.py`). Missing oracle set → reject.
 - Git hooks: `update`, `pre-receive`, `reference-transaction` as L-03.
-- Policy scripts listed in the HI → oracle map.
+- Policy scripts listed in the HI → oracle map, plus `secrets-scan.sh`
+  and `pii-scan.sh`.
 - Merge gate: only the checker uid fast-forwards or squash-merges to
   `main`.
 - Import guard: `grep -n provider checker/` is empty.
+- HI-12 named-daemons: a unit not in this plan or the envelope fails.
 
 **Oracles**
 
@@ -510,6 +627,8 @@ pass. No model in this unit.
 - Proposer uid cannot update `main` (reference-transaction fails).
 - Stopping snapper to “make a change easier” is rejected (HI-06).
 - Checker unit does not import a model client.
+- A token-shaped string in a commit is rejected.
+- A personal email or personal name in a commit is rejected.
 
 **Done.** Privileged enactment is mechanically gated.
 
@@ -518,13 +637,18 @@ pass. No model in this unit.
 | P3.1 | Schema and unit | `aios-checker.service` + proposal JSON schema. |
 | P3.2 | Git hooks | `update` / `pre-receive` / `reference-transaction` templates. |
 | P3.3 | HI oracles | One script per invariant that can fail closed. |
+| P3.4 | Secrets and PII | `secrets-scan.sh`, `pii-scan.sh`. |
 
 ## P4 — Privileged agent MVP
 
 **Goal.** Always-on proposer with a defined uid, deny-list, and a
-fixture-able model adapter.
+fixture-able model adapter. The OS loop is complete even with no
+work runtime.
 
 **Depends.** P3.
+
+**Must close.** Live key path (outside git, mode that `aios-work` cannot
+read). Skill crystallization rule (when a pattern earns a `SKILL.md`).
 
 **Deliverables**
 
@@ -537,6 +661,10 @@ fixture-able model adapter.
 - Machine-goal runner: packages.txt sync, snapper before writes,
   reconstructibility, work-runtime synthesis if the bit is set.
 - Memory ingest verbatim (HI-11).
+- Software acquisition: a `pacman` enactment is a commit, a
+  `packages.txt` update, a snapper window.
+- Conflict raise (HI-07): instruction vs HI produces a record, not a
+  silent pass.
 - Consumer of `/run/aios/intent.sock` (socket may land in P6; agent
   already refuses unknown writers).
 
@@ -547,6 +675,10 @@ fixture-able model adapter.
 - Memory contains the raw exchange, not a model summary in its place.
 - Unit restart resumes machine goals; it does not invent motives.
 - `aios-agent` is not in group `wheel`. `enact` is the only sudo path.
+- Installing a package from a fixture turn updates `packages.txt` and
+  leaves a snapper pair.
+- Work uid cannot read the live provider key path (L-16, even before
+  P8 exists).
 
 **Done.** The machine can be administered by the agent under the checker
 without a human running pacman.
@@ -554,25 +686,31 @@ without a human running pacman.
 | WP | Title | Delivers |
 | --- | --- | --- |
 | P4.1 | Unit and uid | `aios-agent.service`, sysuser, deny-list, `enact`. |
-| P4.2 | Provider adapter | Live + fixture. VM tests use fixture. |
+| P4.2 | Provider adapter | Live + fixture. VM tests use fixture. Key not in git. |
 | P4.3 | Loop + memory | Turn loop, skill load, verbatim ingest. |
 | P4.4 | Machine goals | Checkable operational constraints. |
+| P4.5 | Acquisition | Package install = commit + packages.txt + snapper. |
 
 ## P5 — Conversational installer
 
 **Goal.** TTY definition surface that compiles the first envelope from
-two questions, with recovery.
+two questions plus an operator login, with recovery.
 
 **Depends.** P4.
+
+**Must close.** Operator username: asked, or derived from purpose, and
+written to `answers.json`. Bots is **not** a first-envelope question.
 
 **Deliverables**
 
 - `installer/` — `aios-installer.service`, restart on-failure, TTY-bound
   on `tty1`.
-- Questions: purpose; work-runtime opt-in. Skipping is not a yes.
-  Default administer-only.
+- Questions: purpose; work-runtime opt-in; operator login name.
+  Skipping work-runtime is not a yes. Default administer-only.
 - Vetoes: never-do, networks, remotes.
-- Compiled envelope in plain language. Wait for explicit accept.
+- Compiled envelope in plain language, including the HI file. Wait for
+  explicit accept.
+- Operator login created on accept (L-13). No sudoers for enact.
 - Recovery directory: `answers.json`, `envelope.draft.md`, `snapper_pre`,
   `step`.
 - Reject → snapper rollback. No half-installed undeclared state.
@@ -584,15 +722,20 @@ two questions, with recovery.
 - Unset work-runtime bit → no work-runtime unit (HI-15).
 - Reject envelope → snapper undo; `packages.txt` matches pre-conversation.
 - First surface is TTY even if a GPU is present.
+- After accept, `tty1` autologin is the operator, not root, not
+  `aios-agent`.
+- Operator cannot `sudo enact`.
+- `answers.json` has no `bots` key, or `bots` is false.
 
-**Done.** A human can finish bootstrap in a VM by answering two questions
-and accepting an envelope.
+**Done.** A human can finish bootstrap in a VM by answering the questions
+and accepting an envelope. The box has someone to log in as.
 
 | WP | Title | Delivers |
 | --- | --- | --- |
-| P5.1 | TTY definition surface | Installer on getty; same wake contract as later clients. |
+| P5.1 | TTY definition surface | Installer on getty; same wake contract as later OS clients. |
 | P5.2 | Envelope compiler | Purpose + vetoes + work bit + HI file. |
 | P5.3 | Recovery snapshot | `bootstrap-in-progress` + resume on boot. |
+| P5.4 | Operator login | One non-root user, no enact sudo (L-13). |
 
 ## P6 — Privilege boundary
 
@@ -600,12 +743,18 @@ and accepting an envelope.
 
 **Depends.** P3, P4.
 
+**Must close.** Socket path, mode, owner (already L-05). Floor write set
+until P8.2 (work-runtime tree only).
+
 **Deliverables**
 
 - `intent/schema.json`. Socket unit as L-05. Agent is the only consumer.
-- Intent record as above. Not a shell.
+- Intent record as above. Not a shell. `source` includes
+  `work-runtime` and `work-runtime-bots`.
 - `aios-work.slice` plus the drop-in in L-06.
-- Refused intents return a structured reason on the definition surface.
+- Refused intents return a structured reason on the **OS** definition
+  surface.
+- `enact` is not executable by `aios-work`.
 
 **Oracles**
 
@@ -615,8 +764,10 @@ and accepting an envelope.
   with a reason.
 - Work uid cannot open `/srv/aios/envelope` for write.
 - Work uid cannot execute `/usr/lib/aios/bin/enact`.
+- Work uid cannot read the privileged provider key path.
 
-**Done.** Privilege is an OS property.
+**Done.** Privilege is an OS property. A future work runtime cannot
+accidentally become the OS agent.
 
 | WP | Title | Delivers |
 | --- | --- | --- |
@@ -627,9 +778,12 @@ and accepting an envelope.
 ## P7 — Operator client (TTY)
 
 **Goal.** Summon and notify exist. The first client is the TTY. No DE
-required.
+required. Summon names **which** surface (OS vs work).
 
 **Depends.** P5.
+
+**Must close.** How the operator names the surface (`aios` vs
+`aios work`, a flag, two commands). Graphical clients stay a v1 hole.
 
 **Deliverables**
 
@@ -637,98 +791,186 @@ required.
 - Failure payload: unit, journal slice, state commit, snapper id,
   matching clause.
 - OS intents: explain failed unit, pending envelope, last snapper,
-  open definition surface.
+  open the OS definition surface.
+- Work summon is refused if the envelope bit is off. If on, it opens
+  the work surface, not the OS agent (L-14).
 - Graphical clients (GNOME/KDE/Hyprland/tmux adapters) are later
-  envelope-driven synthesis, not MVP.
+  envelope-driven synthesis. Not in the payload. Not a hole if listed
+  in P11 known limitations.
 
 **Oracles**
 
 - Fail a dummy unit → notification carries the four fields and opens the
   OS-agent wake, not a coding CLI (HI-14).
-- Summon from the TTY opens the definition surface with envelope +
-  memory + skills.
+- Summon OS from the TTY opens envelope + memory + OS skills +
+  privileged tools.
+- Summon work with the bit off is refused with a reason.
 - No key chord is hard-coded into the OS contract.
+- `aios brake` stops and masks the proposer; the TTY stays.
 
 **Done.** The human can find OS work and be told when the machine fails,
-on a box with no desktop.
+on a box with no desktop, and cannot mix OS privilege into a work turn.
 
 | WP | Title | Delivers |
 | --- | --- | --- |
-| P7.1 | Summon | TTY command `aios` lists intents or attaches the definition surface. |
-| P7.2 | Notify | systemd failure → structured payload. |
+| P7.1 | Summon | TTY command that names OS vs work. |
+| P7.2 | Notify | systemd failure → structured payload → OS surface. |
 | P7.3 | Brake | `aios brake` stops and masks the proposer; installer stays. |
+| P7.4 | Surface split | Work summon is a different session (L-14). Bit-off refuses. |
 
-## P8 — Work-runtime synthesis
+## P8 — Work-runtime (every transferred surface)
 
-**Goal.** If and only if bootstrap recorded yes, synthesise the seed as
-an ordinary project.
+**Goal.** If and only if bootstrap recorded yes, the seed becomes a
+running user-space runtime whose **every** transferred surface has an
+oracle. Copying markdown is not done. A vague “agents work” is not done.
 
-**Depends.** P5, P6.
+**Depends.** P5, P6, P7.
+
+**Must close before any work unit is enabled**
+
+- Write set (L-15): which directories. Patch the slice drop-in in the
+  same commit. `~/src` vs `/srv/aios/src/work-runtime` may not disagree.
+- System unit vs user unit: pick one. Update
+  `seed/work-runtime/envelope/work-runtime.md` oracles to match. Do not
+  ship both.
+- How bots is asked: on the OS definition surface, after work-runtime
+  is already yes. Never as a third bootstrap question.
+
+This phase does **not** specify Python files. It specifies questions
+and oracles. An implementation that cannot fail an oracle below is
+incomplete, even if a daemon starts.
 
 **Deliverables**
 
 - Machine goal: `envelope.work-runtime=yes` ⇒
   `/srv/aios/src/work-runtime` exists as its own git repo, units in
   `aios-work.slice`.
-- Synthesis from `/srv/aios/seeds/work-runtime` (not GitHub).
-- Bots extension only if a further envelope clause says so.
-- Disable: envelope patch stops user units, leaves git history.
+- Synthesis from `/srv/aios/seeds/work-runtime` (not GitHub). Bootstrap
+  is not finished until that git exists.
+- Units named in this plan / envelope before they exist (HI-12).
+- Language lock L-01 holds for this tree.
+- Disable: envelope patch stops units, leaves git history.
 
-**Oracles**
+**Oracles (all required for P8 done)**
 
 - Bootstrap no: no work units (HI-15).
 - Bootstrap yes, network down: synthesis still completes (HI-17).
 - A work-agent pacman attempt still fails (P6).
+- Write succeeds inside the declared write set. Write outside it
+  without a recorded bridge approval fails. Privileged trees fail
+  always (L-15).
+- A work turn does not receive privileged tools. An OS turn does not
+  run in `aios-work.slice` (L-14).
+- Wake injects, in order: work `AGENTS.md`, skills catalog, tools from
+  `interfaces.md`, operational notes, envelope bit. No psyche.
+- Plain model text is not delivered. Delivery is an explicit send.
+  A question ends the turn.
+- Following a skill without reading its body this turn fails.
+- If a Connector exists for a service, it is used. A token pasted into
+  chat fails. Work uid cannot read the OS provider key (L-16).
+- A Worker has no user-visible voice. Its result is sent on the work
+  surface. It cannot enact.
+- A routine is cron **or** listeners, never both. It is a file in the
+  work store. Disable leaves git.
+- Bridge: shell/read/copy on a private path does not run until
+  approval. Copy is verbatim, not a mount.
+- Work store (notes, skills, routines, connectors) is git in the work
+  tree, not `/srv/aios/memory`.
+- Bots bit off by default. A roster entry is path + slice + skill, not
+  a self. VM define/start/stop/snapshot/destroy is an intent, not
+  `virsh` from the slice. Handoff payload is operational (paths,
+  oracles, last evidence).
 
-**Done.** Optional user-space agents exist only when asked, and cannot
-administer the machine.
+**Done.** Optional user-space agents exist only when asked, cannot
+administer the machine, and every transferred InsideMan-shaped surface
+is checkable. Skipping a surface because “we will add it later” is
+failing this phase.
 
-| WP | Title | Delivers |
+| WP | Title | Delivers (requirement, not code) |
 | --- | --- | --- |
-| P8.1 | Synthesis job | Seed → `src/work-runtime`, oracles, checker, merge. |
-| P8.2 | Work units | User units in `aios-work.slice`. |
-| P8.3 | Bots opt-in | Second envelope bit. Not implied by work-runtime yes. |
+| P8.1 | Synthesis job | Seed → live git, offline, machine goal, HI-15 / HI-17. |
+| P8.2 | Write set | L-15 declared. Slice matches. Envelope oracle matches unit type. |
+| P8.3 | Surface split | Work summon ≠ OS summon. Mixed-privilege chat fails. |
+| P8.4 | Wake and send | Inject order from the seed. Explicit send. Question ends the turn. |
+| P8.5 | Skills | Catalog. Read body this turn. OS skills are not a privilege back door. |
+| P8.6 | Connectors | MCP preferred. Secrets not in chat. Not the OS key. |
+| P8.7 | Workers | No voice. Result sent. Cannot enact. |
+| P8.8 | Routines | Cron xor listeners. Persisted. Disable leaves git. |
+| P8.9 | Operator bridge | Approval, verbatim copy, not a mount. |
+| P8.10 | Work provider | Own fixture/live. Work uid cannot read the privileged key. |
+| P8.11 | Work store | Notes/skills/routines/connectors as git in the work tree. |
+| P8.12 | Disable | Envelope patch stops units. Git remains. |
+| P8.13 | Bots | Second bit. Jobs not selves. VM work is an intent. Handoff schema. |
+| P8.14 | Fixture album | One scripted turn per surface above. Each is a vm-work-* oracle. |
 
 ## P9 — VM harness
 
-**Goal.** The workstation proves the installer in QEMU/KVM.
+**Goal.** The workstation proves the **whole** installer, including every
+P8 oracle, in QEMU/KVM. `vm-smoke` is not the product.
 
 **Depends.** P1–P5 for the first useful loop; P1–P8 for the full matrix.
+P11 requires the full matrix.
+
+**Must close.** Every coverage-table row has a named target below.
 
 **Deliverables**
 
 - `tests/vm/` — build payload, boot, drive installer via fixture or
   expect, snapshot, reconstruct.
-- Targets: `vm-smoke`, `vm-recover`, `vm-reconstruct-offline`,
-  `vm-privilege-deny`, `vm-work-yes`, `vm-work-no`.
 - Exit non-zero on oracle fail. No human as CI.
 - Workstation recipe below.
+- Fixture files under `tests/vm/fixtures/` for every P8.14 turn.
 
-**Oracles**
+**Oracles (full matrix)**
 
-- `vm-smoke`: boot → TTY installer → accept administer-only envelope →
-  agent+checker running.
+- `vm-smoke`: boot → TTY installer → accept administer-only →
+  agent+checker running. Operator login exists. No work units.
 - `vm-recover`: kill installer, reboot, resume.
 - `vm-reconstruct-offline`: rebuild with nic unplugged; envelope
   satisfied.
-- `vm-privilege-deny`: work slice cannot pacman.
-- `vm-work-no` / `vm-work-yes`: HI-15 both ways.
+- `vm-privilege-deny`: work slice cannot pacman, cannot enact, cannot
+  read the OS key.
+- `vm-brake`: brake masks the proposer; TTY stays.
+- `vm-notify`: dummy unit fail → four-field payload on OS surface.
+- `vm-work-no`: HI-15. Work summon refused.
+- `vm-work-yes`: synthesis from seeds with nic down. Live git exists.
+- `vm-work-write-set`: write in set succeeds; write outside without
+  approval fails.
+- `vm-work-surface`: work turn has no privileged tools; OS turn is not
+  in the slice.
+- `vm-work-wake`: inject order; explicit send; question ends the turn.
+- `vm-work-skill`: follow without reading body fails.
+- `vm-work-connector`: token-in-chat fails; OS key unreadable.
+- `vm-work-worker`: no voice; result sent; cannot enact.
+- `vm-work-routine`: cron xor listeners.
+- `vm-work-bridge`: private path blocked until approval.
+- `vm-bots-off`: work-runtime yes does not start bots units.
+- `vm-bots-job`: with bit on, a job is path+slice+skill; `virsh` from
+  the slice fails; a VM start is an intent.
+- `vm-secrets` / `vm-pii`: scans green on the running tree.
 
 **Done.** A failed invariant is a red test on the workstation, not a
-conversation.
+conversation. A skipped P8 surface is a red test, not a note.
 
 | WP | Title | Delivers |
 | --- | --- | --- |
 | P9.1 | QEMU wrapper | `tests/vm/run.sh` + `qemu.sh` with serial and snapshot. |
-| P9.2 | Smoke and recover | `vm-smoke`, `vm-recover`. |
-| P9.3 | Reconstruct and deny | offline reconstruct, privilege deny, work yes/no. |
+| P9.2 | OS loop | `vm-smoke`, `vm-recover`, `vm-brake`, `vm-notify`. |
+| P9.3 | Reconstruct and deny | `vm-reconstruct-offline`, `vm-privilege-deny`. |
+| P9.4 | Work matrix | `vm-work-*` and `vm-bots-*` for every P8 oracle. |
+| P9.5 | Scans | `vm-secrets`, `vm-pii`. |
 
 ## P10 — Bare metal
 
 **Goal.** The same payload, signed, on real hardware. After the VM
-matrix is green.
+matrix is green. Not a shortcut around P9 or P11.
 
-**Depends.** P9 green on the workstation.
+**Depends.** P9 full matrix green. P11 artifacts exist (the USB is the
+signed public image).
+
+**Must close.** LUKS: asked here or listed as a v1 hole. Secure Boot:
+asked here or listed as a v1 hole. Hardware-specific commits: how the
+checker marks them inapplicable.
 
 **Deliverables**
 
@@ -742,6 +984,8 @@ matrix is green.
 - Signature verifies on a second machine before boot.
 - First surface is still TTY.
 - Reconstruct of that metal box satisfies HI-09.
+- Operator login and brake still work.
+- Work-runtime bit is whatever the envelope still says.
 
 **Done.** A real machine is AIOS. This phase is last on purpose.
 
@@ -749,23 +993,75 @@ matrix is green.
 | --- | --- | --- |
 | P10.1 | Signed USB procedure | Human-checkable steps; no `curl \| sh`. |
 | P10.2 | Metal reconstruct | Skip hardware-specific commits; checker marks them. |
+| P10.3 | Metal questions | LUKS / Secure Boot either asked or named as v1 holes. |
+
+## P11 — Public release
+
+**Goal.** The installer is done. A stranger can verify, boot, and use
+it. This is the end of the plan, not a marketing pass after a demo.
+
+**Depends.** P9 full matrix green. P1.2 signing in place.
+
+**Must close.** Version scheme. Where the public key lives out of band.
+What the known-limitations list contains (must include every v1 hole
+row). Whether `main` on this GitHub repo is the tagged release (human
+merge).
+
+**Deliverables**
+
+- Versioned signed ISO + `hashes.txt` + minisign signature.
+- Operator README: verify, boot, two questions, operator login, brake,
+  what yes/no to work-runtime means, how to reconstruct.
+- `LICENSE`. Security reporting path (no secrets in the image).
+- Known limitations = the v1 holes table, plus anything P9 does not
+  pretend to cover.
+- Tag that rebuilds the same ISO from this repository.
+- Coverage table: every row has a green P9 target.
+
+**Oracles**
+
+- Out-of-band verify instructions work on a clean workstation.
+- `vm-smoke` through `vm-pii` all green against the **signed** ISO, not
+  an unsigned development image.
+- Image `secrets-scan` and `pii-scan` green.
+- README does not tell the operator to run `curl | sh`.
+- HI-12: no unnamed units in the image.
+- Known limitations mentions: no graphical client in the payload,
+  no in-place upgrade, bots not implied by work-runtime yes.
+
+**Done.** Public release. Metal may still be pending; the product is
+not. Shipping without P8.14 green is not a release.
+
+| WP | Title | Delivers |
+| --- | --- | --- |
+| P11.1 | Artifacts | Signed ISO, hashes, minisign, version. |
+| P11.2 | Operator docs | Verify, boot, questions, brake, reconstruct. |
+| P11.3 | Limits | v1 holes published. No silent “later.” |
+| P11.4 | Release matrix | Full P9 against the signed image. |
 
 ---
 
-## First useful loop (do this first)
+## First useful loop (OS only)
 
-The smallest path that is still AIOS:
+The smallest path that is still AIOS, not the product:
 
 1. P1 payload boots a TTY in QEMU.
 2. P2 skeleton + local seeds.
 3. P3 checker rejects a no-oracle patch.
 4. P4 fixture agent proposes a legal envelope-neutral change (e.g. set
    hostname from a compiled clause) and the checker merges it.
-5. P5 installer asks the two questions, recovers from a kill, accepts
-   administer-only.
+5. P5 installer asks the questions, recovers from a kill, accepts
+   administer-only, creates the operator login.
 6. P9 `vm-smoke` + `vm-recover` green.
 
-Only then: P6 denial, P7 notify, P8 work-runtime, full P9 matrix, P10.
+## Release loop (the plan is not done before this)
+
+Then, in order: P6 denial, P7 notify and surface split, P8 every
+transferred surface, P9 full matrix, P11 signed artifacts. P10 metal
+is extra proof after P11.
+
+Do not cut P8 to “seed copied, unit started.” That is how slop and
+drift get into a public image.
 
 ---
 
@@ -805,16 +1101,17 @@ qemu-system-x86_64 \
 
 | Spec | Phase |
 | --- | --- |
-| [bootstrap.md](bootstrap.md) | P1, P2, P5, P9, P10 |
-| [architecture.md](architecture.md) | P2, P3, P4, P6 |
+| [bootstrap.md](bootstrap.md) | P1, P2, P5, P9, P10, P11 |
+| [architecture.md](architecture.md) | P2, P3, P4, P6, L-14 |
 | [envelope/hard-invariants.md](envelope/hard-invariants.md) | P3 (oracles), all phases (constraints) |
 | [agent-loop.md](agent-loop.md) | P4 |
 | [desktop.md](desktop.md) | P7, P8 |
 | [git-standards.md](git-standards.md) | P3, P4 |
 | [arch-linux.md](arch-linux.md) | P1, P2 |
-| [software-acquisition.md](software-acquisition.md) | P4 (later synthesis) |
+| [software-acquisition.md](software-acquisition.md) | P4 |
+| [memory.md](memory.md) | P4 |
 | [seed/work-runtime](../seed/work-runtime/README.md) | P8 |
-| [seed/work-runtime-bots](../seed/work-runtime-bots/README.md) | P8.3 |
+| [seed/work-runtime-bots](../seed/work-runtime-bots/README.md) | P8.13 |
 
 ## What later code is not allowed to invent
 
@@ -825,3 +1122,11 @@ file (and, if needed, the envelope) first:
   default-on work runtime, a key chord as OS contract, a GitHub fetch
   during reconstruct, a model inside the checker, a `curl | sh` path,
   AUR as the default install, or a merge-to-main by the proposer.
+- Mixing OS and work turns in one session (L-14).
+- A work-slice write set that disagrees with the declared workspace
+  (L-15).
+- A work provider that shares the privileged agent's key (L-16).
+- Bots enabled by work-runtime yes.
+- Personhood, channels, identity stores, or a second envelope “the
+  fleet lives in.”
+- Calling P11 done while any P8.14 fixture is missing.

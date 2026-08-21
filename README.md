@@ -75,7 +75,7 @@ is proven useful.
 | [docs/git-standards.md](docs/git-standards.md) | Local git as the enactment law |
 | [docs/software-acquisition.md](docs/software-acquisition.md) | pacman, lockfiles, synthesis — the AI is the installer |
 | [docs/bootstrap.md](docs/bootstrap.md) | Trusted payload, TTY-first installer, recovery, seed materialisation |
-| [docs/implementation.md](docs/implementation.md) | Full installer plan: phases P0–P10, work packages, VM then metal |
+| [docs/implementation.md](docs/implementation.md) | Full installer plan: phases P0–P11, coverage, work-runtime oracles, public release |
 | [docs/grok-build.md](docs/grok-build.md) | Mapping the Grok Build sandbox contract onto a whole OS |
 | [docs/reference.md](docs/reference.md) | Glossary, invariant index, repository map |
 | [seed/work-runtime](seed/work-runtime/README.md) | Reconstructible application the OS agent synthesises if opted in |
@@ -173,9 +173,11 @@ through `docs/implementation`, PRs 1–5). The proposer does not merge to
 `main`. A human merges when ready.
 
 The installer plan is [`docs/implementation.md`](docs/implementation.md):
-phases P0–P10, locked implementer decisions, schemas, HI oracles, and a
-QEMU recipe. Code trees (`payload/`, `agent/`, `checker/`, …) are created
-when their phase starts. Until then this repository is the specification.
+phases P0–P11, coverage of every v1 surface, work-runtime oracles, and a
+public-release bar. Code trees (`payload/`, `agent/`, `checker/`, …) are
+created when their phase starts. Until then this repository is the
+specification. Finishing the plan means a signed image a stranger can
+boot, not a first-slice demo.
 
 ## License
 
