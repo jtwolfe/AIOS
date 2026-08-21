@@ -769,7 +769,7 @@ Only then: P6 denial, P7 notify, P8 work-runtime, full P9 matrix, P10.
 
 ---
 
-## Workstation recipe (Jim)
+## Workstation recipe
 
 Nested KVM is enough for P1–P9. Serial console, not a graphical viewer,
 so the TTY installer is scriptable.

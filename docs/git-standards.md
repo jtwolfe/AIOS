@@ -88,6 +88,9 @@ envelope says otherwise.
   should; history is a must.
 - **No secrets.** Tokens, keys, and `.env` files never enter git. The
   checker scans for them.
+- **No PII.** Personal names, emails, phone numbers, addresses, and
+  home-machine identifiers do not enter the tree. The operator is a role.
+  A workstation is generic.
 
 ```
 feat(state): install neovim and configured.d overlay
