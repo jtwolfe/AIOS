@@ -16,12 +16,16 @@ move.
    ordinary derived conditions.
 3. **Derived conditions** — compiled from human statements. Trackable back
    to the originating exchange.
-4. **Operational constraints** — generated during work. Short-lived. Must
-   not silently promote into invariants.
+4. **Operational constraints** — generated during work, including machine
+   goals. Short-lived relative to invariants. Must not silently promote.
 
 Each condition names: the predicate to run, the evidence it needs, the
 layer it belongs to, and the originating exchange in memory. Unattributed
 conditions are rejected by the checker.
+
+A proposal’s **oracles** are the predicates the checker will re-run for that
+change. Envelope conditions are the standing oracles of the machine. Same
+idea at two timescales.
 
 ## Checkable means mechanical
 
@@ -42,8 +46,8 @@ is not.
 ## Evolving the envelope
 
 The envelope is living. Derived conditions and operational constraints
-change as the relationship and the machine change. Evolution is itself
-under meta-rules:
+change as the machine and the human’s intent for it change. Evolution is
+itself under meta-rules:
 
 - Envelope patches are git diffs in `/srv/aios/envelope`, never in-memory
   edits.
