@@ -2,60 +2,135 @@
 
 **AI Operating System**
 
-A definitional, reconstructible system in which a privileged AI agent continuously shapes the machine under a living set of checkable acceptability conditions, while maintaining a natural, unbounded store of interactions with both the human and the system itself.
+A definitional, reconstructible system in which a privileged AI agent
+continuously shapes the machine under a living set of checkable acceptability
+conditions, while maintaining a natural, unbounded store of interactions with
+both the human and the system itself.
+
+The substrate is **Arch Linux**. Every line of code the agent writes, and every
+package it installs, is managed **locally in git** to professional development
+standards. Remotes (this GitHub repository included) are mirrors and
+collaboration — the local history is the source of truth.
 
 ## Core Idea
 
 An operating system that *is* the AI needs two things that normally conflict:
 
-1. **Room** — real freedom for the AI to reshape what the machine is, how resources are used, what abstractions exist, and how the system presents itself.
-2. **Control** — a reliable way to keep the system corrigible and to protect the human’s interests.
+1. **Room** — real freedom for the AI to reshape what the machine is, how
+   resources are used, what abstractions exist, and how the system presents
+   itself.
+2. **Control** — a reliable way to keep the system corrigible and to protect
+   the human’s interests.
 
-AIOS resolves this by making **checkable acceptability conditions** the primary control surface. The AI is free to propose and enact almost any change (new tools, interfaces, layouts, even limited self-modification) as long as the resulting state continues to satisfy the current conditions. Those conditions are themselves evolvable, but only under stricter meta-rules and with human authority over the highest layer.
+AIOS resolves this by making **checkable acceptability conditions** the
+primary control surface. The AI is free to propose and enact almost any
+change (new tools, interfaces, layouts, even limited self-modification) as
+long as the resulting state continues to satisfy the current conditions.
+Those conditions are themselves evolvable, but only under stricter meta-rules
+and with human authority over the highest layer.
 
-The system is definitional: the running machine is the current best concrete realization of the current rule set, maintained by the AI.
+Enactment is never an unrecorded live mutation. Passed work lands as a
+reviewable git history on the machine: a branch, tests, an independent
+checker, a merge. The running machine is the current best concrete
+realization of the current rule set.
+
+## The basic loop
+
+```
+talk → update conditions → propose → validate → act → remember
+```
+
+Grow complexity only when this loop is proven useful.
+
+## Specification
+
+| Document | Subject |
+| --- | --- |
+| [AGENTS.md](AGENTS.md) | Contract for any AI working on this project or on a running machine |
+| [docs/architecture.md](docs/architecture.md) | Two surfaces, proposer/checker split, on-disk layout |
+| [docs/arch-linux.md](docs/arch-linux.md) | Why Arch, pacman, btrfs/snapper, reconstructibility |
+| [docs/acceptability.md](docs/acceptability.md) | Envelope layers, mechanical checks, human authority |
+| [docs/memory.md](docs/memory.md) | Interaction store, skills, temporal validity |
+| [docs/agent-loop.md](docs/agent-loop.md) | Privileged agent execution loop (Grok Build practice) |
+| [docs/git-standards.md](docs/git-standards.md) | Local git as the enactment law |
+| [docs/software-acquisition.md](docs/software-acquisition.md) | pacman, lockfiles, synthesis — the AI is the installer |
+| [docs/bootstrap.md](docs/bootstrap.md) | Trusted payload and conversational installer |
+| [docs/grok-build.md](docs/grok-build.md) | Mapping the Grok Build sandbox contract onto a whole OS |
+| [docs/reference.md](docs/reference.md) | Glossary, hard invariants, repository map |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Human and agent contribution path |
 
 ## Key Elements
 
 ### Bootstrap
-A minimal trusted payload (USB or network) verifies against the target machine and drops the user into a conversational interface that *is* the installer. High-level intent expressed in natural language is turned into the initial set of acceptability conditions. The AI then constructs the concrete system inside that envelope.
+
+A minimal trusted payload (USB or network, `archiso`-shaped) verifies against
+the target machine and drops the user into a conversational interface that
+*is* the installer. High-level intent expressed in natural language is turned
+into the initial set of acceptability conditions. The AI then constructs the
+concrete system inside that envelope.
 
 ### Two Surfaces
-- **Conversational definition surface** — how the human injects intent, refines conditions, requests new capability, and inspects the current envelope.
-- **Background privileged agent** — a long-running service with deep observation and enactment rights. Every privileged action must pass mechanical validation against the current conditions before execution.
+
+- **Conversational definition surface** — how the human injects intent,
+  refines conditions, requests new capability, and inspects the current
+  envelope.
+- **Background privileged agent** — a long-running service with deep
+  observation and enactment rights. Every privileged action must pass
+  mechanical validation against the current conditions before execution.
 
 ### Rules Engine
+
 Acceptability conditions are layered:
+
 - Hard invariants (few, stable, mechanically enforceable)
 - Derived conditions (from human statements)
 - Operational constraints (generated during work)
 - Meta-rules (governing how the envelope itself may change)
 
-Validation is separated from proposal. The proposing intelligence and the checking mechanism share memory but are not the same process.
+Validation is separated from proposal. The proposing intelligence and the
+checking mechanism share memory but are not the same process.
 
 ### Interaction Memory
-A natural, unbounded store of interactions with both the user and the system. Design principles:
+
+A natural, unbounded store of interactions with both the user and the system.
+
 - Verbatim primary storage of significant exchanges and system actions
 - Layered access (cheap always-on core + scoped retrieval + deep search)
 - Temporal validity so decisions can be superseded without erasure
-- Skills as crystallized, reusable patterns born from successful interaction history
+- Skills as crystallized, reusable patterns born from successful interaction
+  history
 
-The history of the relationship and the history of the machine are the same store viewed from two angles.
+The history of the relationship and the history of the machine are the same
+store viewed from two angles.
 
 ### Software Acquisition
-There is no classical package manager as the primary path. New programs and capabilities are materialised by the AI itself: the agent synthesises, validates against current conditions, and installs. The install mechanism *is* the AI.
+
+There is no classical package manager as the primary path. New programs and
+capabilities are materialised by the AI itself: the agent synthesises,
+validates against current conditions, and installs. The install mechanism
+*is* the AI. Official Arch packages, project lockfiles, and synthesised
+programs are three paths; all of them become git history.
 
 ## Design Posture
 
-- Start from a thin classical substrate (Linux + modern isolation primitives). Do not rewrite the kernel on day one.
-- Prefer mechanical / independently checkable validation over “ask the model again.”
-- Keep the human as the ultimate source of the highest conditions and the emergency brake.
-- Grow complexity only when the basic loop (talk → update conditions → propose → validate → act → remember) is proven useful.
-- Treat the projects and techniques that inspired this thinking (intent languages, memory systems, agent skills, reconstructible systems) as reference points, not as binding architecture.
+- Start from a thin classical substrate (Arch Linux + modern isolation
+  primitives). Do not rewrite the kernel on day one.
+- Prefer mechanical / independently checkable validation over “ask the model
+  again.”
+- Keep the human as the ultimate source of the highest conditions and the
+  emergency brake.
+- Grow complexity only when the basic loop is proven useful.
+- Treat the projects and techniques that inspired this thinking (intent
+  languages, memory systems, agent skills, reconstructible systems, Grok
+  Build) as reference points, not as binding architecture.
+- Prefer editing existing files to creating new ones. Do not invent a
+  parallel set of rules.
 
 ## Status
 
-Early conceptual capture. This repository records the high-level intent. Concrete implementation, MVP scoping, and experiments will follow.
+Early conceptual capture. This repository records the high-level intent.
+Concrete implementation, MVP scoping, and experiments will follow — through
+the loop, not around it.
 
 ## License
 

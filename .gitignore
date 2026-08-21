@@ -1,0 +1,24 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+*~
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Local env — never commit secrets
+.env
+.env.*
+!.env.example
+
+# Tooling
+node_modules/
+dist/
+.cache/
+*.pyc
+__pycache__/
+.venv/
+target/
