@@ -43,11 +43,12 @@ is the current best concrete realization of the current rule set.
 | A person, presence, or psyche | The privileged agent is a systemd service that administers the machine. Privilege is not a personality. |
 | A new programming language | The definition surface is natural language. Control is mechanical predicates. Record is git. |
 | A memory product | History exists so the agent can keep *this* box reconstructible over time — not so it can reminisce. |
+| A teammate product by default | Work agents are optional software, opted into at bootstrap. They file intents. They are not a second self. |
 
 Inspired techniques (intent loops, memory systems, agent skills,
-reconstructible systems, Grok Build) are **reference points, not a binding
-architecture**. If wording starts sounding like a companion, a language, or a
-memory app, cut it.
+reconstructible systems, Grok Build, Grok Bot-class runtimes) are **reference
+points, not a binding architecture**. If wording starts sounding like a
+companion, a language, or a memory app, cut it.
 
 ## The basic loop
 
@@ -64,7 +65,8 @@ is proven useful.
 | Document | Subject |
 | --- | --- |
 | [AGENTS.md](AGENTS.md) | Contract for any AI working on this project or on a running machine |
-| [docs/architecture.md](docs/architecture.md) | Two surfaces, proposer/checker split, machine goals, on-disk layout |
+| [docs/architecture.md](docs/architecture.md) | Two surfaces, desktop client, proposer/checker, machine goals, layout |
+| [docs/desktop.md](docs/desktop.md) | Shell as client, failure handoff, optional work runtime |
 | [docs/arch-linux.md](docs/arch-linux.md) | Why Arch, pacman, btrfs/snapper, reconstructibility |
 | [docs/acceptability.md](docs/acceptability.md) | Envelope layers, mechanical checks, human authority |
 | [docs/memory.md](docs/memory.md) | Operational history, findability by concern, skills, temporal validity |
@@ -74,6 +76,7 @@ is proven useful.
 | [docs/bootstrap.md](docs/bootstrap.md) | Trusted payload and conversational installer |
 | [docs/grok-build.md](docs/grok-build.md) | Mapping the Grok Build sandbox contract onto a whole OS |
 | [docs/reference.md](docs/reference.md) | Glossary, hard invariants, repository map |
+| [seed/work-runtime](seed/work-runtime/README.md) | Reconstructible application the OS agent synthesises if opted in |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Human and agent contribution path |
 
 ## Key Elements
@@ -82,9 +85,9 @@ is proven useful.
 
 A minimal trusted payload (USB or network, `archiso`-shaped) verifies against
 the target machine and drops the user into a conversational interface that
-*is* the installer. High-level intent expressed in natural language is turned
-into the initial set of acceptability conditions. The AI then constructs the
-concrete system inside that envelope.
+*is* the installer. Two first-class questions: *what is this machine for?*,
+and *do you want to work with AI agents on this system?*. High-level intent
+becomes the first envelope. Skipping the work-runtime question is not a yes.
 
 ### Two Surfaces
 
@@ -95,6 +98,10 @@ concrete system inside that envelope.
   observation and enactment rights. Every privileged action must pass
   mechanical validation against the current conditions before execution. It
   is a systemd service, not a presence.
+
+The desktop is a *client* of those surfaces: launcher intents and failure
+toasts that open the definition surface already briefed. An optional work
+runtime, if synthesised from seed, is user-space software on the managed box.
 
 ### Rules Engine
 
@@ -130,7 +137,8 @@ capabilities are materialised by the AI itself: the agent synthesises,
 validates against current conditions, and installs. The install mechanism
 *is* the AI. Official Arch packages, project lockfiles, and synthesised
 programs are three paths; all of them become git history. Synthesised code is
-emitted only when its oracles pass.
+emitted only when its oracles pass. The work runtime, when opted in, is one
+such synthesis job.
 
 ## Design Posture
 
@@ -144,7 +152,9 @@ emitted only when its oracles pass.
 - Treat the projects and techniques that inspired this thinking as reference
   points, not as binding architecture. Transfer the closed loop (intent →
   oracles → verify → emit), not a language; transfer operational memory, not a
-  mind; transfer an always-on worker and machine goals, not a self.
+  mind; transfer an always-on worker and machine goals, not a self; transfer
+  wake, skills, connectors, workers, and an approval-gated bridge, not a
+  teammate product.
 - Prefer editing existing files to creating new ones. Do not invent a
   parallel set of rules.
 
