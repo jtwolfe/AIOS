@@ -16,7 +16,7 @@ not install a sprawling stack for a one-line ask.
 2. **Project dependency** — language lockfiles inside the project that
    needs them.
 3. **Synthesis** — the agent writes a program into `/srv/aios/src/<name>`,
-   with tests, and installs only after the checker passes.
+   with tests as oracles, and installs only after the checker passes.
 
 AUR is a variant of path one, with extra isolation. It is never the
 default when an official package exists.
@@ -54,7 +54,8 @@ dismiss.
 ## Synthesised programs
 
 When the agent writes a program, it is a professional software project from
-the first commit:
+the first commit. Code is emitted only when the oracles pass — the same
+closed loop as any other privileged change.
 
 - A repository of its own, with `.gitignore`, tests, and a README that a
   stranger could run.
@@ -68,6 +69,7 @@ the first commit:
 - Installation of a synthesised program is a unit file or a path entry
   recorded in the state repo, not a copy into `/usr/local` by hand.
 
-Inspired techniques (intent languages, memory systems, agent skills,
-reconstructible systems) are reference points, not a binding architecture.
-The envelope decides what is allowed to land.
+Inspired techniques (intent loops, memory systems, agent skills,
+reconstructible systems) are reference points, not a binding architecture
+and not a reason to ship a new language on the box. The envelope decides
+what is allowed to land.
