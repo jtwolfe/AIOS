@@ -107,3 +107,20 @@ does not let it cross.
 HTTP 200 is not verification. A green test run the proposer did not
 actually execute is not verification. The quality bar in Grok Build is
 adopted wholesale: if it cannot be shown, it is not done.
+
+## Work agents
+
+If bootstrap enabled the work runtime, user-space agents may run on the same
+machine. They share skills-and-wake machinery with the OS agent. They do not
+share privilege.
+
+- A work agent never writes units, the envelope, or the package list. It
+  files an intent the privileged proposer may enact.
+- Interactive GUI work is delegated to workers with no user voice. Results
+  are sent on the definition surface, not only acknowledged.
+- Shell, read, and copy onto private human paths wait for approval. A path
+  on one side is not visible on the other.
+
+**Rule.** The OS agent is not a work agent with extra rights. Work agents are
+software the OS agent maintains. Mixing the two is how privilege leaks into
+chat.
