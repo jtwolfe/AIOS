@@ -11,12 +11,12 @@ envelope before it is relied upon. Code that appears without a phase,
 a must-close, and an oracle is drift. Canonical invariants remain
 [docs/envelope/hard-invariants.md](envelope/hard-invariants.md).
 
-The complete spec currently lives at the tip of `docs/implementation`
-(this branch), stacking on `docs/precision`. The proposer does not merge
-to `main`. A human merges the docs stack (PRs 1–5) when ready.
+The complete spec lives on `main`. This file is the plan spine. The
+proposer does not merge implementation work to `main`. A human does.
 
 Workstation Grok Build: start from [HANDOVER.md](../HANDOVER.md). `/design`
 expands this file; it does not replace it.
+
 
 
 ## Goal
@@ -524,8 +524,8 @@ first.
 
 **Deliverables**
 
-- Complete spec on `docs/implementation` (this file plus the stacked
-  docs). `docs/precision` is the parent of this branch.
+- Complete spec on `main` (this file plus the rest of `docs/`).
+
 - This file: L-01…L-21, coverage table, HI oracle map, v1 holes.
 
 - Future code trees named above.
@@ -536,15 +536,17 @@ first.
 - `seed/work-runtime` and `seed/work-runtime-bots` exist.
 - README specification table names this plan as P0–P11.
 - Coverage table has a row for every transferred work-runtime surface.
-- README status is no longer “early conceptual capture” on this branch.
+- README status names `main` as the spec tip, not stacked PRs.
+
 
 **Done.** An implementer can clone the spec tip and know, for every
 surface, which phase accepts it and which oracle fails if they skip it.
 
 | WP | Title | Delivers |
 | --- | --- | --- |
-| P0.1 | Keep the spec tip current | `docs/implementation` remains complete until a human merges PRs 1–5. |
+| P0.1 | Keep the spec tip current | `main` remains the complete spec until implementation PRs land. |
 | P0.2 | Name the implementation trees | payload, agent, checker, installer, intent, operator-client, tests/vm. |
+
 | P0.3 | Lock implementer decisions | L-01…L-21. Code that contradicts them is a docs patch first. |
 
 | P0.4 | Coverage | Every v1 surface has a phase and an oracle in this file. |

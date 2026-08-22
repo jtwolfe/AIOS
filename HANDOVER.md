@@ -1,8 +1,9 @@
 # AIOS handover — for Grok Build `/design`
 
 This file is the briefing packet for the next agent. It is **not** a
-second specification. The specification is the docs listed below, at
-the tip of branch `docs/implementation`.
+second specification. The specification is the docs listed below, on
+`main`.
+
 
 If wording here disagrees with `docs/implementation.md` or
 `docs/envelope/hard-invariants.md`, those files win. Raise the
@@ -67,16 +68,15 @@ administer-only.
 ```
 git clone https://github.com/jtwolfe/AIOS.git
 cd AIOS
-git fetch origin
-git checkout docs/implementation
+git checkout main
 ```
 
-**Do not start from `main`.** `main` is the manifesto. The complete
-spec, seeds, and this handover live on `docs/implementation`.
+**Work from `main`.** That is the complete spec, seeds, and this
+handover.
 
-Proposer does not merge to `main`. Human merges the docs stack (PRs)
-when ready. Implementation work: `feat/<slug>` branched from
-`docs/implementation` (or from `main` only after that merge).
+Proposer does not merge to `main`. Human merges. Implementation work:
+`feat/<slug>` branched from `main`.
+
 
 No force-push of published history. No secrets. No PII (personal
 names, emails, phones, addresses, home-machine identifiers). The

@@ -10,7 +10,8 @@ Do not invent a parallel handbook in the prompt.
 
 Workstation implementers: read [HANDOVER.md](HANDOVER.md) first, then
 this file, then [docs/implementation.md](docs/implementation.md).
-Branch from `docs/implementation`, not `main`.
+Branch from `main`.
+
 
 
 Canonical hard invariants:

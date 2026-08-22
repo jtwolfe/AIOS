@@ -162,7 +162,9 @@ such synthesis job.
 - Treat the projects and techniques that inspired this thinking as reference
   points, not as binding architecture. Transfer the closed loop (intent →
   oracles → verify → emit), not a language; transfer operational memory, not a
-  mind; transfer an always-on worker and machine goals, not a self; transfer
+  mind; transfer an available, idle-by-default worker and machine goals, not a
+  self; transfer
+
   wake, skills, connectors, workers, and an approval-gated bridge, not a
   teammate product.
 - Prefer editing existing files to creating new ones. Do not invent a
@@ -170,16 +172,17 @@ such synthesis job.
 
 ## Status
 
-Specification is complete on the stacked docs branches (`docs/foundational`
-through `docs/implementation`, PRs 1–5). The proposer does not merge to
-`main`. A human merges when ready.
+Specification is complete on `main`. The installer plan is
+[`docs/implementation.md`](docs/implementation.md): phases P0–P11,
+coverage of every v1 surface, work-runtime oracles, and a public-release
+bar. Workstation implementers start from [`HANDOVER.md`](HANDOVER.md).
 
-The installer plan is [`docs/implementation.md`](docs/implementation.md):
-phases P0–P11, coverage of every v1 surface, work-runtime oracles, and a
-public-release bar. Code trees (`payload/`, `agent/`, `checker/`, …) are
-created when their phase starts. Until then this repository is the
-specification. Finishing the plan means a signed image a stranger can
-boot, not a first-slice demo.
+Code trees (`payload/`, `agent/`, `checker/`, …) are created when their
+phase starts. Until then this repository is the specification. Finishing
+the plan means a signed image a stranger can boot, not a first-slice
+demo. The proposer still does not merge implementation PRs to `main`;
+the human does.
+
 
 ## License
 
