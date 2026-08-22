@@ -94,7 +94,8 @@ Stable ids. A later GUI uses these names.
 | `recovery` | installer | Last step, snapper id, accepted answers | resume |
 | `intents` | OS | Pending OS work | open conversation on an intent |
 | `notify` | OS | Four-field failure payload | open OS conversation with payload |
-| `snapper` | OS | Last windows | inspect |
+| `snapper` | OS | Last windows, matching ESP generation | inspect, **rollback** (previous generation + matching `@`; not a live USB) |
+
 | `packages` | OS | `packages.txt` vs live | inspect |
 | `login` | OS, work | Device-code: URL + user code. Waiting. | start, cancel. Never paste a token |
 | `skills` | work | Catalog. Body must be read this turn to follow | open body, follow |

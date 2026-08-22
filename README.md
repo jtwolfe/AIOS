@@ -68,16 +68,17 @@ is proven useful.
 | [docs/envelope/hard-invariants.md](docs/envelope/hard-invariants.md) | Canonical hard invariants. The checker loads this file. |
 | [docs/architecture.md](docs/architecture.md) | Two surfaces, operator client, privilege boundary, proposer/checker, layout |
 | [docs/desktop.md](docs/desktop.md) | Operator client, TUI views, live Grok login, optional work runtime |
-| [docs/arch-linux.md](docs/arch-linux.md) | Why Arch, pacman, btrfs/snapper, reconstructibility |
+| [docs/arch-linux.md](docs/arch-linux.md) | Why Arch, pacman, boot seatbelts, no partial upgrades |
 | [docs/acceptability.md](docs/acceptability.md) | Envelope layers, mechanical checks, human authority |
 | [docs/memory.md](docs/memory.md) | Operational history, findability by concern, skills, temporal validity |
-| [docs/agent-loop.md](docs/agent-loop.md) | Privileged agent execution loop; intent and oracles |
+| [docs/agent-loop.md](docs/agent-loop.md) | Harness B: plan from docs, enact once, verify, stall |
 | [docs/git-standards.md](docs/git-standards.md) | Local git as the enactment law |
 | [docs/software-acquisition.md](docs/software-acquisition.md) | pacman, lockfiles, synthesis — the AI is the installer |
-| [docs/bootstrap.md](docs/bootstrap.md) | Trusted payload, TTY-first installer, recovery, seed materialisation |
+| [docs/bootstrap.md](docs/bootstrap.md) | Harness A: trusted payload, no `-Syu`, TTY-first installer |
 | [docs/implementation.md](docs/implementation.md) | Full installer plan: phases P0–P11, coverage, work-runtime oracles, public release |
 | [docs/grok-build.md](docs/grok-build.md) | Grok Build contract, device-code login, TUI mapping |
 | [docs/reference.md](docs/reference.md) | Glossary, invariant index, repository map |
+
 | [seed/work-runtime](seed/work-runtime/README.md) | Reconstructible application the OS agent synthesises if opted in |
 | [seed/work-runtime-bots](seed/work-runtime-bots/README.md) | Optional unprivileged fleet extension |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Human and agent contribution path |
@@ -100,10 +101,10 @@ reconstruction does not need a remote.
 - **Definition surface** — how the human injects intent, refines conditions,
   requests new capability, and inspects the current envelope. Natural
   language. No new language runtime. Same contract on GUI, TTY, tmux, or SSH.
-- **Background privileged agent** — an always-on worker with deep
-  observation and enactment rights. Every privileged action must pass
-  mechanical validation against the current conditions before execution. It
-  is a systemd service, not a presence.
+- **Background privileged agent** — always *available*, idle by default.
+  Deep observation and enactment rights. It proposes under Harness B. It
+  does not validate itself. It is a systemd service, not a presence.
+
 
 The **operator client** is a *client* of those surfaces: summon and notify.
 It is whatever the envelope installed. An optional work runtime, if

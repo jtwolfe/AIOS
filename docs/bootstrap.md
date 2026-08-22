@@ -21,10 +21,31 @@ therefore stays small, signed, and boring.
 - It does not install a desktop, a theme, or a development zoo. Those are
   envelope-driven later.
 
+**Harness A — payload / firstboot.** This harness is a scripted, version-pinned
+installer. The TUI asks questions. It does not invent disk physics or
+research Arch Wiki mid-wipe.
+
+- Disk layout includes the boot-artifact copy so snapper is not a lie
+  (L-07, L-19, [arch-linux.md](arch-linux.md)).
+- `linux` and `linux-lts` are in the payload package list from day one.
+- `snapper`, `snap-pac`, `kernel-modules-hook`, systemd-boot generations
+  are enabled **before** any conversation.
+- **No `pacman -Syu` during bootstrap.** The ISO’s package set *is* the
+  machine until envelope accept. Firstboot that syncs the world installs
+  “today’s broken mirror” onto a box you cannot yet reconstruct.
+- Fixture can finish the two questions. Live Grok login is after accept
+  (L-17).
+- Kill/resume from `bootstrap-in-progress` + `snapper_pre`. That is the
+  only recovery the human should need at this stage.
+
+If Harness A needs research, it is research done when building the ISO,
+not the box researching itself. Pin the bootstrap tarball.
+
 **Constraint.** The payload is allowed to be less free than the running
 system. Room comes after a checkable root of trust exists. The first
 definition surface is always a TTY — there is no graphical operator client
-yet.
+yet. Cleverness is Harness B, after accept.
+
 
 ## Conversational installer
 
@@ -86,6 +107,13 @@ toolchains, the shape of `/srv/aios`, an operator client if the envelope
 asks for one, and if opted in, synthesis of the work runtime under
 `/srv/aios/src/work-runtime`. Each proposal is a branch. The first day is
 not a blank cheque.
+
+That work is **Harness B** ([agent-loop.md](agent-loop.md)): plan from
+docs, execute once through `enact`, verify without the model. The
+installer TUI and the OS TUI share views (L-18). They do not share
+permission to mutate. Harness A must not run `-Syu`. Harness B must not
+fetch the wiki during `enact`.
+
 
 ## Reconstruct from history
 

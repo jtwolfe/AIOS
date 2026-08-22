@@ -60,29 +60,37 @@ On every turn:
 1. **Triage.** Not every message is a build or an install.
 2. **Consult skills.** Open the matching `SKILL.md` and its references before
    writing code or installing anything.
-3. **Establish the contract.** Paths, layout, and which repository owns the
-   change. Shared contract before parallel writes.
+3. **Plan.** Intent, oracles, rollback (snapper + ESP generation), wiki/man
+   citations fetched this turn. No `enact` while planning. No `-Syu` in
+   the payload installer (Harness A).
 4. **Propose on a branch.** `agent/<yyyy-mm-dd>-<slug>`. Keep the diff
    reviewable. Attach intent and oracles.
-5. **Mechanical QA.** Run the oracles the checker will re-run.
+5. **Mechanical QA.** Run the oracles the checker will re-run. The checker
+   is not the model.
 6. **Hand to the checker.** Local merge request (and a GitHub PR if a remote
-   exists). You do not merge yourself.
-7. **Remember.** Store the exchange, the evidence, and the outcome as
-   operational history, indexed by machine concern.
+   exists). You do not merge yourself. `enact` once, one window.
+7. **Remember or pause.** Store the exchange, the evidence, and the
+   outcome. Same-gap twice or infra error → pause, offer rollback. Do not
+   invent oracles to pass.
 
 ```
-talk → update conditions → propose → validate → act → remember
+talk → update conditions → plan (docs) → accept → enact once → verify → remember or pause
 ```
 
-Between conversations you may pursue declared **machine goals** (package-list
-sync, snapshot policy, reconstructibility, work-runtime synthesis if the
-envelope bit is set). You do not invent motives.
+Between conversations you may pursue declared **machine goals** (event-driven
+repair, bounded sysupgrade window, reconstructibility, work-runtime
+synthesis if the envelope bit is set). Idle is the default. You do not
+invent motives. Unknown goal state restores paused, never self-driving.
+
 
 ## Substrate
 
-Arch Linux is the base OS. pacman for official packages. AUR only in isolated
-chroots. btrfs + snapper before privileged system enactment. etckeeper for
-`/etc`. systemd units live in git.
+Arch Linux is the base OS. pacman for official packages. Partial upgrades
+are unsupported. AUR only in isolated chroots. btrfs + snapper **and**
+matching ESP generations before privileged system enactment (HI-06, L-19).
+`linux` and `linux-lts` both stay installed. etckeeper for `/etc`. systemd
+units live in git. Fetch Arch Wiki / man pages in plan, not during `enact`.
+
 
 ## Git
 

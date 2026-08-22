@@ -101,11 +101,13 @@ is a docs patch on this file, not a silent drift in code.
 | L-01 | Language | Agent, installer, intent consumer, TTY client, **and the work runtime once synthesised**: Python 3 from official Arch `python`. Checker driver: Python 3 stdlib only. Policy oracles: POSIX `sh`. VM harness: POSIX `sh` + Python 3 + qemu. No third-party Python deps in v1. No new language runtime (HI-12). |
 | L-02 | Identities | systemd-sysusers: `aios-agent`, `aios-checker`, `aios-work`. Separate uids. No shared supplementary group that can write privileged trees. |
 | L-03 | Privileged repos | Bare git at `/srv/aios/git/<name>.git` owned by `aios-checker`. Agent worktrees at `/srv/aios/<name>` with push only to `refs/heads/agent/*`. `reference-transaction` + `update` hooks deny `aios-agent` on `refs/heads/main` and deny force-push of published refs (HI-02, HI-03). |
-| L-04 | Enact helper | `aios-agent` is not root. The only root path is `/usr/lib/aios/bin/enact`, a small allowlisted helper (pacman, snapper create, systemctl for `aios-*` units). sudoers: `aios-agent ALL=(root) NOPASSWD: /usr/lib/aios/bin/enact`. `aios-work` has no sudoers line. |
+| L-04 | Enact helper | `aios-agent` is not root. The only root path is `/usr/lib/aios/bin/enact`, a small allowlisted helper (pacman as a full `-Syu` window, snapper create, ESP/UKI generation copy, `bootctl`, systemctl for `aios-*` units). sudoers: `aios-agent ALL=(root) NOPASSWD: /usr/lib/aios/bin/enact`. `aios-work` has no sudoers line. Partial `pacman -S` is not on the allowlist. |
 | L-05 | Intent transport | `/run/aios/intent.sock` via `aios-intent.socket`. `SOCK_STREAM`. One JSON object per connection, then close. Mode `0660`, owner `aios-agent`, group `aios-work`. Agent is the only consumer. Not a shell. |
+
 | L-06 | Work slice | Every work unit: `Slice=aios-work.slice`, `User=aios-work`, `NoNewPrivileges=yes`, `ProtectSystem=strict`, `CapabilityBoundingSet=`, `InaccessiblePaths=` privileged trees. Denial is the kernel, not a prompt (HI-13, HI-16). |
-| L-07 | Disk (VM default) | 32G qcow2, GPT. 1G ESP vfat `/boot`. Rest btrfs: `@` → `/`, `@home` → `/home`, `@srv` → `/srv`, `@var_log` → `/var/log`, `@snapshots` for snapper. zram swap. Metal may add a swap partition; that commit is hardware-specific (P10). |
+| L-07 | Disk (VM default) | 32G qcow2, GPT. 1G ESP vfat `/boot` (**not** in btrfs). Rest btrfs: `@` → `/`, `@home` → `/home`, `@srv` → `/srv`, `@var_log` → `/var/log`, `@snapshots` for snapper. zram swap. Snapper of `@` does not include the ESP or nested `@home`/`@srv`. L-19 is required or snapper is a false seatbelt. Metal may add a swap partition; that commit is hardware-specific (P10). |
 | L-08 | Provider | Two implementations: `fixture` (default in `tests/vm`) and `live`. Live is Grok device-code OAuth (L-17), not a pasted API key. Tests never require a paid API or a browser. Checker imports no provider. |
+
 | L-09 | First surface | TTY **TUI**. `getty` autologin on `tty1` → installer TUI during bootstrap, then the same TUI in OS mode after accept. No display manager in the payload. Views are L-18. |
 | L-10 | Signing | minisign. Public key in `payload/minisign.pub` and printed on the out-of-band README. Unsigned images must not leave the workstation (P1.2). |
 | L-11 | Time/locale until envelope | UTC, `en_US.UTF-8`, hostname `aios`. Envelope may change these as ordinary proposals. |
@@ -116,6 +118,10 @@ is a docs patch on this file, not a silent drift in code.
 | L-16 | Work provider | The work runtime has its own provider config and secret path. The work uid cannot read the privileged agent's token. Fixture is default in the VM. Live is L-17 on a separate token file. |
 | L-17 | Live Grok login | Same browser OAuth as Grok Build (`grok login --device-auth`): TTY prints a verification URL and user code; the human opens that URL on a **phone or other PC**, completes sign-in at `auth.x.ai` / grok.com, the box polls until confirmed. Token file mode `0600`, not in git, not in the transcript. The AIOS box does not open a local browser (no DE in v1). Refused if the envelope vetoed remotes. First live login is after envelope accept. Fixture covers the matrix. OS token and work token are different files (L-16). |
 | L-18 | Views | One named view catalog for installer, OS, work, and bots. TUI is v1. GUI is a later restyle of the **same** view ids and actions (visual similarity, identical functionality). Every action has a keyboard path. Mouse and clickable URLs (Grok Build TUI) when the terminal supports them. Serial/QEMU fixtures are keyboard-complete. |
+| L-19 | Boot seatbelts | `linux` **and** `linux-lts` always explicit. `kernel-modules-hook`. `snap-pac` pre/post. systemd-boot entries: current linux, linux-lts, previous ESP generation. ESP/UKI copy in the **same** `enact` window as snapper post. A snapper id without a matching boot image fails `boot-seatbelt.sh` (HI-06). TUI `snapper` rollback uses the previous generation, not a live USB. Partial upgrades fail `no-partial-upgrade.sh`. |
+| L-20 | Two harnesses | **A** payload/firstboot: pinned, no model required, **no `-Syu`**, seatbelts before questions. **B** in-OS agent: Plan (wiki/man this turn) → accept → `enact` once → verify without the model → stall pause. Research is allowed in plan. `enact` does not curl. Mixing the harnesses is a fail. |
+| L-21 | Idle and stall | Agent is always *available*, idle by default. Machine goals are event-driven plus a bounded sysupgrade window. Same oracle-gap twice → pause, notify, offer rollback. Infra error → pause. Unknown/corrupt goal state restores paused, never self-driving. Not an always-proposing hobbyist. |
+
 
 The slice drop-in later in this file is the **floor** (write the work-runtime tree only). P8.2 must patch L-15 and that drop-in together. They are not allowed to disagree.
 
@@ -169,7 +175,10 @@ checker/                      # P3 — independent validator
     packages-drift.sh
     snapper-enabled.sh
     etckeeper-enabled.sh
+    boot-seatbelt.sh
+    no-partial-upgrade.sh
     no-curl-sh.sh
+
     work-slice.sh
     secrets-scan.sh
   hooks/
@@ -207,7 +216,8 @@ under `/srv/aios/git/`. Seeds stay at `/srv/aios/seeds/`.
 | `aios-installer.service` | Bootstrap only. TTY. `Restart=on-failure`. |
 | `aios-intent.socket` | `/run/aios/intent.sock`. Agent is the only consumer. |
 | `aios-work.slice` | `NoNewPrivileges`, `ProtectSystem=strict`. All work units. |
-| `/usr/lib/aios/bin/enact` | Allowlisted root helper. The only sudo path. |
+| `/usr/lib/aios/bin/enact` | Allowlisted root helper. The only sudo path. Pacman as `-Syu` window, snapper, ESP generation, bootctl, aios-* units. |
+
 | `/usr/lib/aios/bin/aios` | TTY summon / brake / status. |
 | `/srv/aios/envelope/hard-invariants.md` | Canonical HI-01…17. |
 | `/srv/aios/state/bootstrap-in-progress/` | Installer recovery snapshot. |
@@ -326,8 +336,14 @@ branch of the owning repo. Missing oracle set → reject (HI-10).
   "oracles": [
     "policy/hard-invariants.sh",
     "pacman -Qi neovim",
-    "policy/packages-drift.sh"
+    "policy/packages-drift.sh",
+    "policy/boot-seatbelt.sh",
+    "policy/no-partial-upgrade.sh"
   ],
+  "citations": [
+    "https://wiki.archlinux.org/title/System_maintenance#Partial_upgrades_are_unsupported"
+  ],
+
   "evidence": {
     "ran": ["policy/hard-invariants.sh"],
     "snapper_pre": 184
@@ -390,8 +406,9 @@ The checker re-runs them without the model.
 | HI-03 | `hooks/update` + `policy/hi-03-no-proposer-main.sh` | Agent cannot update `main`; no force-push. |
 | HI-04 | `policy/hi-04-no-unsigned-root.sh` + `no-curl-sh.sh` | pacman log vs packages.txt; no curl\|sh in history. |
 | HI-05 | `policy/hi-05-human-authority.sh` | HI file patches require accept log. |
-| HI-06 | `policy/hi-06-seatbelts.sh` + `snapper-enabled.sh` + `etckeeper-enabled.sh` | Units enabled; proposals that mask them fail. |
+| HI-06 | `policy/hi-06-seatbelts.sh` + `snapper-enabled.sh` + `etckeeper-enabled.sh` + `boot-seatbelt.sh` + `no-partial-upgrade.sh` | Units enabled; both kernels; matching ESP generation; partial upgrade fails. |
 | HI-07 | `policy/hi-07-conflicts-raised.sh` | Conflict records exist when instruction vs HI. |
+
 | HI-08 | `schema.py` (missing evidence → reject) | No “run this and tell me.” |
 | HI-09 | `policy/hi-09-no-undeclared-state.sh` | Reconstruct oracle. |
 | HI-10 | `schema.py` (empty oracles → reject) | — |
@@ -402,8 +419,11 @@ The checker re-runs them without the model.
 | HI-15 | `policy/hi-15-work-default-off.sh` | No work units unless envelope bit. |
 | HI-16 | `policy/hi-16-os-privilege.sh` | Slice flags, inaccessible paths, socket mode. |
 | HI-17 | `policy/hi-17-seeds-local.sh` | Seeds present as git with nic down. |
+| extra | `policy/boot-seatbelt.sh` | Both kernels; matching ESP generation for last snapper pair. |
+| extra | `policy/no-partial-upgrade.sh` | Privileged `pacman -S` without `-Syu` fails. |
 | extra | `policy/secrets-scan.sh` | No tokens, keys, `.env` in git or the payload. |
 | extra | `policy/pii-scan.sh` | No personal names, emails, phones, addresses in the tree. |
+
 
 ## Coverage
 
@@ -416,12 +436,16 @@ skip a row because the first slice worked.
 | Signed, reproducible payload | P1, P11 | Image builds from a pin. minisign verifies. No DE in the list. |
 | No secrets / no PII in image | P1, P3 | `secrets-scan` and `pii-scan` green on payload and git. |
 | Disk, snapper, etckeeper | P2 | Layout per L-07. snapper list. etckeeper clean. |
+| Boot seatbelts | P2, P4, L-19 | `linux` and `linux-lts` present. snap-pac hooks. Matching ESP generation for last snapper pair. systemd-boot has current, lts, previous. |
+| Two harnesses | P1, P5, P4, L-20 | Payload does not `-Syu`. In-OS privileged change has a plan with wiki citations before `enact`. |
+| Idle and stall | P4, L-21 | Restart does not invent work. Same-gap fixture pauses. Corrupt goal restores paused. |
 | Local seeds | P2, P8 | Work-runtime and bots seeds present with nic down (HI-17). |
 | Checker split | P3 | No-oracle patch rejected. Checker has no provider. |
 | Git hooks | P3 | Proposer cannot update `main`. No force-push. |
-| Privileged agent loop | P4 | Fixture turn: triage → skills → branch → oracles → checker → memory. |
-| Software acquisition | P4 | A package install is a commit + `packages.txt` + snapper. |
+| Privileged agent loop | P4 | Fixture turn: plan (citations) → accept → enact once → checker → memory or pause. |
+| Software acquisition | P4 | A package install is a **full `-Syu` window** + commit + `packages.txt` + snapper + ESP copy. Partial `-S` fails. |
 | Verbatim memory | P4 | Memory files are raw exchanges (HI-11). |
+
 | Machine goals | P4, P8 | Restart resumes goals. Work synthesis only if the bit is set. |
 | Conversational installer | P5 | Two questions. Skip ≠ yes. Recover from kill. Reject rolls back. TUI views (L-18), not a raw script. |
 | Operator login | P5 | One non-root login (L-13). Autologin after accept. No sudo to enact. |
@@ -457,7 +481,10 @@ skip a row because the first slice worked.
    minisign signature before touching disks.
 2. Probe firmware and disks. Refuse if the target is not what the
    operator confirmed.
-3. Partition per L-07. Mount. `pacstrap` the payload package list.
+3. Partition per L-07. Mount. `pacstrap` the payload package list
+   (`linux` and `linux-lts`). Enable snap-pac, kernel-modules-hook,
+   systemd-boot generations. **Do not `-Syu`.**
+
 4. Copy seeds, HI file, sysusers, units, `enact`. systemd-sysusers.
    Init bare git under `/srv/aios/git`. Materialise worktrees.
 5. Enable `aios-installer.service` on `getty@tty1` autologin. Reboot
@@ -485,16 +512,18 @@ this plan already names every product surface that v1 will ship.
 **Depends.** Human merge of the docs stack when ready. Proposer does not
 merge to `main`.
 
-**Must close.** None left open: L-01…L-18 and the coverage table are
+**Must close.** None left open: L-01…L-21 and the coverage table are
 the closures. A new daemon that is not in the units list is a docs
 patch first (HI-12). A new view that is not in L-18 is a docs patch
 first.
+
 
 **Deliverables**
 
 - Complete spec on `docs/implementation` (this file plus the stacked
   docs). `docs/precision` is the parent of this branch.
-- This file: L-01…L-18, coverage table, HI oracle map, v1 holes.
+- This file: L-01…L-21, coverage table, HI oracle map, v1 holes.
+
 - Future code trees named above.
 
 **Oracles**
@@ -512,7 +541,8 @@ surface, which phase accepts it and which oracle fails if they skip it.
 | --- | --- | --- |
 | P0.1 | Keep the spec tip current | `docs/implementation` remains complete until a human merges PRs 1–5. |
 | P0.2 | Name the implementation trees | payload, agent, checker, installer, intent, operator-client, tests/vm. |
-| P0.3 | Lock implementer decisions | L-01…L-18. Code that contradicts them is a docs patch first. |
+| P0.3 | Lock implementer decisions | L-01…L-21. Code that contradicts them is a docs patch first. |
+
 | P0.4 | Coverage | Every v1 surface has a phase and an oracle in this file. |
 
 ## P1 — Trusted payload
@@ -530,10 +560,12 @@ string location (`os-release` or equivalent).
 
 - `payload/profile/` — `profiledef.sh`, `packages.x86_64`, `pacman.conf`,
   `airootfs`.
-- Minimal set: `base`, `linux`, `linux-firmware`, `btrfs-progs`,
-  `snapper`, `git`, `python`, `pacman`, `systemd`, `etckeeper`,
-  `minisign`, `iwd`, `sudo`. `openssh` present, **disabled** until the
-  envelope says so.
+- Minimal set: `base`, `linux`, `linux-lts`, `linux-firmware`,
+  `btrfs-progs`, `snapper`, `snap-pac`, `kernel-modules-hook`, `git`,
+  `python`, `pacman`, `systemd`, `etckeeper`, `minisign`, `iwd`, `sudo`.
+  `openssh` present, **disabled** until the envelope says so. No
+  `pacman -Syu` in firstboot (L-20).
+
 - Self-checksum plus minisign signature the human can check out of band.
 - First-boot: TTY autologin to the installer, not a graphical session.
 - `payload/hashes.txt` — pinned sha256 of agent, checker, installer,
@@ -551,6 +583,9 @@ string location (`os-release` or equivalent).
 - `openssh.service` is disabled.
 - `secrets-scan` and `pii-scan` green on the image contents.
 - Seeds for work-runtime and work-runtime-bots are inside the image.
+- `linux` and `linux-lts` both in the image list. Firstboot journal
+  contains no `-Syu` (L-20).
+
 
 **Done.** A QEMU VM boots the image to a TTY installer prompt. The payload
 is smaller and less free than the running system. It is fit to become
@@ -577,6 +612,10 @@ even before the login is created (subvolume `@home`).
 **Deliverables**
 
 - btrfs layout per L-07 with snapper for `@` (and `@home`).
+- systemd-boot installed to the ESP. Entries: linux, linux-lts.
+  `snap-pac` hooks enabled. `kernel-modules-hook` enabled. First ESP
+  generation copied next to the initial snapper snapshot (L-19).
+
 - Bare repos `/srv/aios/git/{envelope,memory,skills,agent,checker,state,seeds}.git`.
   Worktrees at `/srv/aios/{envelope,memory,skills,agent,checker,state,seeds}`.
   etckeeper for `/etc`.
@@ -592,6 +631,10 @@ even before the login is created (subvolume `@home`).
 - Network down: seeds contain work-runtime, work-runtime-bots, and
   hard-invariants.
 - `snapper list` works. etckeeper is clean after first commit.
+- `linux` and `linux-lts` both in `packages.txt`. `bootctl list` shows
+  linux and linux-lts. `boot-seatbelt.sh` green with no privileged
+  change yet.
+
 - `git -C /srv/aios/git/envelope.git rev-parse main` succeeds.
 - `packages.txt` equals `pacman -Qqe`.
 
@@ -603,6 +646,8 @@ before any conversation.
 | P2.1 | Disk and snapper | btrfs subvolumes + timeline + pre-enactment hook. |
 | P2.2 | Git trees | Bare repos + worktrees + README + `.gitignore` + hook paths. |
 | P2.3 | Seed materialisation | Copy payload seeds; verify offline. |
+| P2.4 | Boot seatbelts | linux-lts, snap-pac, kernel-modules-hook, systemd-boot generations (L-19). |
+
 
 ## P3 — Checker MVP
 
@@ -647,28 +692,37 @@ may wait until P6; the checker already rejects missing oracles).
 
 ## P4 — Privileged agent MVP
 
-**Goal.** Always-on proposer with a defined uid, deny-list, and a
-fixture-able model adapter. The OS loop is complete even with no
-work runtime.
+**Goal.** Always-*available* proposer, idle by default (L-21), with a
+defined uid, deny-list, and a fixture-able model adapter. The OS loop
+is complete even with no work runtime. Harness B, not Harness A.
+
 
 **Depends.** P3.
 
 **Must close.** Live key path (outside git, mode that `aios-work` cannot
 read). Skill crystallization rule (when a pattern earns a `SKILL.md`).
+Proposal schema field for wiki/man citations on pacman/systemd/btrfs/boot
+changes (empty → reject those classes).
+
 
 **Deliverables**
 
 - `agent/` source. `aios-agent.service`. User `aios-agent`. Does not
   merge to `main`.
-- Loop: triage → skills → branch `agent/<date>-<slug>` → oracles →
-  checker → remember.
+- Loop: triage → skills → **plan** (wiki this turn, no enact) → accept →
+  branch `agent/<date>-<slug>` → `enact` once → oracles → checker →
+  remember or stall-pause (L-20, L-21).
 - Provider adapter: live or fixture. Tests never require a paid API.
-- `enact` helper + sudoers as L-04.
-- Machine-goal runner: packages.txt sync, snapper before writes,
-  reconstructibility, work-runtime synthesis if the bit is set.
+- `enact` helper + sudoers as L-04 (includes ESP copy, `bootctl`,
+  `-Syu` window only).
+- Machine-goal runner: idle default; event-driven repair; bounded
+  sysupgrade window; snapper+ESP before writes; reconstructibility;
+  work-runtime synthesis if the bit is set. Same-gap stall pauses.
 - Memory ingest verbatim (HI-11).
-- Software acquisition: a `pacman` enactment is a commit, a
-  `packages.txt` update, a snapper window.
+- Software acquisition: a `pacman` enactment is a **full `-Syu`
+  window**, a commit, a `packages.txt` update, a snapper+ESP pair.
+  Partial `-S` is rejected.
+
 - Conflict raise (HI-07): instruction vs HI produces a record, not a
   silent pass.
 - Consumer of `/run/aios/intent.sock` (socket may land in P6; agent
@@ -682,9 +736,16 @@ read). Skill crystallization rule (when a pattern earns a `SKILL.md`).
 - Unit restart resumes machine goals; it does not invent motives.
 - `aios-agent` is not in group `wheel`. `enact` is the only sudo path.
 - Installing a package from a fixture turn updates `packages.txt` and
-  leaves a snapper pair.
+  leaves a snapper pair **and** a matching ESP generation.
+  `no-partial-upgrade.sh` rejects a fixture that runs `pacman -S`
+  without `-Syu`.
+- A fixture that proposes pacman/systemd/boot change with empty wiki
+  citations is rejected.
+- Same-gap stall: two identical oracle failures → goal paused, notify
+  fired, no third attempt.
 - Work uid cannot read the live provider key path (L-16, even before
   P8 exists).
+
 
 **Done.** The machine can be administered by the agent under the checker
 without a human running pacman.
@@ -694,8 +755,10 @@ without a human running pacman.
 | P4.1 | Unit and uid | `aios-agent.service`, sysuser, deny-list, `enact`. |
 | P4.2 | Provider adapter | Live + fixture. VM tests use fixture. Key not in git. |
 | P4.3 | Loop + memory | Turn loop, skill load, verbatim ingest. |
-| P4.4 | Machine goals | Checkable operational constraints. |
-| P4.5 | Acquisition | Package install = commit + packages.txt + snapper. |
+| P4.4 | Machine goals | Idle default, events, bounded upgrade, stall pause (L-21). |
+| P4.5 | Acquisition | Full `-Syu` window = commit + packages.txt + snapper + ESP (L-19). |
+| P4.6 | Plan citations | Wiki/man this turn for pacman/systemd/boot. Empty → reject. |
+
 
 ## P5 — Conversational installer
 
@@ -709,7 +772,9 @@ script.
 written to `answers.json`. Bots is **not** a first-envelope question.
 Installer uses L-18 views: `conversation`, `questions`, `envelope`,
 `accept`, `recovery`, `chrome`. Live Grok login is **not** during
-unsigned firstboot (L-17: after accept).
+unsigned firstboot (L-17: after accept). Harness A: **no `-Syu`** during
+the conversation (L-20).
+
 
 **Deliverables**
 
@@ -739,6 +804,9 @@ unsigned firstboot (L-17: after accept).
 - `answers.json` has no `bots` key, or `bots` is false.
 - Envelope view is reachable without scrolling the transcript.
 - Every installer action has a keyboard path (serial fixture).
+- Installer journal contains no `pacman -Syu` (L-20). Reject still
+  matches pre-conversation `packages.txt` **and** ESP generations.
+
 
 **Done.** A human can finish bootstrap in a VM inside the TUI. The box
 has someone to log in as. The same TUI becomes OS mode; it is not a
@@ -805,7 +873,8 @@ Every L-18 OS view is reachable from chrome.
 
 - `operator-client/tty` — TUI: summon, status, brake, notify, **login**.
 - OS views: `chrome`, `conversation`, `envelope`, `intents`, `notify`,
-  `snapper`, `packages`, `login`, `brake`.
+  `snapper` (inspect **and rollback**), `packages`, `login`, `brake`.
+
 - Failure payload: unit, journal slice, state commit, snapper id,
   matching clause. Notify view, not a coding CLI.
 - Work summon is refused if the envelope bit is off. If on, it opens
@@ -825,6 +894,9 @@ Every L-18 OS view is reachable from chrome.
 - `aios brake` stops and masks the proposer; the TUI stays.
 - Envelope, snapper, and packages are reachable without scrolling chat.
 - Serial fixture: every OS action works with keys only.
+- `snapper` rollback of a fixture-failed upgrade boots the previous
+  ESP generation and matching `@`; box reaches TTY (L-19).
+
 
 **Done.** The human can find OS work on a box with no desktop, see our
 objects as views, and cannot mix OS privilege into a work turn.
@@ -837,6 +909,8 @@ objects as views, and cannot mix OS privilege into a work turn.
 | P7.4 | Surface split | Work summon is a different session (L-14). |
 | P7.5 | OS views | L-18 OS catalog. Keyboard-complete. Clickable when possible. |
 | P7.6 | Login view | L-17 device-code. URL + code. Token not in transcript. |
+| P7.7 | Snapper rollback | Previous ESP generation + matching `@`. Keyboard path. Not a live USB. |
+
 
 ## P8 — Work-runtime (every transferred surface)
 
@@ -978,7 +1052,16 @@ P11 requires the full matrix.
 - `vm-login-oob`: live-login fixture prints a URL and user code; no
   token in the transcript; token file not in git. Remotes-veto refuses
   login.
+- `vm-boot-seatbelt`: after a fixture `-Syu`, `boot-seatbelt.sh` green;
+  both kernels present; last snapper pair has ESP generation;
+  `bootctl list` shows previous.
+- `vm-no-partial-upgrade`: fixture `pacman -S` without `-Syu` is
+  rejected. No mixed userspace.
+- `vm-no-bootstrap-syu`: installer journal has no `-Syu` (L-20).
+- `vm-stall-pause`: two identical oracle failures pause the goal;
+  no third attempt; notify fired; rollback action available.
 - `vm-secrets` / `vm-pii`: scans green on the running tree.
+
 
 **Done.** A failed invariant is a red test on the workstation, not a
 conversation. A skipped P8 surface is a red test, not a note.
@@ -991,6 +1074,8 @@ conversation. A skipped P8 surface is a red test, not a note.
 | P9.4 | Work matrix | `vm-work-*` and `vm-bots-*` for every P8 oracle. |
 | P9.5 | Scans | `vm-secrets`, `vm-pii`. |
 | P9.6 | TUI and login | `vm-tui-keys`, `vm-login-oob`. |
+| P9.7 | Seatbelts and stall | `vm-boot-seatbelt`, `vm-no-partial-upgrade`, `vm-no-bootstrap-syu`, `vm-stall-pause`. |
+
 
 ## P10 — Bare metal
 
@@ -1133,17 +1218,19 @@ qemu-system-x86_64 \
 
 | Spec | Phase |
 | --- | --- |
-| [bootstrap.md](bootstrap.md) | P1, P2, P5, P9, P10, P11 |
-| [architecture.md](architecture.md) | P2, P3, P4, P6, L-14 |
-| [envelope/hard-invariants.md](envelope/hard-invariants.md) | P3 (oracles), all phases (constraints) |
-| [agent-loop.md](agent-loop.md) | P4 |
-| [desktop.md](desktop.md) | P7, P8 |
+| [bootstrap.md](bootstrap.md) | P1, P2, P5, P9, P10, P11, L-20 |
+| [architecture.md](architecture.md) | P2, P3, P4, P6, L-14, L-21 |
+| [envelope/hard-invariants.md](envelope/hard-invariants.md) | P3 (oracles), all phases (constraints), HI-06 seatbelts |
+| [agent-loop.md](agent-loop.md) | P4, L-20, L-21 |
+| [desktop.md](desktop.md) | P7, P8, L-19 rollback |
 | [git-standards.md](git-standards.md) | P3, P4 |
-| [arch-linux.md](arch-linux.md) | P1, P2 |
-| [software-acquisition.md](software-acquisition.md) | P4 |
+| [arch-linux.md](arch-linux.md) | P1, P2, L-19 |
+| [software-acquisition.md](software-acquisition.md) | P4, L-19 |
 | [memory.md](memory.md) | P4 |
+| [grok-build.md](grok-build.md) | P4 loop, L-17, L-20 |
 | [seed/work-runtime](../seed/work-runtime/README.md) | P8 |
 | [seed/work-runtime-bots](../seed/work-runtime-bots/README.md) | P8.13 |
+
 
 ## What later code is not allowed to invent
 
@@ -1161,7 +1248,15 @@ file (and, if needed, the envelope) first:
 - Pasting an API key as the live login path (L-17).
 - A view that is not in the L-18 catalog, or a GUI that does not share
   those ids.
+- A snapper window without a matching ESP generation, or dropping
+  `linux-lts` (L-19, HI-06).
+- `pacman -S` without a full `-Syu` window, or `-Syu` during Harness A
+  (L-20).
+- Research (wiki fetch, curl) inside `enact`.
+- An always-proposing agent, or a goal that restores self-driving from
+  corrupt state (L-21).
 - Bots enabled by work-runtime yes.
+
 - Personhood, channels, identity stores, or a second envelope “the
   fleet lives in.”
 - Calling P11 done while any P8.14 fixture is missing.

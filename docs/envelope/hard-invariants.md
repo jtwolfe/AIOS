@@ -61,11 +61,12 @@ definition surface plus checker meta-rule pass.
 
 ## HI-06 · Seatbelts stay on
 
-**Statement.** Snapper, etckeeper, and the checker may not be disabled to make a change easier.
+**Statement.** Snapper, etckeeper, the checker, and the boot seatbelts may not be disabled to make a change easier. A snapper window that does not include a matching boot image is not a seatbelt. A partial upgrade is not a seatbelt.
 
-**Check.** Those units are enabled. A proposal that stops or masks them is rejected.
+**Check.** Those units are enabled. `linux` and `linux-lts` are both installed. The current snapper window has a corresponding ESP/UKI generation. A proposal that stops or masks any of these, or that performs a partial upgrade, is rejected.
 
-**Enforcer.** Checker policy; systemd; envelope.
+**Enforcer.** Checker policy (`hi-06-seatbelts.sh`, `boot-seatbelt.sh`, `no-partial-upgrade.sh`); systemd; envelope.
+
 
 ## HI-07 · Conflicts are raised
 

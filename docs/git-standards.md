@@ -47,7 +47,10 @@ always passing the checker.
    envelope.
 7. **Merge** — fast-forward or squash to `main`. Main stays
    reconstructible.
-8. **Snapshot** — btrfs snapper snapshot after privileged system enactment.
+8. **Snapshot** — btrfs snapper snapshot **and** matching ESP/UKI
+   generation after privileged system enactment (L-19). A snapper id
+   without a boot image is not a seatbelt.
+
 
 ```sh
 git switch main
@@ -106,12 +109,16 @@ habit.
 
 ## Installs are commits
 
-Software acquisition is not a side channel. A `pacman -S` that does not
-appear in `/srv/aios/state` is a broken enactment, even if the package
-works.
+Software acquisition is not a side channel. A pacman transaction that does
+not appear in `/srv/aios/state` is a broken enactment, even if the package
+works. Partial upgrades (`pacman -S` on a stale sync) are unsupported
+(HI-06).
+
 
 - Update `state/packages.txt` from `pacman -Qqe`.
-- Record the transaction reason, envelope clause, and snapper pre/post ids.
+- Record the transaction reason, envelope clause, snapper pre/post ids,
+  and the ESP generation id (L-19).
+
 - Language-level dependencies belong to the project repository as lockfiles,
   never as host-global installs.
 - AUR builds happen in a chroot. The resulting package, PKGBUILD pin, and

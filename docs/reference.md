@@ -15,7 +15,8 @@ expected to find. This page quotes the contract; it does not extend it.
 | Checker | An independent process that mechanically validates proposals. It cannot be talked into a pass. |
 | Intent | What was asked, or which envelope clause / machine goal drove a proposal. Natural language. Not a programming language. |
 | Oracle | A mechanical predicate the checker re-runs independently. No oracle set, no enactment. |
-| Machine goal | A durable, checkable objective about the machine (reconstructibility, package-list sync, snapshot policy, work-runtime synthesis if opted in). Not a motive. |
+| Machine goal | A durable, checkable objective about the machine. Idle default. Event-driven repair, bounded sysupgrade, reconstructibility, work-runtime synthesis if opted in. Not a motive. Stall pauses; never self-driving on corrupt state. |
+
 | Moment | One complete do-loop of work: context, tool calls, results, until stop. A logging grain, not an episode of a life. |
 | Definition surface | The conversational channel through which the human injects intent, inspects the envelope, and pulls the brake. v1 is the TUI; a later GUI uses the same view ids. |
 | Operator client | Whatever summons the definition surface and delivers system notifications. TUI first. GNOME, KDE, Hyprland later restyle the same views. No privilege. |
@@ -28,8 +29,13 @@ expected to find. This page quotes the contract; it does not extend it.
 | Operator bridge | Approval-gated shell, read, and copy onto the human’s private paths. A path on one side is not visible on the other. |
 | System-intent repository | `/srv/aios/state` — git history of privileged installs, unit files, and snapper ids. |
 | Skill | A crystallized, reusable playbook on disk (`SKILL.md`), born from successful work, loaded on demand. |
-| Enactment | A checker-passed merge plus, for system changes, a snapper window. Not a live mutation. |
+| Enactment | A checker-passed merge plus, for system changes, a snapper window **and** matching ESP generation. Not a live mutation. |
+| Boot seatbelts | `linux` + `linux-lts`, `kernel-modules-hook`, `snap-pac`, systemd-boot generations, ESP copy in the same enact window as snapper. Snapper-alone on L-07 is a false seatbelt (HI-06, L-19). |
+| Harness A | Payload / firstboot. Signed, pinned, no model required, no `-Syu`. Seatbelts before questions. |
+| Harness B | In-OS agent. Plan from wiki this turn, accept, `enact` once, verify without the model, stall pause. |
+| Stall | Same oracle-gap twice, or infra error → auto-pause. Offer TUI rollback. Do not loop `-Syu`. |
 | Emergency brake | A mechanical interlock: stop the proposer, freeze privileged writes. Human-only. |
+
 
 ## Hard invariants
 
@@ -49,7 +55,8 @@ Short index:
 3. HI-03 No commit to `main` by the proposer. No force-push of published history.
 4. HI-04 No `curl | sh`. No unsigned install as root. No `/usr` mutation outside pacman.
 5. HI-05 Hard invariants change only with explicit human authority.
-6. HI-06 Snapper, etckeeper, and the checker may not be disabled to make a change easier.
+6. HI-06 Seatbelts stay on: snapper, etckeeper, checker, boot seatbelts. A snapper window without a matching boot image is not a seatbelt. A partial upgrade is not a seatbelt.
+
 7. HI-07 Direct human instruction outranks skills and derived conditions, but not hard invariants; conflicts are raised.
 8. HI-08 The human is not used as CI. The agent verifies.
 9. HI-09 Undeclared live state is a defect.

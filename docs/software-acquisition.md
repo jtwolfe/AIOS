@@ -33,12 +33,24 @@ asked for those daemons.
   are pacman’s problem.
 - Removals are first-class. An unused privileged package is a proposed
   uninstall, not a souvenir.
-- Updates are a separate intent: one branch, one snapshot window, one
-  review. Not mixed with feature work.
+- Updates are a separate intent: one branch, one snapper **and ESP**
+  window, one review. Not mixed with feature work.
+- Arch only supports **full system upgrades**. A privileged `pacman -S`
+  (or `IgnorePkg` that leaves the rest moving) is a partial upgrade and
+  fails `no-partial-upgrade.sh` (HI-06). Install a package only as part
+  of a `-Syu` window, or refuse.
+- `linux` and `linux-lts` both stay explicit in `packages.txt`. Removing
+  either is rejected. A sysupgrade that does not leave linux-lts
+  bootable is rejected.
+- Bootstrap (Harness A) does **not** `-Syu`. The ISO’s package set is
+  the machine until envelope accept.
 
 The checker re-runs `pacman -Qqe` and diffs it against
 `state/packages.txt`. Drift is a failed check, not a warning the agent can
-dismiss.
+dismiss. It also re-runs `boot-seatbelt.sh`: both kernels present,
+modules dir for the running kernel exists, last snapper pair has a
+matching ESP generation.
+
 
 ## Project dependencies
 

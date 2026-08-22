@@ -48,9 +48,11 @@ same process.
   Natural language. No new language runtime. v1 transport is the TUI
   (named views in [docs/desktop.md](desktop.md)). A later GUI uses the
   same view ids. TTY, tmux, or SSH host that TUI — same contract.
-- **Background privileged agent** — an always-on worker with deep
-  observation and enactment rights. It proposes. It does not validate itself.
-  It is a systemd service, not a presence.
+- **Background privileged agent** — a systemd service, always *available*,
+  idle by default (L-21). Deep observation and enactment rights. It
+  proposes under Harness B. It does not validate itself. It is not a
+  presence and it is not always proposing.
+
 
 The definition surface is the human’s entire view, in the same sense that
 a Grok Build preview is the user’s entire view of a sandbox. The agent does
@@ -124,10 +126,19 @@ paths, then integrate.
 
 A small, durable set of objectives about the *machine* sits next to the
 envelope as operational constraints the background agent may pursue without
-a chat turn: keep the explicit package list in sync, snapper before
-privileged writes, never break reconstructibility, honour update windows,
-and — if the bootstrap bit is set — keep the work runtime synthesised from
-seed.
+a chat turn. Idle is the default. Allowed goals:
+
+- Event-driven: unit failed, HI failed, `packages.txt` drift.
+- Keep snapper **and** matching ESP generations (L-19). Never break
+  reconstructibility.
+- Honour a **bounded** update window (full `-Syu`, one intent, linux-lts
+  remains bootable). Not mixed with feature work.
+- If the bootstrap bit is set, keep the work runtime synthesised from
+  seed.
+
+Same-gap stall auto-pauses (L-21). Infra error pauses. Unknown goal
+state restores paused, never self-driving.
+
 
 These are not motives. They are not a self. They do not live in a separate
 identity store. If a goal cannot be checked, it is not a machine goal — it

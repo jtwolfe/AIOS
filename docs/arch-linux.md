@@ -58,11 +58,73 @@ Snapper is the seatbelt around privileged system enactment, not a parallel
 system-intent, under a systemd slice that caps CPU and memory. Promote to live
 only after the checker passes and a snapper window exists.
 
-**Constraint.** The agent must not disable snapper, etckeeper, or the
-checker in order to make a change easier. Those are hard invariants of the
-substrate.
+**Constraint.** The agent must not disable snapper, etckeeper, the
+checker, or the boot seatbelts in order to make a change easier
+(HI-06). Those are hard invariants of the substrate.
+
+## Flexibility, not Nix rigidity
+
+Arch is chosen for room: pacman, systemd, no vendor policy language.
+That is not a licence to `-Syu` whenever the model is bored, and it is
+not NixOS or Qubes. The substrate stays Arch. The *operational*
+contract is how the box stays unbricked without becoming a pure
+function or a VM per window.
+
+Official Arch policy is law for this substrate, not flavour:
+
+- **Partial upgrades are unsupported.** `pacman -S foo` on a stale sync
+  is how ABI breaks. The agent either sysupgrades in one snapper+ESP
+  window or refuses and says why. `IgnorePkg` of `linux` while the rest
+  moves is the same class of brick.
+- Updates are **one intent**, never mixed with “install a thing”
+  ([software-acquisition.md](software-acquisition.md)).
+- The Arch Wiki and man pages are the checkable corpus. For any change
+  that touches pacman, systemd, mkinitcpio, fstab, or the bootloader,
+  the plan fetches those pages **this turn**. Model memory of how
+  snapper rollback works is not evidence.
+
+## The brick this disk layout actually has
+
+The VM default (L-07) is ESP vfat `/boot`, rest btrfs (`@`, `@home`,
+`@srv`, `@var_log`, `@snapshots`). Snapper snapshots `@`. It does
+**not** snapshot the ESP. Nested `@home` / `@srv` are **not** in a
+snapshot of `@`. Arch Wiki is explicit on both points.
+
+So the failure that kills a “human does not administer” box is:
+
+1. A transaction writes a new kernel/initramfs to the ESP.
+2. `@` is later rolled back (or left mixed) without a matching boot
+   image, or the ESP moves without `@`.
+3. Next reboot: kernel/modules mismatch. Snapper from a running system
+   cannot help. Wiki’s rollback path is a live USB.
+
+Snapper-alone on this layout is a **false seatbelt**. HI-06 treats that
+as a failed check.
+
+## Boot seatbelts (L-19)
+
+Keep Arch. Steal operational habits, not a new OS:
+
+| Habit | Why it stops bricks |
+| --- | --- |
+| Always `linux` **and** `linux-lts` in `packages.txt` | Firmware boot menu still has a last-known-good kernel |
+| `kernel-modules-hook` | `-Syu` does not instantly kill the live kernel |
+| `snap-pac` pre/post on every pacman transaction | A pre image exists even if the agent dies mid-transaction |
+| systemd-boot generations: current `linux`, `linux-lts`, previous ESP copy | Rollback is a boot menu + TUI action, not a live USB |
+| ESP/UKI copy in the **same** `enact` window as snapper post | A snapper id that has no matching boot image fails `boot-seatbelt.sh` |
+| Full `-Syu` only, one intent | Partial upgrades are unsupported |
+
+Bootloader for v1 is **systemd-boot** (in `systemd`; no extra package,
+no AUR Limine helper, no grub-btrfs). Entries: current linux,
+linux-lts, previous generation. The TUI `snapper` view’s rollback
+action selects that previous generation and the matching `@` snapshot.
+
+Untrusted builds still run in nspawn/chroots. The emergency brake is
+still stop-proposer plus freeze `enact`. Rollback of a failed upgrade
+is the TUI action, not a conversation about `btrfs subvolume`.
 
 ## Tracking the live system
+
 
 Reconstructibility is a daily property, not a disaster-recovery brochure.
 
