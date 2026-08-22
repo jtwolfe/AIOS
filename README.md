@@ -64,6 +64,7 @@ is proven useful.
 
 | Document | Subject |
 | --- | --- |
+| [HANDOVER.md](HANDOVER.md) | Briefing packet for Grok Build `/design` / `/execute`. Start here on a workstation. |
 | [AGENTS.md](AGENTS.md) | Contract for any AI working on this project or on a running machine |
 | [docs/envelope/hard-invariants.md](docs/envelope/hard-invariants.md) | Canonical hard invariants. The checker loads this file. |
 | [docs/architecture.md](docs/architecture.md) | Two surfaces, operator client, privilege boundary, proposer/checker, layout |
@@ -78,10 +79,10 @@ is proven useful.
 | [docs/implementation.md](docs/implementation.md) | Full installer plan: phases P0–P11, coverage, work-runtime oracles, public release |
 | [docs/grok-build.md](docs/grok-build.md) | Grok Build contract, device-code login, TUI mapping |
 | [docs/reference.md](docs/reference.md) | Glossary, invariant index, repository map |
-
 | [seed/work-runtime](seed/work-runtime/README.md) | Reconstructible application the OS agent synthesises if opted in |
 | [seed/work-runtime-bots](seed/work-runtime-bots/README.md) | Optional unprivileged fleet extension |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Human and agent contribution path |
+
 
 ## Key Elements
 

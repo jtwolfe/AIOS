@@ -8,6 +8,11 @@ conflicts are raised, not swallowed.
 
 Do not invent a parallel handbook in the prompt.
 
+Workstation implementers: read [HANDOVER.md](HANDOVER.md) first, then
+this file, then [docs/implementation.md](docs/implementation.md).
+Branch from `docs/implementation`, not `main`.
+
+
 Canonical hard invariants:
 [docs/envelope/hard-invariants.md](docs/envelope/hard-invariants.md).
 Quote them by id. Do not extend them in this file.

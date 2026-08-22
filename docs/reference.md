@@ -78,7 +78,9 @@ Each entry’s check and enforcer live in the canonical file.
 ```
 README.md
 AGENTS.md
+HANDOVER.md
 CONTRIBUTING.md
+
 docs/architecture.md
 docs/arch-linux.md
 docs/acceptability.md

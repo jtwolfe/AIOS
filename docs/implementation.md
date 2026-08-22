@@ -15,6 +15,10 @@ The complete spec currently lives at the tip of `docs/implementation`
 (this branch), stacking on `docs/precision`. The proposer does not merge
 to `main`. A human merges the docs stack (PRs 1–5) when ready.
 
+Workstation Grok Build: start from [HANDOVER.md](../HANDOVER.md). `/design`
+expands this file; it does not replace it.
+
+
 ## Goal
 
 A stranger can download a **signed** `archiso` payload, verify it out of
@@ -1218,7 +1222,9 @@ qemu-system-x86_64 \
 
 | Spec | Phase |
 | --- | --- |
+| [HANDOVER.md](../HANDOVER.md) | Workstation `/design` briefing. Not a second spec. |
 | [bootstrap.md](bootstrap.md) | P1, P2, P5, P9, P10, P11, L-20 |
+
 | [architecture.md](architecture.md) | P2, P3, P4, P6, L-14, L-21 |
 | [envelope/hard-invariants.md](envelope/hard-invariants.md) | P3 (oracles), all phases (constraints), HI-06 seatbelts |
 | [agent-loop.md](agent-loop.md) | P4, L-20, L-21 |
