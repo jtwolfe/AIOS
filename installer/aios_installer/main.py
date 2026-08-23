@@ -321,6 +321,8 @@ class Session:
         self.note_text = "envelope accepted (HI-05, L-13)"
         self.view = "accept"
         self.persist()
+        # L-09: installer owns the console until accept, then it must leave.
+        return "leave"
 
     def reject(self):
         if self._frozen():
@@ -402,7 +404,7 @@ class Session:
         arg = parts[1] if len(parts) > 1 else ""
 
         if cmd in ("quit", "exit"):
-            if self.piped:
+            if self.piped or self.decision == "accepted":
                 return "quit"
             self.note_text = "installer stays up until accept (L-09)"
             return None
@@ -416,8 +418,7 @@ class Session:
             return None
 
         if self.view in ("envelope", "accept") and cmd in ("y", "yes"):
-            self.accept()
-            return None
+            return self.accept()
         if self.view in ("envelope", "accept") and cmd in ("n", "no"):
             self.reject()
             return None
@@ -453,8 +454,7 @@ class Session:
             self.answer(arg)
             return None
         if cmd == "accept":
-            self.accept()
-            return None
+            return self.accept()
         if cmd == "reject":
             self.reject()
             return None
@@ -485,6 +485,10 @@ def serve(stdin=None, stdout=None):
         try:
             _line(stdout, "views: %s" % " ".join(VIEWS))
             sess.render(stdout)
+            # TTY restart after persist: leave so getty can own the console (L-09).
+            if sess.decision == "accepted" and not sess.piped and not sess.writes_frozen:
+                login.handoff_console()
+                return 0
         except BrokenPipeError:
             if sess.piped:
                 return 0
@@ -509,8 +513,23 @@ def serve(stdin=None, stdout=None):
                         stdin = nxt
                     continue
                 result = sess.handle(raw)
+                if result == "leave":
+                    try:
+                        sess.render(stdout)
+                    except BrokenPipeError:
+                        if sess.piped:
+                            return 0
+                    login.handoff_console()
+                    return 0
                 if result == "quit":
-                    if sess.piped:
+                    if sess.piped or sess.decision == "accepted":
+                        if sess.decision == "accepted":
+                            try:
+                                sess.render(stdout)
+                            except BrokenPipeError:
+                                if sess.piped:
+                                    return 0
+                            login.handoff_console()
                         return 0
                     sess.note_text = "installer stays up until accept (L-09)"
                 sess.render(stdout)

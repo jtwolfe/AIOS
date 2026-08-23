@@ -17,7 +17,8 @@ as `operator`.
 
 On accept of a valid login (L-13): create that one non-root human
 login; do not give it enact sudo (`aios-agent` already has the only
-enact sudoers). After accept, tty1 and serial-getty@ttyS0 autologin
+enact sudoers). After accept, the TUI leaves so `Restart=on-failure`
+does not take the console back; tty1 and serial-getty@ttyS0 autologin
 that operator (same consoles as the installer). Disable/mask
 `aios-installer.service` in the **target**, not on the live ISO.
 Service uids stay nologin. Root is recovery only. Production uses
@@ -39,7 +40,8 @@ rollback is offered, not enacted here (HI-09).
 python3 installer/aios_installer/main.py
 ```
 
-Piped stdin is a fixture. On a TTY, Ctrl+D and Ctrl+C keep the console;
-the unit does not exit into getty (L-09). Brake writes
+Piped stdin is a fixture. On a TTY, Ctrl+D and Ctrl+C keep the console
+until accept; after accept the unit leaves so operator getty can own
+it (L-09). Brake writes
 `/srv/aios/state/brake` (or `AIOS_BRAKE`) and keeps this process up
 (L-12). The brake flag is on only if that file exists.

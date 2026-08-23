@@ -33,6 +33,18 @@ grep -q 'useradd' "${LOGIN}" || fail "login.py must use useradd on the installed
 grep -q 'L-13' "${MAIN}" || fail "main.py must quote L-13 on accept"
 grep -q 'asked' "${ROOT}/installer/README.md" \
   || fail "README must close operator username as asked"
+grep -q 'return "leave"' "${MAIN}" || fail "accept must leave the TUI (L-09)"
+grep -q 'handoff_console' "${MAIN}" || fail "main.py must hand off the console after accept"
+grep -q 'handoff_console' "${LOGIN}" || fail "login.py must hand off the console after accept"
+grep -q -- '--no-block' "${LOGIN}" \
+  || fail "getty start must be --no-block (Conflicts deadlock)"
+grep -q '/usr/lib/aios/bin/installer' "${LOGIN}" \
+  || fail "dest_root must use installer binary, not the wants link"
+grep -q '/etc/aios' "${LOGIN}" \
+  || fail "dest_root must use /etc/aios so mask cannot un-accept"
+if grep -q 'usr/lib/systemd/system/aios-installer' "${LOGIN}"; then
+  fail "must not move the installer unit under /usr (HI-04)"
+fi
 
 _prov=$(grep -RIn -- 'provider' "${ROOT}/installer" 2>/dev/null | head -n 1 || true)
 [ -z "${_prov}" ] || fail "installer names provider (HI-02): ${_prov}"
@@ -155,6 +167,15 @@ expect_alice() {
   if [ -e "${_tree}/etc/systemd/system/multi-user.target.wants/aios-installer.service" ]; then
     fail "${_label}: installer must not stay enabled after accept (L-09)"
   fi
+  _mask="${_tree}/etc/systemd/system/aios-installer.service"
+  [ -L "${_mask}" ] || fail "${_label}: installer unit must be masked"
+  [ "$(readlink "${_mask}")" = /dev/null ] \
+    || fail "${_label}: installer mask must be /dev/null"
+  [ ! -e "${_tree}/usr/lib/systemd/system/aios-installer.service" ] \
+    || fail "${_label}: must not copy the unit under /usr (HI-04)"
+  [ -f "${_tree}/etc/aios/operator" ] || fail "${_label}: missing /etc/aios/operator"
+  grep -qx 'alice' "${_tree}/etc/aios/operator" \
+    || fail "${_label}: /etc/aios/operator must be alice"
   if [ -d "${_tree}/etc/sudoers.d" ] || [ -f "${_tree}/etc/sudoers" ]; then
     if grep -R -E '^[[:space:]]*alice[[:space:]]' \
       "${_tree}/etc/sudoers" "${_tree}/etc/sudoers.d" 2>/dev/null | grep -q .
@@ -357,6 +378,62 @@ grep -E '^bob:' "${ROOT_TWO}/etc/passwd" >/dev/null \
   || fail "second-human: clobbered bob"
 grep -E '^alice:' "${ROOT_TWO}/etc/passwd" >/dev/null \
   && fail "second-human: created alice beside bob" || true
+
+# Existing nologin/system account is not the operator (L-13).
+BOOT_DAE="${TMP}/boot-daemon"
+ROOT_DAE="${TMP}/root-daemon"
+mkdir -p "${ROOT_DAE}/etc"
+printf '%s\n' 'daemon:x:2:2:daemon:/:/usr/bin/nologin' > "${ROOT_DAE}/etc/passwd"
+printf '%s\n' 'daemon:!:0:0:99999:7:::' > "${ROOT_DAE}/etc/shadow"
+printf '%s\n' 'daemon:x:2:' > "${ROOT_DAE}/etc/group"
+_dae=$(
+  drive "${BOOT_DAE}" "${ROOT_DAE}" \
+    'answer operator daemon' \
+    'view envelope' \
+    'accept' \
+    'quit'
+) || true
+expect_refused "service-uid" "${_dae}" "${ROOT_DAE}"
+grep -E '^daemon:[^:]*:2:' "${ROOT_DAE}/etc/passwd" >/dev/null \
+  || fail "service-uid: clobbered daemon"
+_tty_dae="${ROOT_DAE}/etc/systemd/system/getty@tty1.service.d/autologin.conf"
+if [ -f "${_tty_dae}" ] && grep -q -- '--autologin daemon' "${_tty_dae}"; then
+  fail "service-uid: must not autologin daemon"
+fi
+
+# Passwd-only human record must be completed (shadow/group/home).
+BOOT_INC="${TMP}/boot-inc"
+ROOT_INC="${TMP}/root-inc"
+mkdir -p "${ROOT_INC}/etc"
+printf '%s\n' 'alice:x:1000:1000::/home/alice:/bin/bash' > "${ROOT_INC}/etc/passwd"
+_inc=$(
+  drive "${BOOT_INC}" "${ROOT_INC}" \
+    'answer operator alice' \
+    'view envelope' \
+    'accept' \
+    'quit'
+) || true
+if printf '%s\n' "${_inc}" | grep -q Traceback; then
+  fail "incomplete-user traceback: ${_inc}"
+fi
+printf '%s\n' "${_inc}" | grep -q 'envelope-decision: accepted' \
+  || fail "incomplete-user accept missing: ${_inc}"
+expect_alice "incomplete-user" "${ROOT_INC}" "${BOOT_INC}"
+
+# archisobasedir=arch is a live ISO (not a bare token).
+python3 - "${ROOT}/installer/aios_installer" <<'PY' || fail "cmdline archisobasedir= was not matched"
+import sys
+
+sys.path.insert(0, sys.argv[1])
+import login
+
+if not login.cmdline_is_archiso("BOOT archisobasedir=arch quiet"):
+    raise SystemExit("archisobasedir=arch must count as live ISO")
+if not login.cmdline_is_archiso("archisobasedir"):
+    raise SystemExit("bare archisobasedir must count as live ISO")
+if login.cmdline_is_archiso("BOOT quiet"):
+    raise SystemExit("unrelated cmdline must not count as live ISO")
+PY
 
 # Host-safety: AIOS_ROOT unset must not mutate the workstation.
 HOST_PASS="${TMP}/host.passwd"

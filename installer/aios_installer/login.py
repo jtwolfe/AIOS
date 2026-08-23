@@ -47,9 +47,17 @@ def enact(name):
         os.makedirs(root, exist_ok=True)
     _create_user(root, name)
     _write_autologin(root, name)
+    _write_operator_stamp(root, name)
     _release_console(root)
-    if not _has_user(root, name):
+    if not _operator_complete(root, name):
         raise OSError("operator login missing after create (L-13)")
+
+
+def cmdline_is_archiso(text):
+    for tok in (text or "").split():
+        if tok == "archisobasedir" or tok.startswith("archisobasedir="):
+            return True
+    return False
 
 
 def _is_live_iso():
@@ -57,15 +65,17 @@ def _is_live_iso():
         return True
     try:
         with open("/proc/cmdline", encoding="utf-8", errors="replace") as fh:
-            return "archisobasedir" in fh.read().split()
+            return cmdline_is_archiso(fh.read())
     except OSError:
         return False
 
 
 def _is_disk_installer():
-    # firstboot enables the unit only inside the installed chroot (L-09).
-    wants = "/etc/systemd/system/multi-user.target.wants/aios-installer.service"
-    return os.path.lexists(wants)
+    # Accept deletes the wants link. firstboot's /etc/aios and the
+    # installer binary survive mask; live ISO is refused separately.
+    if not os.path.isfile("/usr/lib/aios/bin/installer"):
+        return False
+    return os.path.isdir("/etc/aios")
 
 
 def _under(root, *parts):
@@ -135,9 +145,16 @@ def _colon_records(path):
     return rows
 
 
-def _has_user(root, name):
+def _passwd_record(root, name):
     path = _under(root, "etc", "passwd")
     for fields in _colon_records(path):
+        if fields[0] == name:
+            return fields
+    return None
+
+
+def _named_in(root, *rel, name=""):
+    for fields in _colon_records(_under(root, *rel)):
         if fields[0] == name:
             return True
     return False
@@ -155,25 +172,50 @@ def _uid_of(fields):
     return uid
 
 
+def _gid_of(fields):
+    if len(fields) < 4:
+        return None
+    try:
+        gid = int(fields[3])
+    except ValueError:
+        return None
+    if isinstance(gid, bool):
+        return None
+    return gid
+
+
 def _is_human_shell(shell):
     base = os.path.basename((shell or "").rstrip("/"))
     return base not in NOLOGIN
 
 
+def _is_human_login(fields):
+    uid = _uid_of(fields)
+    if uid is None or uid < UID_MIN or uid >= 65534:
+        return False
+    shell = fields[6] if len(fields) > 6 else ""
+    return _is_human_shell(shell)
+
+
+def _operator_complete(root, name):
+    fields = _passwd_record(root, name)
+    if fields is None or not _is_human_login(fields):
+        return False
+    if not _named_in(root, "etc", "shadow", name=name):
+        return False
+    if not _named_in(root, "etc", "group", name=name):
+        return False
+    return os.path.isdir(_under(root, "home", name))
+
+
 def _other_humans(root, name):
-    path = _under(root, "etc", "passwd")
     found = []
-    for fields in _colon_records(path):
+    for fields in _colon_records(_under(root, "etc", "passwd")):
         login = fields[0]
         if login == name:
             continue
-        uid = _uid_of(fields)
-        if uid is None or uid < UID_MIN or uid >= 65534:
-            continue
-        shell = fields[6] if len(fields) > 6 else ""
-        if not _is_human_shell(shell):
-            continue
-        found.append(login)
+        if _is_human_login(fields):
+            found.append(login)
     return found
 
 
@@ -237,9 +279,18 @@ def _ensure_line(path, name, line, mode):
 
 
 def _write_user_records(root, name):
-    used = _used_ids(root, 2)
-    uid = _next_id(used)
-    gid = uid
+    fields = _passwd_record(root, name)
+    if fields is None:
+        used = _used_ids(root, 2)
+        uid = _next_id(used)
+        gid = uid
+    else:
+        uid = _uid_of(fields)
+        gid = _gid_of(fields)
+        if uid is None:
+            uid = _next_id(_used_ids(root, 2))
+        if gid is None:
+            gid = uid
     days = int(time.time() // 86400)
     passwd = _under(root, "etc", "passwd")
     shadow = _under(root, "etc", "shadow")
@@ -257,6 +308,13 @@ def _write_user_records(root, name):
         group_mode = stat_mode(group, group_mode)
     if os.path.isfile(gshadow):
         gshadow_mode = stat_mode(gshadow, gshadow_mode)
+    if fields is None:
+        _ensure_line(
+            passwd,
+            name,
+            "%s:x:%s:%s::/home/%s:/bin/bash" % (name, uid, gid, name),
+            passwd_mode,
+        )
     _ensure_line(
         group,
         name,
@@ -270,12 +328,6 @@ def _write_user_records(root, name):
         gshadow_mode,
     )
     _ensure_line(
-        passwd,
-        name,
-        "%s:x:%s:%s::/home/%s:/bin/bash" % (name, uid, gid, name),
-        passwd_mode,
-    )
-    _ensure_line(
         shadow,
         name,
         "%s:!:%s:0:99999:7:::" % (name, days),
@@ -287,6 +339,12 @@ def _write_user_records(root, name):
         os.chmod(home, 0o700)
     except OSError:
         pass
+    # Oracles are unprivileged under AIOS_ROOT; production owns the home.
+    if root == "/" and not os.environ.get("AIOS_ROOT"):
+        try:
+            os.chown(home, uid, gid)
+        except OSError:
+            pass
 
 
 def stat_mode(path, default):
@@ -301,17 +359,19 @@ def stat_perm(mode):
 
 
 def _create_user(root, name):
-    if _has_user(root, name):
+    existing = _passwd_record(root, name)
+    if existing is not None and not _is_human_login(existing):
+        raise ValueError("operator login is a service uid (L-13)")
+    if _operator_complete(root, name):
         return
     others = _other_humans(root, name)
     if others:
         raise ValueError("one operator login (L-13)")
     # Production on the installed disk uses useradd. Oracles write the
     # same files so a missing useradd cannot mutate the workstation.
-    if root == "/" and not os.environ.get("AIOS_ROOT"):
+    if existing is None and root == "/" and not os.environ.get("AIOS_ROOT"):
         _useradd("/", name)
-    if not _has_user(root, name):
-        _write_user_records(root, name)
+    _write_user_records(root, name)
 
 
 def _write_autologin(root, name):
@@ -361,8 +421,8 @@ def _is_devnull_mask(path):
 
 
 def _mask_installer(root):
+    # Mask only under /etc. Do not move the unit into /usr (HI-04).
     etc_unit = _under(root, "etc", "systemd", "system", "aios-installer.service")
-    vendor = _under(root, "usr", "lib", "systemd", "system", "aios-installer.service")
     wants = _under(
         root,
         "etc",
@@ -372,12 +432,6 @@ def _mask_installer(root):
         "aios-installer.service",
     )
     _unlink_if_exists(wants)
-    if os.path.isfile(etc_unit) and not os.path.islink(etc_unit):
-        os.makedirs(os.path.dirname(vendor), exist_ok=True)
-        if not os.path.isfile(vendor):
-            os.replace(etc_unit, vendor)
-        else:
-            os.unlink(etc_unit)
     if os.path.lexists(etc_unit) and not _is_devnull_mask(etc_unit):
         _unlink_if_exists(etc_unit)
     if not os.path.lexists(etc_unit):
@@ -401,6 +455,11 @@ def _enable_getty(root, instance, template):
     os.symlink(target, link)
 
 
+def _write_operator_stamp(root, name):
+    # Survives installer mask. Not the L-20 human-accept stamp.
+    _atomic_write(_under(root, "etc", "aios", "operator"), name, mode=0o644)
+
+
 def _release_console(root):
     # After accept the installer must not own the console (L-09, L-13).
     _mask_installer(root)
@@ -413,6 +472,38 @@ def _release_console(root):
         _systemctl(["mask", "aios-installer.service"])
         _systemctl(["unmask", "getty@tty1.service", "serial-getty@ttyS0.service"])
         _systemctl(["enable", "getty@tty1.service", "serial-getty@ttyS0.service"])
+
+
+def handoff_console():
+    # Start operator gettys this boot. --no-block: Conflicts would wait
+    # for this process to exit.
+    if os.environ.get("AIOS_ROOT"):
+        return
+    if _writes_frozen():
+        return
+    if _is_live_iso():
+        return
+    if not _is_disk_installer():
+        return
+    _systemctl(["daemon-reload"])
+    exe = shutil.which("systemctl")
+    if not exe:
+        return
+    try:
+        subprocess.Popen(
+            [
+                exe,
+                "start",
+                "--no-block",
+                "getty@tty1.service",
+                "serial-getty@ttyS0.service",
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return
 
 
 def _systemctl(args):
