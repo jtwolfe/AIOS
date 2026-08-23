@@ -15,7 +15,9 @@ The complete spec lives on `main`. This file is the plan spine. The
 proposer does not merge implementation work to `main`. A human does.
 
 Workstation Grok Build: start from [HANDOVER.md](../HANDOVER.md). `/design`
-expands this file; it does not replace it.
+expands this file; it does not replace it. The implementable expansion
+is [docs/design-plan.md](design-plan.md) (phases P0–P11, locks, oracles,
+first `/execute` = P1 only).
 
 
 
@@ -125,6 +127,8 @@ is a docs patch on this file, not a silent drift in code.
 | L-19 | Boot seatbelts | `linux` **and** `linux-lts` always explicit. `kernel-modules-hook`. `snap-pac` pre/post. systemd-boot entries: current linux, linux-lts, previous ESP generation. ESP/UKI copy in the **same** `enact` window as snapper post. A snapper id without a matching boot image fails `boot-seatbelt.sh` (HI-06). TUI `snapper` rollback uses the previous generation, not a live USB. Partial upgrades fail `no-partial-upgrade.sh`. |
 | L-20 | Two harnesses | **A** payload/firstboot: pinned, no model required, **no `-Syu`**, seatbelts before questions. **B** in-OS agent: Plan (wiki/man this turn) → accept → `enact` once → verify without the model → stall pause. Research is allowed in plan. `enact` does not curl. Mixing the harnesses is a fail. |
 | L-21 | Idle and stall | Agent is always *available*, idle by default. Machine goals are event-driven plus a bounded sysupgrade window. Same oracle-gap twice → pause, notify, offer rollback. Infra error → pause. Unknown/corrupt goal state restores paused, never self-driving. Not an always-proposing hobbyist. |
+| L-22 | Version string | `/etc/os-release` (and `/usr/lib/os-release`). `NAME` / `VERSION` / `VERSION_ID`. firstboot writes it; P1 and P11 oracles grep it. Human lock 2026-08-23. |
+| L-23 | Work-runtime unit | systemd **user** unit, system-managed at `/usr/lib/systemd/user/`. Work runtime and bots: user units only. Do not ship system units for them. OS agent, checker, and installer stay **system** units. Human lock 2026-08-23. |
 
 
 The slice drop-in later in this file is the **floor** (write the work-runtime tree only). P8.2 must patch L-15 and that drop-in together. They are not allowed to disagree.
@@ -145,12 +149,14 @@ payload/                      # P1 — archiso profile
   profile/
     profiledef.sh
     packages.x86_64
+    pacstrap.x86_64           # installed set; firstboot + oracles
     pacman.conf
     bootstrap_packages.x86_64
     airootfs/
       etc/systemd/system/
       etc/systemd/system-generators/
       usr/lib/aios/bin/{firstboot,enact,installer,agent,checker,aios}
+      usr/lib/aios/pacstrap.x86_64  # installed set on the ISO; hashed
       usr/lib/sysusers.d/aios.conf
       usr/lib/tmpfiles.d/aios.conf
       srv/aios/seeds/           # copied in, already git
@@ -200,7 +206,12 @@ tests/
   vm/
     run.sh
     qemu.sh
-    fixtures/{smoke.json,recover.json,work-yes.json,work-no.json}
+    fixtures/{smoke.json,recover.json,work-yes.json,work-no.json,
+              work-write-set.json,work-surface.json,work-wake.json,
+              work-skill.json,work-connector.json,work-worker.json,
+              work-routine.json,work-bridge.json,work-store.json,
+              work-provider.json,work-disable.json,bots-off.json,
+              bots-job.json}
     oracles/
   oracles/                    # extra CI wrappers around checker policies
 seed/                         # already in this repository
@@ -219,7 +230,9 @@ under `/srv/aios/git/`. Seeds stay at `/srv/aios/seeds/`.
 | `aios-checker.service` | Independent validator. User `aios-checker`. No model client. |
 | `aios-installer.service` | Bootstrap only. TTY. `Restart=on-failure`. |
 | `aios-intent.socket` | `/run/aios/intent.sock`. Agent is the only consumer. |
-| `aios-work.slice` | `NoNewPrivileges`, `ProtectSystem=strict`. All work units. |
+| `aios-work.slice` | `NoNewPrivileges`, `ProtectSystem=strict`. Resource cap for work (system slice). |
+| `aios-work-runtime.service` | Optional work runtime. **User** unit at `/usr/lib/systemd/user/`. Instance of uid `aios-work`. Not a system unit (L-23). |
+| `aios-work-runtime-bots.service` | Optional bots extension. **User** unit at `/usr/lib/systemd/user/`. Same `aios-work` instance. |
 | `/usr/lib/aios/bin/enact` | Allowlisted root helper. The only sudo path. Pacman as `-Syu` window, snapper, ESP generation, bootctl, aios-* units. |
 
 | `/usr/lib/aios/bin/aios` | TTY summon / brake / status. |
@@ -559,8 +572,9 @@ then installs a minimal Arch with no desktop.
 **Depends.** P0.
 
 **Must close.** What is pinned (bootstrap tarball URL + sha256). What
-the image must not contain (secrets, PII, DEs, enabled sshd). Version
-string location (`os-release` or equivalent).
+the image must not contain (secrets, PII, DEs, enabled sshd).
+Unattended disk confirmation path for `tests/vm` (TTY confirm remains
+the product path). Version string is **locked** (L-22): `/etc/os-release`.
 
 **Deliverables**
 
@@ -568,9 +582,14 @@ string location (`os-release` or equivalent).
   `airootfs`.
 - Minimal set: `base`, `linux`, `linux-lts`, `linux-firmware`,
   `btrfs-progs`, `snapper`, `snap-pac`, `kernel-modules-hook`, `git`,
-  `python`, `pacman`, `systemd`, `etckeeper`, `minisign`, `iwd`, `sudo`.
+  `python`, `pacman`, `systemd`, `etckeeper`, `minisign`, `iwd`, `sudo`,
+  `zram-generator`.
   `openssh` present, **disabled** until the envelope says so. No
-  `pacman -Syu` in firstboot (L-20).
+  `pacman -Syu` in firstboot (L-20). Installed set is
+  `payload/profile/pacstrap.x86_64` (firstboot and oracles read that
+  file). On the ISO the same bytes live at
+  `/usr/lib/aios/pacstrap.x86_64` and are hashed in `hashes.txt`.
+  ESP generation copy is `cp -a` (no `rsync` package).
 
 - Self-checksum plus minisign signature the human can check out of band.
 - First-boot: TTY autologin to the installer, not a graphical session.
@@ -589,8 +608,8 @@ string location (`os-release` or equivalent).
 - `openssh.service` is disabled.
 - `secrets-scan` and `pii-scan` green on the image contents.
 - Seeds for work-runtime and work-runtime-bots are inside the image.
-- `linux` and `linux-lts` both in the image list. Firstboot journal
-  contains no `-Syu` (L-20).
+- `linux` and `linux-lts` both in `pacstrap.x86_64` and the image list.
+  Firstboot log and `/var/log/pacman.log` contain no `-Syu` (L-20).
 
 
 **Done.** A QEMU VM boots the image to a TTY installer prompt. The payload
@@ -879,7 +898,9 @@ Every L-18 OS view is reachable from chrome.
 
 - `operator-client/tty` — TUI: summon, status, brake, notify, **login**.
 - OS views: `chrome`, `conversation`, `envelope`, `intents`, `notify`,
-  `snapper` (inspect **and rollback**), `packages`, `login`, `brake`.
+  `snapper` (inspect **and rollback**), `packages`, `login`.
+  `brake` is a **chrome action** (L-12 / L-18 required action), not a
+  view id.
 
 - Failure payload: unit, journal slice, state commit, snapper id,
   matching clause. Notify view, not a coding CLI.
@@ -930,9 +951,9 @@ oracle. Copying markdown is not done. A vague “agents work” is not done.
 
 - Write set (L-15): which directories. Patch the slice drop-in in the
   same commit. `~/src` vs `/srv/aios/src/work-runtime` may not disagree.
-- System unit vs user unit: pick one. Update
-  `seed/work-runtime/envelope/work-runtime.md` oracles to match. Do not
-  ship both.
+- Unit type is **locked** (L-23): user unit at
+  `/usr/lib/systemd/user/`. Do not ship a system unit for work-runtime
+  or bots. Seed oracles match that path.
 - How bots is asked: on the OS definition surface, after work-runtime
   is already yes. Never as a third bootstrap question.
 
@@ -1037,7 +1058,7 @@ P11 requires the full matrix.
 - `vm-privilege-deny`: work slice cannot pacman, cannot enact, cannot
   read the OS key.
 - `vm-brake`: brake masks the proposer; TTY stays.
-- `vm-notify`: dummy unit fail → four-field payload on OS surface.
+- `vm-notify`: dummy unit fail → HI-14 payload on OS surface.
 - `vm-work-no`: HI-15. Work summon refused.
 - `vm-work-yes`: synthesis from seeds with nic down. Live git exists.
 - `vm-work-write-set`: write in set succeeds; write outside without
@@ -1063,9 +1084,12 @@ P11 requires the full matrix.
   `bootctl list` shows previous.
 - `vm-no-partial-upgrade`: fixture `pacman -S` without `-Syu` is
   rejected. No mixed userspace.
-- `vm-no-bootstrap-syu`: installer journal has no `-Syu` (L-20).
+- `vm-no-bootstrap-syu`: firstboot log, target `/var/log/pacman.log`,
+  and installer journal have no `-Syu` (L-20).
 - `vm-stall-pause`: two identical oracle failures pause the goal;
   no third attempt; notify fired; rollback action available.
+- `vm-goals-idle`: corrupt/unknown goal file restores paused; unit
+  restart with empty events invents no proposal (L-21).
 - `vm-secrets` / `vm-pii`: scans green on the running tree.
 
 
@@ -1080,7 +1104,7 @@ conversation. A skipped P8 surface is a red test, not a note.
 | P9.4 | Work matrix | `vm-work-*` and `vm-bots-*` for every P8 oracle. |
 | P9.5 | Scans | `vm-secrets`, `vm-pii`. |
 | P9.6 | TUI and login | `vm-tui-keys`, `vm-login-oob`. |
-| P9.7 | Seatbelts and stall | `vm-boot-seatbelt`, `vm-no-partial-upgrade`, `vm-no-bootstrap-syu`, `vm-stall-pause`. |
+| P9.7 | Seatbelts and stall | `vm-boot-seatbelt`, `vm-no-partial-upgrade`, `vm-no-bootstrap-syu`, `vm-stall-pause`, `vm-goals-idle`. |
 
 
 ## P10 — Bare metal
@@ -1194,22 +1218,39 @@ Nested KVM is enough for P1–P9. Serial console, not a graphical viewer,
 so the TTY installer is scriptable.
 
 Default QEMU invocation (locked for the harness; flags may grow, this
-is the floor):
+is the floor). The ISO is isohybrid (USB convenience). Nested-KVM
+**disk** boot is systemd-boot on the ESP: use OVMF pflash. Fail closed
+if KVM or firmware is missing. Do not switch v1 to GRUB.
 
 ```
+# Live ISO (firstboot). OVMF so bootctl in arch-chroot -S can write EFI vars.
 qemu-system-x86_64 \
   -machine q35,accel=kvm \
   -cpu host \
   -m 4096 \
   -smp 2 \
+  -drive if=pflash,format=raw,readonly=on,file=${OVMF_CODE} \
+  -drive if=pflash,format=raw,file=work/OVMF_VARS.fd \
   -drive file=work/aios.qcow2,if=virtio,format=qcow2 \
   -cdrom dist/aios-*.iso \
   -netdev user,id=n0 \
   -device virtio-net-pci,netdev=n0 \
+  -fw_cfg name=opt/org.aios/firstboot,string=auto \
+  -fw_cfg name=opt/org.aios/console,string=serial \
   -serial stdio \
   -display none \
   -no-reboot
 ```
+
+Disk boot: same pflash/VARS, drop `-cdrom` and `-no-reboot`. Keep
+the serial console fw_cfg only on the live ISO (firstboot
+`bootctl set-default aios-linux-serial.conf`). Shipped default
+loader entry is `aios-linux.conf` with `console=tty0` (display VT).
+`tests/vm` uses `aios-linux-serial.conf` (`console=tty0 console=ttyS0`).
+Probe
+`edk2-ovmf` paths (`/usr/share/edk2/x64/OVMF_CODE.4m.fd` or
+`/usr/share/edk2-ovmf/x64/OVMF_CODE.fd`). Copy VARS template to
+`work/OVMF_VARS.fd` (not committed).
 
 - Disk image: 32G qcow2 at `work/aios.qcow2` (not committed).
 - Offline reconstruct: drop `-netdev` / `-device virtio-net-pci`, use

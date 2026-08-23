@@ -13,8 +13,12 @@ When enabled:
 - `/srv/aios/src/work-runtime` exists as its own git repository.
 - Its `AGENTS.md` forbids privileged system mutation.
 - User units for the runtime are declared in `state/` and installed only
-  after the checker passes.
-- A systemd slice caps CPU and memory for work-runtime processes.
+  after the checker passes. Unit file:
+  `/usr/lib/systemd/user/aios-work-runtime.service` (system-managed;
+  not a system unit under `/etc/systemd/system/`; not only in a live
+  `~/.config`). Linger `aios-work` so the user instance starts at boot.
+- Resource caps match the `aios-work.slice` floor (MemoryMax / CPUQuota)
+  on the user unit. Processes run as uid `aios-work`.
 
 When disabled:
 
@@ -24,8 +28,8 @@ When disabled:
 
 ## Oracle examples
 
-- `test ! -f /etc/systemd/system/aios-work-runtime.service` when disabled.
-- `systemctl is-enabled aios-work-runtime.service` is enabled only when the
-  clause is true.
+- `test ! -f /usr/lib/systemd/user/aios-work-runtime.service` when disabled.
+- `systemctl --user -M aios-work@ is-enabled aios-work-runtime.service`
+  is enabled only when the clause is true.
 - `git -C /srv/aios/src/work-runtime rev-parse --is-inside-work-tree` is
   true when enabled.
