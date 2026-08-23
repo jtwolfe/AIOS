@@ -14,6 +14,7 @@ PACSTRAP="${PROFILE}/pacstrap.x86_64"
 PACSTRAP_ISO="${AIROOTFS}/usr/lib/aios/pacstrap.x86_64"
 FIRSTBOOT="${AIROOTFS}/usr/lib/aios/bin/firstboot"
 INSTALLER="${AIROOTFS}/usr/lib/aios/bin/installer"
+AIOSBIN="${AIROOTFS}/usr/lib/aios/bin/aios"
 DE_NAMES='^(hyprland|gnome|plasma|sddm|gdm)$'
 failed=0
 
@@ -35,6 +36,8 @@ need_file "${PACSTRAP}"
 need_file "${PACSTRAP_ISO}"
 need_file "${FIRSTBOOT}"
 need_file "${INSTALLER}"
+need_file "${AIOSBIN}"
+need_file "${AIROOTFS}/usr/lib/aios/operator-client/tty/aios.py"
 CHECKER_UNIT="${AIROOTFS}/etc/systemd/system/aios-checker.service"
 AGENT_UNIT="${AIROOTFS}/etc/systemd/system/aios-agent.service"
 ENACT="${AIROOTFS}/usr/lib/aios/bin/enact"
@@ -198,12 +201,13 @@ if [ -n "${firstboot_unit}" ]; then
   fail "aios-firstboot.service is not a named unit (HI-12): ${firstboot_unit}"
 fi
 
-# Harness A: firstboot/installer must not contain -Syu.
-if grep -q -- '-Syu' "${FIRSTBOOT}" "${INSTALLER}" 2>/dev/null; then
-  fail "firstboot/installer contains -Syu (L-20)"
+# Harness A: firstboot/installer/aios must not contain -Syu.
+if grep -q -- '-Syu' "${FIRSTBOOT}" "${INSTALLER}" "${AIOSBIN}" 2>/dev/null; then
+  fail "firstboot/installer/aios contains -Syu (L-20)"
 fi
-if grep -R -q -- '-Syu' "${AIROOTFS}/usr/lib/aios/installer" 2>/dev/null; then
-  fail "installer TUI contains -Syu (L-20)"
+if grep -R -q -- '-Syu' "${AIROOTFS}/usr/lib/aios/installer" \
+  "${AIROOTFS}/usr/lib/aios/operator-client" 2>/dev/null; then
+  fail "installer/operator-client TUI contains -Syu (L-20)"
 fi
 grep -q 'aios_installer/main.py' "${FIRSTBOOT}" \
   || fail "firstboot must copy installer Python tree"
@@ -294,6 +298,10 @@ fi
 
 if ! "${SCRIPT_DIR}/p6-intent-sock.sh"; then
   fail "p6-intent-sock"
+fi
+
+if ! "${SCRIPT_DIR}/p7-summon-brake.sh"; then
+  fail "p7-summon-brake"
 fi
 
 if ! "${SCRIPT_DIR}/p9-vm-harness.sh"; then

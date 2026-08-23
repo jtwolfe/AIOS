@@ -216,6 +216,7 @@ check_hashes() {
     'payload/profile/airootfs/usr/lib/aios/bin/firstboot$' \
     'payload/profile/airootfs/usr/lib/aios/bin/installer$' \
     'payload/profile/airootfs/usr/lib/aios/bin/enact$' \
+    'payload/profile/airootfs/usr/lib/aios/bin/aios$' \
     'payload/profile/airootfs/usr/lib/sysusers.d/aios.conf$' \
     'payload/profile/airootfs/usr/lib/tmpfiles.d/aios.conf$' \
     'payload/profile/airootfs/etc/systemd/system/aios-installer.service$' \
@@ -250,6 +251,8 @@ check_hashes() {
       payload/profile/airootfs/usr/lib/aios/intent \
       installer \
       payload/profile/airootfs/usr/lib/aios/installer \
+      operator-client \
+      payload/profile/airootfs/usr/lib/aios/operator-client \
       -type f ! -path '*/__pycache__/*' ! -name '*.pyc' | sort)
   while read -r path; do
     [[ -z "${path}" ]] && continue
@@ -375,6 +378,9 @@ check_firstboot_payload() {
   [[ -x "${iso}/usr/lib/aios/bin/firstboot" ]] || die "missing executable firstboot"
   [[ -x "${iso}/usr/lib/aios/bin/installer" ]] || die "missing executable installer"
   [[ -x "${iso}/usr/lib/aios/bin/enact" ]] || die "missing executable enact"
+  [[ -x "${iso}/usr/lib/aios/bin/aios" ]] || die "missing executable aios"
+  [[ -f "${iso}/usr/lib/aios/operator-client/tty/aios.py" ]] \
+    || die "missing operator-client/tty/aios.py"
   [[ -f "${iso}/etc/systemd/system/aios-installer.service" ]] || die "missing aios-installer.service"
   [[ ! -e "${iso}/etc/systemd/system/multi-user.target.wants/aios-installer.service" ]] \
     || die "aios-installer.service must not be enabled on the live ISO"
@@ -494,11 +500,13 @@ check_firstboot_payload() {
   grep -q 'console=tty0 console=ttyS0' "${iso}/usr/lib/aios/bin/firstboot" \
     || die "firstboot must write serial boot entries"
   if grep -q -- '-Syu' "${iso}/usr/lib/aios/bin/firstboot" \
-    "${iso}/usr/lib/aios/bin/installer"; then
-    die "firstboot/installer must not contain -Syu"
+    "${iso}/usr/lib/aios/bin/installer" \
+    "${iso}/usr/lib/aios/bin/aios"; then
+    die "firstboot/installer/aios must not contain -Syu"
   fi
-  if grep -R -q -- '-Syu' "${iso}/usr/lib/aios/installer" 2>/dev/null; then
-    die "installer TUI must not contain -Syu"
+  if grep -R -q -- '-Syu' "${iso}/usr/lib/aios/installer" \
+    "${iso}/usr/lib/aios/operator-client" 2>/dev/null; then
+    die "installer/operator-client TUI must not contain -Syu"
   fi
 
   local iso_hashes="${iso}/usr/lib/aios/hashes.txt"
@@ -528,6 +536,7 @@ check_firstboot_payload() {
   grep -Eq '  bin/firstboot$' "${iso_hashes}" || die "ISO hashes.txt must pin firstboot"
   grep -Eq '  bin/installer$' "${iso_hashes}" || die "ISO hashes.txt must pin installer"
   grep -Eq '  bin/enact$' "${iso_hashes}" || die "ISO hashes.txt must pin enact"
+  grep -Eq '  bin/aios$' "${iso_hashes}" || die "ISO hashes.txt must pin aios"
   grep -Eq '  minisign\.pub$' "${iso_hashes}" || die "ISO hashes.txt must pin minisign.pub"
   grep -Eq 'aios-installer\.service$' "${iso_hashes}" || die "ISO hashes.txt must pin installer unit"
   grep -Eq 'aios-checker\.service$' "${iso_hashes}" || die "ISO hashes.txt must pin checker unit"
@@ -555,7 +564,7 @@ check_firstboot_payload() {
     [[ -z "${rel}" ]] && continue
     grep -Eq "^[0-9a-f]{64}  ${rel}$" "${iso_hashes}" \
       || die "ISO hashes.txt must pin ${rel}"
-  done < <(cd "${iso}/usr/lib/aios" && find checker agent installer -type f ! -path '*/__pycache__/*' ! -name '*.pyc' | sort)
+  done < <(cd "${iso}/usr/lib/aios" && find checker agent installer operator-client -type f ! -path '*/__pycache__/*' ! -name '*.pyc' | sort)
   while IFS= read -r line || [[ -n "${line}" ]]; do
     [[ -z "${line}" || "${line}" == \#* ]] && continue
     hash=${line%% *}

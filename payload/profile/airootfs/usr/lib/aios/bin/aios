@@ -1,0 +1,16 @@
+#!/bin/sh
+# P7.1: one binary for summon / brake / status. L-18 OS chrome. Not a daemon.
+# L-09: installer owns the console until accept; this is the post-accept client.
+MAIN="${AIOS_CLIENT:-/usr/lib/aios/operator-client/tty/aios.py}"
+
+if [ ! -f "${MAIN}" ]; then
+  printf '%s\n' 'AIOS: missing operator-client/tty/aios.py (P7.1)'
+  exit 1
+fi
+
+if [ ! -x /usr/bin/python3 ]; then
+  printf '%s\n' 'AIOS: python3 missing (L-01)'
+  exit 1
+fi
+
+exec /usr/bin/python3 -u "${MAIN}" "$@"

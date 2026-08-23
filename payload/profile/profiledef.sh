@@ -21,6 +21,7 @@ file_permissions=(
   ["/usr/lib/aios/bin/firstboot"]="0:0:755"
   ["/usr/lib/aios/bin/installer"]="0:0:755"
   ["/usr/lib/aios/bin/enact"]="0:0:755"
+  ["/usr/lib/aios/bin/aios"]="0:0:755"
   ["/usr/lib/aios/checker/hooks/update"]="0:0:755"
   ["/usr/lib/aios/checker/hooks/pre-receive"]="0:0:755"
   ["/usr/lib/aios/checker/hooks/reference-transaction"]="0:0:755"
