@@ -1,0 +1,507 @@
+#!/bin/sh
+# Live ISO only. Getty autologin execs this; it is not a product root shell.
+# Harness A: pacstrap the locked list, never a sysupgrade. No aios-firstboot.service (HI-12).
+set -eu
+set -o pipefail 2>/dev/null || true
+
+umask 022
+PATH="/usr/bin:/usr/sbin:/bin:/sbin"
+export PATH
+cd /
+
+AIOS_LIB=/usr/lib/aios
+PACSTRAP_LIST="${AIOS_LIB}/pacstrap.x86_64"
+HASHES="${AIOS_LIB}/hashes.txt"
+MINISIGN_PUB="${AIOS_LIB}/minisign.pub"
+TARGET=/mnt
+RUN_DIR=/run/aios
+LIVE_LOG="${RUN_DIR}/aios-firstboot.log"
+CAND_FILE="${RUN_DIR}/disks"
+ISO_FILE="${RUN_DIR}/iso-devs"
+TARGET_MOUNTED=0
+
+mkdir -p "${RUN_DIR}"
+touch "${LIVE_LOG}"
+
+log() {
+  printf '%s\n' "$*"
+  printf '%s\n' "$*" >> "${LIVE_LOG}"
+}
+
+die() {
+  log "error: $*"
+  log "firstboot failed; idle so the console can be read"
+  sleep 86400
+  exit 1
+}
+
+copy_log() {
+  if [ -d "${TARGET}/var/log" ] && [ -f "${LIVE_LOG}" ]; then
+    cp -a "${LIVE_LOG}" "${TARGET}/var/log/aios-firstboot.log"
+  fi
+}
+
+cleanup() {
+  copy_log 2>/dev/null || true
+  if [ "${TARGET_MOUNTED}" = 1 ]; then
+    umount -R "${TARGET}" 2>/dev/null || true
+    TARGET_MOUNTED=0
+  fi
+}
+trap cleanup EXIT
+
+fw_cfg() {
+  _p="/sys/firmware/qemu_fw_cfg/by_name/${1}/raw"
+  [ -r "${_p}" ] || return 1
+  tr -d '\0\r\n' < "${_p}"
+}
+
+require_live_iso() {
+  if [ -d /run/archiso ] || grep -qw archisobasedir /proc/cmdline 2>/dev/null; then
+    return 0
+  fi
+  die "firstboot is live-ISO only"
+}
+
+require_root() {
+  [ "$(id -u)" -eq 0 ] || die "firstboot must run as root"
+}
+
+require_uefi() {
+  [ -d /sys/firmware/efi ] || die "UEFI firmware required"
+  [ -d /sys/firmware/efi/efivars ] || die "EFI variables missing (need OVMF)"
+}
+
+require_tools() {
+  for _c in pacstrap genfstab arch-chroot sgdisk mkfs.fat mkfs.btrfs btrfs \
+    mount umount bootctl lsblk blkid findmnt sha256sum minisign \
+    systemctl cp tee udevadm partx systemd-sysusers systemd-tmpfiles \
+    flock ip wipefs; do
+    command -v "${_c}" >/dev/null 2>&1 || die "missing ${_c}"
+  done
+  [ -f "${PACSTRAP_LIST}" ] || die "missing ${PACSTRAP_LIST}"
+  grep -qx linux "${PACSTRAP_LIST}" || die "linux missing from pacstrap list"
+  grep -qx linux-lts "${PACSTRAP_LIST}" || die "linux-lts missing from pacstrap list"
+}
+
+acquire_lock() {
+  exec 9>"${RUN_DIR}/firstboot.lock"
+  if flock -n 9; then
+    return 0
+  fi
+  log "firstboot already running on another console; waiting"
+  flock 9
+  exit 0
+}
+
+# hashes.txt + minisign must pass before any block device is touched.
+verify_payload() {
+  [ -f "${HASHES}" ] || die "missing ${HASHES} (refuse before disks)"
+  [ -f "${MINISIGN_PUB}" ] || die "missing ${MINISIGN_PUB} (refuse before disks)"
+  [ -f "${HASHES}.minisig" ] || die "missing ${HASHES}.minisig (refuse before disks)"
+  minisign -Vm "${HASHES}" -p "${MINISIGN_PUB}" >/dev/null \
+    || die "minisign verify failed (refuse before disks)"
+  while IFS= read -r _line || [ -n "${_line}" ]; do
+    case "${_line}" in
+      ''|\#*) continue ;;
+    esac
+    _hash=${_line%% *}
+    _path=${_line#* }
+    _path=${_path# }
+    _path=${_path#\*}
+    [ -n "${_hash}" ] && [ -n "${_path}" ] || die "bad hashes.txt line"
+    case "${_path}" in
+      /*) _abs=${_path} ;;
+      *) _abs="${AIOS_LIB}/${_path}" ;;
+    esac
+    [ -e "${_abs}" ] || die "hashed path missing: ${_abs}"
+    printf '%s  %s\n' "${_hash}" "${_abs}" | sha256sum -c --status - \
+      || die "hash mismatch: ${_abs}"
+  done < "${HASHES}"
+  log "payload hashes and minisign ok"
+}
+
+collect_iso_devs() {
+  : > "${ISO_FILE}"
+  for _w in $(cat /proc/cmdline); do
+    case "${_w}" in
+      archisosearchuuid=*)
+        _u=${_w#archisosearchuuid=}
+        if [ -e "/dev/disk/by-uuid/${_u}" ]; then
+          _real=$(readlink -f "/dev/disk/by-uuid/${_u}")
+          printf '%s\n' "${_real}" >> "${ISO_FILE}"
+          _pk=$(lsblk -dn -o PKNAME "${_real}" 2>/dev/null || true)
+          [ -n "${_pk}" ] && printf '%s\n' "/dev/${_pk}" >> "${ISO_FILE}"
+        fi
+        ;;
+    esac
+  done
+  _src=$(findmnt -n -o SOURCE /run/archiso/bootmnt 2>/dev/null || true)
+  if [ -n "${_src}" ]; then
+    _real=$(readlink -f "${_src}" 2>/dev/null || printf '%s' "${_src}")
+    printf '%s\n' "${_real}" >> "${ISO_FILE}"
+    _pk=$(lsblk -dn -o PKNAME "${_real}" 2>/dev/null || true)
+    [ -n "${_pk}" ] && printf '%s\n' "/dev/${_pk}" >> "${ISO_FILE}"
+  fi
+}
+
+is_iso_related() {
+  _disk=$1
+  [ -f "${ISO_FILE}" ] || return 1
+  while IFS= read -r _x; do
+    [ -z "${_x}" ] && continue
+    [ "${_disk}" = "${_x}" ] && return 0
+    case "${_x}" in
+      "${_disk}"*) return 0 ;;
+    esac
+  done < "${ISO_FILE}"
+  return 1
+}
+
+# Candidate disks exclude the ISO, rom, loop, airootfs (L-07 probe).
+probe_disks() {
+  collect_iso_devs
+  : > "${CAND_FILE}"
+  lsblk -dn -p -o NAME,TYPE,RO > "${RUN_DIR}/lsblk"
+  while read -r _name _type _ro; do
+    [ "${_type}" = disk ] || continue
+    [ "${_ro}" = 0 ] || continue
+    case "${_name}" in
+      /dev/loop*|/dev/sr*|/dev/rom*|/dev/zram*|/dev/ram*|/dev/fd*|/dev/md*|/dev/nbd*)
+        continue
+        ;;
+    esac
+    if is_iso_related "${_name}"; then
+      continue
+    fi
+    _base=${_name#/dev/}
+    [ -r "/sys/block/${_base}/size" ] || continue
+    _sectors=$(cat "/sys/block/${_base}/size")
+    # 4 GiB in 512-byte sectors: 1G ESP plus a usable root.
+    [ "${_sectors}" -ge 8388608 ] || continue
+    printf '%s\n' "${_name}" >> "${CAND_FILE}"
+  done < "${RUN_DIR}/lsblk"
+}
+
+count_cands() {
+  if [ ! -s "${CAND_FILE}" ]; then
+    printf '0'
+    return
+  fi
+  wc -l < "${CAND_FILE}" | tr -d ' '
+}
+
+firstboot_mode() {
+  _mode=confirm
+  _fw=$(fw_cfg opt/org.aios/firstboot || true)
+  [ "${_fw}" = auto ] && _mode=auto
+  for _w in $(cat /proc/cmdline); do
+    case "${_w}" in
+      aios.firstboot=auto) _mode=auto ;;
+    esac
+  done
+  for _w in $(cat /proc/cmdline); do
+    case "${_w}" in
+      aios.firstboot=confirm) _mode=confirm ;;
+    esac
+  done
+  printf '%s\n' "${_mode}"
+}
+
+console_serial() {
+  _fw=$(fw_cfg opt/org.aios/console || true)
+  [ "${_fw}" = serial ]
+}
+
+confirm_disk() {
+  _mode=$(firstboot_mode)
+  _n=$(count_cands)
+  log "disk probe: ${_n} candidate(s), mode=${_mode}"
+  if [ "${_n}" = 0 ]; then
+    die "no candidate disk"
+  fi
+  while IFS= read -r _d; do
+    log "  candidate ${_d}"
+  done < "${CAND_FILE}"
+
+  if [ "${_mode}" = auto ]; then
+    if [ "${_n}" != 1 ]; then
+      die "auto requires exactly one candidate disk (found ${_n})"
+    fi
+    DISK=$(head -n 1 "${CAND_FILE}")
+    log "auto: using ${DISK}"
+    return 0
+  fi
+
+  if [ "${_n}" = 1 ]; then
+    DISK=$(head -n 1 "${CAND_FILE}")
+    log "Install AIOS to ${DISK} (this erases the disk)."
+    log "Type yes to continue."
+    read -r _ans || die "no TTY confirm"
+    [ "${_ans}" = yes ] || die "not confirmed"
+    return 0
+  fi
+
+  log "Type the disk path to install (this erases it), or abort."
+  read -r _ans || die "no TTY confirm"
+  _d=0
+  while IFS= read -r DISK; do
+    if [ "${DISK}" = "${_ans}" ]; then
+      _d=1
+      break
+    fi
+  done < "${CAND_FILE}"
+  [ "${_d}" = 1 ] || die "not a candidate disk: ${_ans}"
+  log "confirmed ${DISK}"
+}
+
+part_node() {
+  _disk=$1
+  _n=$2
+  case "${_disk}" in
+    *[0-9]) printf '%sp%s\n' "${_disk}" "${_n}" ;;
+    *) printf '%s%s\n' "${_disk}" "${_n}" ;;
+  esac
+}
+
+wait_block() {
+  _p=$1
+  _i=0
+  while [ "${_i}" -lt 30 ]; do
+    [ -b "${_p}" ] && return 0
+    sleep 1
+    _i=$((_i + 1))
+  done
+  die "partition ${_p} did not appear"
+}
+
+partition_and_mount() {
+  ESP=$(part_node "${DISK}" 1)
+  ROOTP=$(part_node "${DISK}" 2)
+  log "partition GPT L-07 on ${DISK}"
+  sgdisk --zap-all "${DISK}" >/dev/null
+  sgdisk --clear "${DISK}" >/dev/null
+  sgdisk -n 1:0:+1G -t 1:EF00 -c 1:esp "${DISK}" >/dev/null
+  sgdisk -n 2:0:0 -t 2:8300 -c 2:rootfs "${DISK}" >/dev/null
+  partx -u "${DISK}" 2>/dev/null || true
+  udevadm settle || true
+  wait_block "${ESP}"
+  wait_block "${ROOTP}"
+  wipefs -a "${ESP}" >/dev/null 2>&1 || true
+  wipefs -a "${ROOTP}" >/dev/null 2>&1 || true
+  mkfs.fat -F 32 "${ESP}" >/dev/null
+  mkfs.btrfs -f "${ROOTP}" >/dev/null
+  mount "${ROOTP}" "${TARGET}"
+  btrfs subvolume create "${TARGET}/@" >/dev/null
+  btrfs subvolume create "${TARGET}/@home" >/dev/null
+  btrfs subvolume create "${TARGET}/@srv" >/dev/null
+  btrfs subvolume create "${TARGET}/@var_log" >/dev/null
+  btrfs subvolume create "${TARGET}/@snapshots" >/dev/null
+  umount "${TARGET}"
+  mount -o subvol=@ "${ROOTP}" "${TARGET}"
+  mount --mkdir "${ESP}" "${TARGET}/boot"
+  mount --mkdir -o subvol=@home "${ROOTP}" "${TARGET}/home"
+  mount --mkdir -o subvol=@srv "${ROOTP}" "${TARGET}/srv"
+  mount --mkdir -o subvol=@var_log "${ROOTP}" "${TARGET}/var/log"
+  mount --mkdir -o subvol=@snapshots "${ROOTP}" "${TARGET}/.snapshots"
+  TARGET_MOUNTED=1
+  ROOT_UUID=$(blkid -s UUID -o value "${ROOTP}")
+  [ -n "${ROOT_UUID}" ] || die "no UUID on root filesystem"
+  copy_log
+}
+
+wait_network() {
+  _i=0
+  while [ "${_i}" -lt 60 ]; do
+    if [ -n "$(ip -4 route show default 2>/dev/null || true)" ]; then
+      return 0
+    fi
+    sleep 1
+    _i=$((_i + 1))
+  done
+  die "no IPv4 default route before pacstrap"
+}
+
+pacstrap_target() {
+  wait_network
+  _pkgs=$(grep -v '^#' "${PACSTRAP_LIST}" | grep -v '^[[:space:]]*$' || true)
+  [ -n "${_pkgs}" ] || die "empty pacstrap list"
+  log "pacstrap -K from ${PACSTRAP_LIST}"
+  # Word splitting of the locked name list is intended.
+  # shellcheck disable=SC2086
+  pacstrap -K "${TARGET}" ${_pkgs} 2>&1 | tee -a "${LIVE_LOG}"
+}
+
+write_boot_entry() {
+  _dest=$1
+  _title=$2
+  _linux=$3
+  _initrd=$4
+  _cons=$5
+  cat > "${_dest}" <<EOF
+title   ${_title}
+linux   ${_linux}
+initrd  ${_initrd}
+options root=UUID=${ROOT_UUID} rootflags=subvol=@ rw ${_cons}
+EOF
+}
+
+configure_boot() {
+  mkdir -p "${TARGET}/boot/loader/entries"
+  log "bootctl install"
+  if ! arch-chroot -S "${TARGET}" /usr/bin/bootctl --esp-path=/boot install; then
+    bootctl --root="${TARGET}" --esp-path=/boot install \
+      || die "bootctl install failed; UEFI variables require OVMF"
+  fi
+  write_boot_entry "${TARGET}/boot/loader/entries/aios-linux.conf" \
+    "AIOS (linux)" /vmlinuz-linux /initramfs-linux.img "console=tty0"
+  write_boot_entry "${TARGET}/boot/loader/entries/aios-linux-lts.conf" \
+    "AIOS (linux-lts)" /vmlinuz-linux-lts /initramfs-linux-lts.img "console=tty0"
+  write_boot_entry "${TARGET}/boot/loader/entries/aios-linux-serial.conf" \
+    "AIOS (linux, serial)" /vmlinuz-linux /initramfs-linux.img "console=tty0 console=ttyS0"
+  write_boot_entry "${TARGET}/boot/loader/entries/aios-linux-lts-serial.conf" \
+    "AIOS (linux-lts, serial)" /vmlinuz-linux-lts /initramfs-linux-lts.img "console=tty0 console=ttyS0"
+  if console_serial; then
+    DEFAULT_ENTRY=aios-linux-serial.conf
+  else
+    DEFAULT_ENTRY=aios-linux.conf
+  fi
+  log "bootctl set-default ${DEFAULT_ENTRY}"
+  arch-chroot -S "${TARGET}" /usr/bin/bootctl set-default "${DEFAULT_ENTRY}" \
+    || true
+  cat > "${TARGET}/boot/loader/loader.conf" <<EOF
+default ${DEFAULT_ENTRY}
+timeout 5
+console-mode keep
+editor no
+EOF
+}
+
+write_os_release() {
+  _body='NAME="AIOS"
+PRETTY_NAME="AIOS"
+ID=aios
+ID_LIKE=arch
+VERSION="dev"
+VERSION_ID="dev"
+'
+  printf '%s' "${_body}" > "${TARGET}/usr/lib/os-release"
+  ln -sfn ../usr/lib/os-release "${TARGET}/etc/os-release"
+}
+
+copy_if_present() {
+  _src=$1
+  _dest=$2
+  if [ -e "${_src}" ]; then
+    mkdir -p "$(dirname "${_dest}")"
+    cp -a "${_src}" "${_dest}"
+  fi
+}
+
+copy_payload_into_target() {
+  mkdir -p "${TARGET}/usr/lib/aios/bin" \
+    "${TARGET}/usr/lib/sysusers.d" \
+    "${TARGET}/usr/lib/tmpfiles.d" \
+    "${TARGET}/etc/systemd/system" \
+    "${TARGET}/srv/aios/envelope" \
+    "${TARGET}/srv/aios/seeds"
+  copy_if_present "${AIOS_LIB}/bin/installer" "${TARGET}/usr/lib/aios/bin/installer"
+  copy_if_present "${AIOS_LIB}/bin/enact" "${TARGET}/usr/lib/aios/bin/enact"
+  copy_if_present "${PACSTRAP_LIST}" "${TARGET}/usr/lib/aios/pacstrap.x86_64"
+  copy_if_present /usr/lib/sysusers.d/aios.conf "${TARGET}/usr/lib/sysusers.d/aios.conf"
+  copy_if_present /usr/lib/tmpfiles.d/aios.conf "${TARGET}/usr/lib/tmpfiles.d/aios.conf"
+  copy_if_present /etc/systemd/system/aios-installer.service \
+    "${TARGET}/etc/systemd/system/aios-installer.service"
+  copy_if_present "${AIOS_LIB}/hard-invariants.md" \
+    "${TARGET}/srv/aios/envelope/hard-invariants.md"
+  copy_if_present "${AIOS_LIB}/envelope/hard-invariants.md" \
+    "${TARGET}/srv/aios/envelope/hard-invariants.md"
+  if [ -d "${AIOS_LIB}/seeds" ]; then
+    cp -a "${AIOS_LIB}/seeds/." "${TARGET}/srv/aios/seeds/"
+  fi
+  if [ -d /srv/aios/seeds ]; then
+    cp -a /srv/aios/seeds/. "${TARGET}/srv/aios/seeds/"
+  fi
+  [ -x "${TARGET}/usr/lib/aios/bin/installer" ] \
+    || die "installer missing on target"
+  [ -f "${TARGET}/etc/systemd/system/aios-installer.service" ] \
+    || die "aios-installer.service missing on target"
+}
+
+configure_target() {
+  genfstab -U "${TARGET}" >> "${TARGET}/etc/fstab"
+  grep -q 'subvol=@' "${TARGET}/etc/fstab" || die "fstab missing subvol=@"
+
+  printf 'aios\n' > "${TARGET}/etc/hostname"
+  cat > "${TARGET}/etc/hosts" <<'EOF'
+127.0.0.1 localhost
+::1       localhost
+127.0.1.1 aios
+EOF
+  ln -sfn /usr/share/zoneinfo/UTC "${TARGET}/etc/localtime"
+  printf 'en_US.UTF-8 UTF-8\n' > "${TARGET}/etc/locale.gen"
+  printf 'LANG=en_US.UTF-8\n' > "${TARGET}/etc/locale.conf"
+  arch-chroot "${TARGET}" locale-gen >/dev/null
+  write_os_release
+
+  mkdir -p "${TARGET}/etc/systemd/network"
+  cat > "${TARGET}/etc/systemd/network/20-wired.network" <<'EOF'
+[Match]
+Name=en* eth*
+[Network]
+DHCP=yes
+EOF
+  cat > "${TARGET}/etc/systemd/zram-generator.conf" <<'EOF'
+[zram0]
+zram-size = ram / 2
+EOF
+  ln -sfn /run/systemd/resolve/stub-resolv.conf "${TARGET}/etc/resolv.conf"
+
+  copy_payload_into_target
+  systemd-sysusers --root="${TARGET}"
+  systemd-tmpfiles --root="${TARGET}" --create \
+    --prefix=/srv/aios --prefix=/run/aios || true
+
+  systemctl --root="${TARGET}" enable aios-installer.service \
+    || die "failed to enable aios-installer.service in the chroot"
+  systemctl --root="${TARGET}" enable systemd-networkd.service systemd-resolved.service \
+    || die "failed to enable networkd/resolved"
+  systemctl --root="${TARGET}" disable sshd.service 2>/dev/null || true
+  systemctl --root="${TARGET}" disable openssh.service 2>/dev/null || true
+  systemctl --root="${TARGET}" disable iwd.service 2>/dev/null || true
+  systemctl --root="${TARGET}" is-enabled aios-installer.service >/dev/null \
+    || die "aios-installer.service not enabled in the chroot"
+  if systemctl --root="${TARGET}" is-enabled sshd.service >/dev/null 2>&1 \
+    || systemctl --root="${TARGET}" is-enabled openssh.service >/dev/null 2>&1; then
+    die "openssh/sshd must stay disabled"
+  fi
+
+  arch-chroot "${TARGET}" mkinitcpio -P 2>&1 | tee -a "${LIVE_LOG}"
+}
+
+reboot_to_disk() {
+  copy_log
+  sync
+  umount -R "${TARGET}"
+  TARGET_MOUNTED=0
+  trap - EXIT
+  log "rebooting to disk"
+  systemctl reboot || reboot -f
+  sleep 86400
+}
+
+require_root
+require_live_iso
+require_tools
+acquire_lock
+log "firstboot start"
+require_uefi
+verify_payload
+probe_disks
+confirm_disk
+partition_and_mount
+pacstrap_target
+configure_target
+configure_boot
+log "disk install complete"
+reboot_to_disk

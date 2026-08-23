@@ -322,6 +322,36 @@ assert_published_signed() {
   done
 }
 
+check_firstboot_payload() {
+  local iso="${PROFILE}/airootfs"
+  [[ -x "${iso}/usr/lib/aios/bin/firstboot" ]] || die "missing executable firstboot"
+  [[ -x "${iso}/usr/lib/aios/bin/installer" ]] || die "missing executable installer"
+  [[ -x "${iso}/usr/lib/aios/bin/enact" ]] || die "missing executable enact"
+  [[ -f "${iso}/etc/systemd/system/aios-installer.service" ]] || die "missing aios-installer.service"
+  [[ ! -e "${iso}/etc/systemd/system/multi-user.target.wants/aios-installer.service" ]] \
+    || die "aios-installer.service must not be enabled on the live ISO"
+  [[ ! -e "${iso}/etc/systemd/system/aios-firstboot.service" ]] \
+    || die "aios-firstboot.service is not a named unit (HI-12)"
+  grep -q 'login-program /usr/lib/aios/bin/firstboot' \
+    "${iso}/etc/systemd/system/getty@tty1.service.d/autologin.conf" \
+    || die "getty@tty1 autologin must exec firstboot"
+  grep -q 'login-program /usr/lib/aios/bin/firstboot' \
+    "${iso}/etc/systemd/system/serial-getty@ttyS0.service.d/autologin.conf" \
+    || die "serial-getty autologin must exec firstboot"
+  grep -q 'TTYPath=/dev/console' "${iso}/etc/systemd/system/aios-installer.service" \
+    || die "installer unit must bind /dev/console"
+  grep -q 'vmlinuz-linux-lts' "${iso}/usr/lib/aios/bin/firstboot" \
+    || die "firstboot must write a linux-lts boot entry"
+  grep -q 'vmlinuz-linux' "${iso}/usr/lib/aios/bin/firstboot" \
+    || die "firstboot must write a linux boot entry"
+  grep -q 'console=tty0 console=ttyS0' "${iso}/usr/lib/aios/bin/firstboot" \
+    || die "firstboot must write serial boot entries"
+  if grep -q -- '-Syu' "${iso}/usr/lib/aios/bin/firstboot" \
+    "${iso}/usr/lib/aios/bin/installer"; then
+    die "firstboot/installer must not contain -Syu"
+  fi
+}
+
 verify_pin() {
   mkdir -p "${CACHE}"
   local sums="${CACHE}/sha256sums-${BOOTSTRAP_VERSION}.txt"
@@ -428,6 +458,7 @@ trap cleanup EXIT
 
 check_package_lists
 check_hashes
+check_firstboot_payload
 verify_pin
 prepare_chroot
 run_mkarchiso

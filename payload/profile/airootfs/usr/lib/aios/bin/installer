@@ -1,0 +1,12 @@
+#!/bin/sh
+# TTY installer stub (P1.3). Full conversation is P5. Owns /dev/console.
+set -eu
+
+printf '%s\n' \
+  'AIOS installer' \
+  'Definition surface (stub). Envelope conversation is P5.' \
+  'This service owns /dev/console until accept.'
+
+while true; do
+  sleep 3600
+done

@@ -1,0 +1,4 @@
+#!/bin/sh
+# P4 allowlisted helper. Harness A / firstboot must not enact (L-04, L-20).
+printf 'error: enact refuses until envelope accept (P4)\n' >&2
+exit 1
