@@ -44,10 +44,53 @@ PACSTRAP_LOCK=(
 
 BOOTSTRAP_ROOT=""
 MOUNTED_REPO=""
+SECKEY_BIND=""
+PUBLISH=0
+PUBKEY="${SCRIPT_DIR}/minisign.pub"
+HASHES="${SCRIPT_DIR}/hashes.txt"
 
 die() {
   printf 'error: %s\n' "$*" >&2
   exit 1
+}
+
+usage() {
+  cat <<'EOF'
+Usage: payload/build.sh [--publish]
+  --publish  fail closed unless every dist/aios-*.iso has a minisign signature (L-10)
+EOF
+}
+
+# sudo keeps the operator home so the secret key is not looked up as root.
+operator_home() {
+  local user="${SUDO_USER:-}" home
+  if [[ -n "${user}" && "${user}" != root ]]; then
+    home=$(getent passwd "${user}" | cut -d: -f6 || true)
+    [[ -n "${home}" && -d "${home}" ]] || die "cannot resolve home for SUDO_USER"
+    printf '%s\n' "${home}"
+    return
+  fi
+  printf '%s\n' "${HOME}"
+}
+
+# Secret key is operator-local; never under payload/.
+resolve_seckey() {
+  local home key
+  if [[ -n "${AIOS_MINISIGN_SECKEY:-}" ]]; then
+    printf '%s\n' "${AIOS_MINISIGN_SECKEY}"
+    return
+  fi
+  home=$(operator_home)
+  for key in \
+    "${home}/.config/aios/minisign.key" \
+    "${home}/.minisign/minisign.key"
+  do
+    if [[ -f "${key}" ]]; then
+      printf '%s\n' "${key}"
+      return
+    fi
+  done
+  printf '%s\n' "${home}/.config/aios/minisign.key"
 }
 
 # Mount targets under dir, deepest first. Empty if dir is missing.
@@ -81,7 +124,7 @@ unmount_under() {
 cleanup() {
   local leftover
   trap - EXIT
-  # arch-chroot leftovers (proc/sys/dev/run) and the repo bind, deepest first.
+  # arch-chroot leftovers (proc/sys/dev/run), seckey bind, and the repo bind, deepest first.
   unmount_under "${WORK}/mkarchiso"
   unmount_under "${WORK}/bootstrap"
   leftover=$(mounts_under "${WORK}/bootstrap") || die "could not list mounts under ${WORK}/bootstrap"
@@ -92,8 +135,11 @@ cleanup() {
   if [[ -n "${leftover}" ]]; then
     die "still mounted under ${WORK}/mkarchiso after cleanup:"$'\n'"${leftover}"
   fi
+  if [[ -n "${SECKEY_BIND}" ]]; then
+    rm -f "${SECKEY_BIND}"
+    SECKEY_BIND=""
+  fi
 }
-trap cleanup EXIT
 
 fetch() {
   local url="$1" dest="$2"
@@ -130,6 +176,126 @@ check_package_lists() {
   done < "${PROFILE}/pacstrap.x86_64"
   cmp -s "${PROFILE}/pacstrap.x86_64" "${PROFILE}/airootfs/usr/lib/aios/pacstrap.x86_64" \
     || die "airootfs pacstrap.x86_64 is not the same bytes as profile/pacstrap.x86_64"
+}
+
+check_hashes() {
+  local lines
+  [[ -f "${HASHES}" ]] || die "missing ${HASHES}"
+  [[ -f "${PUBKEY}" ]] || die "missing ${PUBKEY}"
+  lines=$(grep -E '^[0-9a-f]{64} ' "${HASHES}" || true)
+  [[ -n "${lines}" ]] || die "${HASHES} has no sha256 lines"
+  grep -Eq '^[0-9a-f]{64}  .+/pacstrap\.x86_64$' "${HASHES}" \
+    || die "${HASHES} must pin pacstrap.x86_64"
+  if grep -Eqe '\.minisign\.key([[:space:]]|$)|(^|[[:space:]])minisign\.key$' "${HASHES}"; then
+    die "${HASHES} lists a secret key path"
+  fi
+  (cd "${REPO_ROOT}" && grep -E '^[0-9a-f]{64} ' "${HASHES}" | sha256sum -c --strict -) \
+    || die "${HASHES} mismatch"
+}
+
+ensure_chroot_minisign() {
+  [[ -n "${BOOTSTRAP_ROOT}" && -x "${BOOTSTRAP_ROOT}/bin/arch-chroot" ]] \
+    || die "bootstrap chroot missing; cannot sign"
+  # Same freeze as archiso; install only, no sysupgrade.
+  "${BOOTSTRAP_ROOT}/bin/arch-chroot" "${BOOTSTRAP_ROOT}" pacman -S --noconfirm --needed minisign
+  "${BOOTSTRAP_ROOT}/bin/arch-chroot" "${BOOTSTRAP_ROOT}" command -v minisign >/dev/null \
+    || die "minisign missing after installing in the bootstrap chroot"
+}
+
+run_minisign() {
+  "${BOOTSTRAP_ROOT}/bin/arch-chroot" "${BOOTSTRAP_ROOT}" minisign "$@"
+}
+
+iso_in_chroot() {
+  local iso="$1" rel
+  rel="${iso#"${REPO_ROOT}/"}"
+  [[ "${iso}" == "${REPO_ROOT}/${rel}" ]] || die "ISO is not under the repository: ${iso}"
+  printf '%s\n' "/mnt/aios/${rel}"
+}
+
+bind_seckey() {
+  local seckey="$1"
+  [[ -n "${BOOTSTRAP_ROOT}" && -d "${BOOTSTRAP_ROOT}" ]] || die "bootstrap chroot missing; cannot bind secret key"
+  mkdir -p "${BOOTSTRAP_ROOT}/root"
+  SECKEY_BIND="${BOOTSTRAP_ROOT}/root/aios-minisign.key"
+  rm -f "${SECKEY_BIND}"
+  touch "${SECKEY_BIND}"
+  chmod 600 "${SECKEY_BIND}"
+  mount --bind "${seckey}" "${SECKEY_BIND}" || die "could not bind-mount minisign secret key"
+}
+
+unbind_seckey() {
+  if [[ -n "${SECKEY_BIND}" ]]; then
+    if findmnt -M "${SECKEY_BIND}" >/dev/null 2>&1; then
+      umount "${SECKEY_BIND}" || die "busy umount: ${SECKEY_BIND}"
+    fi
+    rm -f "${SECKEY_BIND}"
+    SECKEY_BIND=""
+  fi
+}
+
+sign_isos() {
+  local iso seckey rc payload_real seckey_real chroot_iso
+  seckey=$(resolve_seckey)
+  payload_real=$(realpath "${SCRIPT_DIR}")
+  if [[ -e "${seckey}" ]]; then
+    seckey_real=$(realpath "${seckey}")
+    case "${seckey_real}" in
+      "${payload_real}"|"${payload_real}"/*)
+        die "minisign secret key must not live under payload/"
+        ;;
+    esac
+    if git -C "${REPO_ROOT}" ls-files --error-unmatch -- "${seckey}" >/dev/null 2>&1; then
+      die "minisign secret key is tracked in git"
+    fi
+  fi
+
+  if [[ ! -f "${seckey}" ]]; then
+    if [[ "${PUBLISH}" -eq 1 ]]; then
+      die "publish refused: minisign secret key missing (${seckey}); unsigned images must not leave the workstation (L-10)"
+    fi
+    for iso in "${isos[@]}"; do
+      printf 'unsigned: %s (no secret key; must not leave this workstation)\n' "${iso}" >&2
+    done
+    return 0
+  fi
+
+  [[ -f "${PUBKEY}" ]] || die "missing ${PUBKEY}"
+  ensure_chroot_minisign
+  bind_seckey "${seckey}"
+
+  for iso in "${isos[@]}"; do
+    chroot_iso=$(iso_in_chroot "${iso}")
+    run_minisign -S -s /root/aios-minisign.key -m "${chroot_iso}" \
+      || die "minisign sign failed for ${iso}"
+    if [[ ! -f "${iso}.minisig" ]]; then
+      die "minisign: missing signature ${iso}.minisig after sign"
+    fi
+    rc=0
+    run_minisign -Vm "${chroot_iso}" -p /mnt/aios/payload/minisign.pub >/dev/null 2>&1 || rc=$?
+    if [[ "${rc}" -ne 0 ]]; then
+      die "minisign: bad signature for ${iso} (exit ${rc})"
+    fi
+    printf 'signed %s\n' "${iso}"
+  done
+  unbind_seckey
+}
+
+assert_published_signed() {
+  local iso rc chroot_iso
+  [[ "${PUBLISH}" -eq 1 ]] || return 0
+  ensure_chroot_minisign
+  for iso in "${isos[@]}"; do
+    if [[ ! -f "${iso}.minisig" ]]; then
+      die "publish refused: missing ${iso}.minisig; unsigned images must not leave the workstation (L-10)"
+    fi
+    chroot_iso=$(iso_in_chroot "${iso}")
+    rc=0
+    run_minisign -Vm "${chroot_iso}" -p /mnt/aios/payload/minisign.pub >/dev/null 2>&1 || rc=$?
+    if [[ "${rc}" -ne 0 ]]; then
+      die "publish refused: bad minisign signature for ${iso} (exit ${rc}) (L-10)"
+    fi
+  done
 }
 
 verify_pin() {
@@ -226,7 +392,18 @@ run_mkarchiso() {
   fi
 }
 
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --publish) PUBLISH=1; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) die "unknown argument: $1" ;;
+  esac
+done
+
+trap cleanup EXIT
+
 check_package_lists
+check_hashes
 verify_pin
 prepare_chroot
 run_mkarchiso
@@ -235,3 +412,5 @@ shopt -s nullglob
 isos=("${DIST}"/aios-*.iso)
 [[ ${#isos[@]} -ge 1 ]] || die "mkarchiso finished but ${DIST}/aios-*.iso is missing"
 printf 'built %s\n' "${isos[@]}"
+sign_isos
+assert_published_signed

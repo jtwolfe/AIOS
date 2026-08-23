@@ -1,8 +1,52 @@
 # AIOS payload
 
-Archiso profile for the trusted installer image (P1). No desktop. Unsigned
-images must not leave the workstation (L-10). Minisign out-of-band steps
-land in P1.2.
+Archiso profile for the trusted installer image (P1). No desktop.
+Unsigned images must not leave the workstation (L-10). Do not pipe a
+fetched script into a shell (HI-04).
+
+## Out-of-band verify (P1.2)
+
+From the repository root, after a signed build:
+
+```sh
+sha256sum -c payload/hashes.txt
+minisign -Vm dist/aios-*.iso -p payload/minisign.pub
+```
+
+`payload/hashes.txt` is GNU `sha256sum` text-mode output (64 lowercase
+hex, two spaces, path relative to the repository root). It pins shipped
+blobs that exist now, including both `pacstrap.x86_64` copies. Stubs are
+allowed; the hashes still pin whatever is shipped. The hard-invariants
+file is not listed until it is copied into the payload.
+
+Public key (`payload/minisign.pub`):
+
+```
+untrusted comment: minisign public key 2C2CB12A0B9BDF35
+RWQ135sLKrEsLCY+gZMn9y/msJqtHA7mW1gsa5R3ckudsjAlRXpHjrbj
+```
+
+Compare that file to this page before trusting a signature. The secret
+key is operator-local and never in git:
+
+`${XDG_CONFIG_HOME:-$HOME/.config}/aios/minisign.key` (mode 0600).
+
+`build.sh` honours `AIOS_MINISIGN_SECKEY` if set. Under `sudo` it looks
+in the invoking user's `~/.config/aios/minisign.key`, then
+`~/.minisign/minisign.key`. Do not put the secret under `payload/` or
+anywhere a `git add` can see it.
+
+If this workstation has no key yet:
+
+```sh
+mkdir -p ~/.config/aios
+chmod 700 ~/.config/aios
+minisign -G -W -p payload/minisign.pub -s ~/.config/aios/minisign.key
+chmod 600 ~/.config/aios/minisign.key
+```
+
+Replacing `payload/minisign.pub` is a reviewable payload change. Keep
+the secret file outside the work tree.
 
 ## Pinned bootstrap (hour 1)
 
@@ -34,11 +78,19 @@ PGP (the sha256 pin still binds). A bad signature fails the build.
 
 ```sh
 sudo ./payload/build.sh
+sudo ./payload/build.sh --publish
 ```
 
-Needs root for the bootstrap chroot and `mkarchiso`. Output:
-`dist/aios-*.iso` (gitignored). Work files under `work/` (gitignored).
-The script does not sysupgrade.
+Needs root for the bootstrap chroot and `mkarchiso`. When the secret key
+is present, the script installs `minisign` in that same pinned chroot
+(no sysupgrade) and signs `dist/aios-*.iso`. Output: `dist/aios-*.iso`
+and, when signed, `dist/aios-*.iso.minisig` (gitignored). Work files
+under `work/` (gitignored). The script does not sysupgrade.
+
+`--publish` fails closed unless every `dist/aios-*.iso` has a matching
+`.minisig` that verifies with `payload/minisign.pub`. A local build
+without the secret key still writes the ISO under `dist/` and that file
+must not be copied off the workstation (L-10).
 
 ## Profile
 

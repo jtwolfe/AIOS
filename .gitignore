@@ -13,6 +13,9 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+minisign.key
+*.minisign.key
+*.minisig
 
 # Tooling
 node_modules/
