@@ -61,10 +61,9 @@ def serve():
                 seen[path] = mtime
                 try:
                     load_proposal(path)
-                except ProposalSchemaError as exc:
+                except Exception as exc:
                     _reject("%s: %s" % (path, exc))
                     continue
-                # Schema pass is not a merge. Oracles are re-run without the model.
                 sys.stdout.write("ok: schema %s\n" % path)
                 sys.stdout.flush()
         time.sleep(POLL_S)

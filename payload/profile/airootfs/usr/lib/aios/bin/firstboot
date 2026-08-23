@@ -546,7 +546,7 @@ copy_payload_into_target() {
     "${TARGET}/srv/aios/envelope/hard-invariants.md"
   copy_if_present "${AIOS_LIB}/envelope/hard-invariants.md" \
     "${TARGET}/srv/aios/envelope/hard-invariants.md"
-  # Checker source becomes the /srv/aios/checker worktree (HI-02). Not enabled on the live ISO.
+  # init_one_git commits this tree into /srv/aios/checker.
   [ -d "${AIOS_LIB}/checker/aios_checker" ] \
     || die "payload checker source missing"
   cp -a "${AIOS_LIB}/checker/." "${TARGET}/srv/aios/checker/" \

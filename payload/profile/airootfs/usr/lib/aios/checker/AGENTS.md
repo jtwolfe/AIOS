@@ -41,6 +41,10 @@ Load a proposal from `/srv/aios/state/proposals/<id>.json`. Reject it if
 the schema fails. Re-run the declared oracles without the model. Merge
 to `main` only after that pass, and only as `aios-checker`.
 
+The unit's default process schema-gates those documents. It does not
+re-run oracles or merge. `merge` updates `refs/heads/main` on the
+checker-owned bare repo.
+
 ## Depth
 
 - [README.md](README.md)

@@ -371,6 +371,13 @@ check_firstboot_payload() {
   [[ -f "${iso}/etc/systemd/system/aios-checker.service" ]] || die "missing aios-checker.service"
   [[ ! -e "${iso}/etc/systemd/system/multi-user.target.wants/aios-checker.service" ]] \
     || die "aios-checker.service must not be enabled on the live ISO"
+  grep -q '^User=aios-checker$' "${iso}/etc/systemd/system/aios-checker.service" \
+    || die "aios-checker.service must set User=aios-checker"
+  grep -q '^Group=aios-checker$' "${iso}/etc/systemd/system/aios-checker.service" \
+    || die "aios-checker.service must set Group=aios-checker"
+  grep -q '^ExecStart=/usr/bin/python3 /srv/aios/checker/aios_checker/main.py$' \
+    "${iso}/etc/systemd/system/aios-checker.service" \
+    || die "aios-checker.service ExecStart must be the checker driver"
   [[ -f "${iso}/usr/lib/aios/checker/aios_checker/schema.py" ]] || die "missing checker schema.py"
   [[ -d "${REPO_ROOT}/checker" ]] || die "missing checker/"
   diff -qr "${REPO_ROOT}/checker" "${iso}/usr/lib/aios/checker" \

@@ -35,8 +35,13 @@ need_file "${PACSTRAP}"
 need_file "${PACSTRAP_ISO}"
 need_file "${FIRSTBOOT}"
 need_file "${INSTALLER}"
-need_file "${AIROOTFS}/etc/systemd/system/aios-checker.service"
+CHECKER_UNIT="${AIROOTFS}/etc/systemd/system/aios-checker.service"
+need_file "${CHECKER_UNIT}"
 need_file "${AIROOTFS}/usr/lib/aios/checker/aios_checker/schema.py"
+need_line "${CHECKER_UNIT}" "User=aios-checker"
+need_line "${CHECKER_UNIT}" "Group=aios-checker"
+need_line "${CHECKER_UNIT}" \
+  "ExecStart=/usr/bin/python3 /srv/aios/checker/aios_checker/main.py"
 [ -d "${AIROOTFS}/etc/systemd/system" ] || fail "missing airootfs systemd/system"
 
 # No DE / display-manager names in the live ISO list or the installed set.

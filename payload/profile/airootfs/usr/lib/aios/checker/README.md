@@ -38,6 +38,7 @@ live ISO.
 
 `aios_checker/merge.py`: `assert_merge_permitted` / `merge_to_main`.
 Only uid `aios-checker` may fast-forward or squash-merge to `main`.
+`merge` updates `refs/heads/main` on `/srv/aios/git/<name>.git`.
 
 ## Driver
 
@@ -46,8 +47,7 @@ python3 /srv/aios/checker/aios_checker/main.py validate FILE.json
 python3 /srv/aios/checker/aios_checker/main.py merge REPO BRANCH [--mode ff-only|squash]
 ```
 
-With no arguments the service watches `proposals/` and refuses documents
-that fail the schema. It does not merge until the declared oracles have
-been re-run.
+With no arguments the service watches `proposals/` and schema-gates each
+document. It does not re-run oracles or merge.
 
 Exit 0 on pass, non-zero on fail. One-line reason on stderr.

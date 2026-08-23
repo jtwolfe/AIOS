@@ -113,7 +113,6 @@ def _oracles(value):
 
 
 def _evidence(value):
-    # HI-08: the checker refuses missing evidence; the human is not CI.
     obj = _need_dict(value, "evidence")
     extra = set(obj) - set(ALLOWED_EVIDENCE)
     if extra:
@@ -180,6 +179,12 @@ def load_proposal(path):
             raw = json.load(fh)
     except OSError as exc:
         raise ProposalSchemaError("cannot read proposal: %s" % exc) from exc
+    except UnicodeDecodeError as exc:
+        raise ProposalSchemaError("proposal is not UTF-8: %s" % exc) from exc
     except json.JSONDecodeError as exc:
+        raise ProposalSchemaError("proposal is not JSON: %s" % exc) from exc
+    except RecursionError as exc:
+        raise ProposalSchemaError("proposal JSON too deeply nested") from exc
+    except ValueError as exc:
         raise ProposalSchemaError("proposal is not JSON: %s" % exc) from exc
     return validate_proposal(raw)
