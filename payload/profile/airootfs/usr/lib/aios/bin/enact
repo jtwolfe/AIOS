@@ -8,10 +8,22 @@ export PATH
 BRAKE=/srv/aios/state/brake
 # Root-owned; not in an aios-agent worktree (L-20). P5 writes this at accept.
 ACCEPT_STAMP=/etc/aios/envelope-accepted
+STATE=/srv/aios/state
+PIN="${STATE}/packages.txt"
+MAP="${STATE}/esp-generations"
+GENROOT=/boot/aios-gen
+WINDOW_LOCK=/run/aios/enact.window
+
+# Four live images only; 1G ESP cannot hold fallback initramfs copies (L-19).
+ESP_FILES="vmlinuz-linux vmlinuz-linux-lts initramfs-linux.img initramfs-linux-lts.img"
 
 die() {
   printf 'error: %s\n' "$*" >&2
   exit 1
+}
+
+log() {
+  printf 'enact: %s\n' "$*" >&2
 }
 
 usage() {
@@ -100,21 +112,330 @@ validate_unit() {
   is_aios_unit "${_unit}" || die "unit is not an aios-* unit: ${_unit}"
 }
 
+# Two windows interleaving pre/post/ESP would leave a snapper id without a boot image (HI-06).
+acquire_window() {
+  command -v flock >/dev/null 2>&1 || die "flock missing"
+  mkdir -p /run/aios || die "mkdir /run/aios failed"
+  exec 9>"${WINDOW_LOCK}"
+  flock -n 9 || die "enact window already running"
+}
+
+parse_slug() {
+  _s=$1
+  [ -n "${_s}" ] || die "empty slug"
+  case "${_s}" in
+    -*) die "slug must not start with -: ${_s}" ;;
+    *[!A-Za-z0-9._-]*) die "slug must be [A-Za-z0-9._-]: ${_s}" ;;
+  esac
+  [ "${#_s}" -le 64 ] || die "slug too long"
+  printf '%s\n' "${_s}"
+}
+
+require_numeric_id() {
+  _id=$1
+  _what=$2
+  case "${_id}" in
+    ''|*[!0-9]*) die "${_what} is not numeric: ${_id}" ;;
+  esac
+  [ "${_id}" -gt 0 ] || die "${_what} must be > 0"
+}
+
+require_kernels() {
+  pacman -Q linux >/dev/null 2>&1 || die "linux is not installed (HI-06, L-19)"
+  pacman -Q linux-lts >/dev/null 2>&1 || die "linux-lts is not installed (HI-06, L-19)"
+}
+
+# Snapper of @ does not include the ESP (HI-06). Refuse to record a false seatbelt.
+require_esp() {
+  command -v mountpoint >/dev/null 2>&1 || die "mountpoint missing"
+  mountpoint -q /boot \
+    || die "/boot is not a mount; refuse ESP copy onto @ (HI-06, L-19)"
+  if command -v findmnt >/dev/null 2>&1; then
+    _fstype=$(findmnt -n -o FSTYPE /boot) || die "cannot read /boot fstype"
+    [ "${_fstype}" != btrfs ] \
+      || die "/boot is btrfs; ESP is not in @ (HI-06)"
+  fi
+  mountpoint -q /srv \
+    || die "/srv is not a mount; refuse packages.txt onto @ (L-07)"
+  [ -d "${STATE}" ] || die "missing ${STATE}"
+}
+
+need_boot_file() {
+  [ -s "$1" ] || die "missing or empty $1 (L-19)"
+}
+
+snapper_root() {
+  /usr/bin/snapper --no-dbus -c root "$@"
+}
+
+create_pre() {
+  _desc=$1
+  _id=$(snapper_root create --type pre --print-number --description "pre ${_desc}") \
+    || die "snapper pre failed"
+  _id=$(printf '%s\n' "${_id}" | tr -d ' \t\r')
+  require_numeric_id "${_id}" "snapper pre id"
+  log "snapper pre ${_id}"
+  printf '%s\n' "${_id}"
+}
+
+create_post() {
+  _pre=$1
+  _desc=$2
+  _id=$(snapper_root create --type post --pre-number "${_pre}" \
+    --print-number --description "post ${_desc}") \
+    || die "snapper post failed"
+  _id=$(printf '%s\n' "${_id}" | tr -d ' \t\r')
+  require_numeric_id "${_id}" "snapper post id"
+  log "snapper post ${_id} (pre ${_pre})"
+  printf '%s\n' "${_id}"
+}
+
+# Same-window ESP copy keyed by post id: a snapper id without a boot image is not a seatbelt (HI-06, L-19).
+copy_esp_generation() {
+  _id=$1
+  require_numeric_id "${_id}" "esp generation id"
+  _gen="${GENROOT}/${_id}"
+  mkdir -p "${_gen}" || die "mkdir ${_gen} failed"
+  for _f in ${ESP_FILES}; do
+    need_boot_file "/boot/${_f}"
+    cp -a "/boot/${_f}" "${_gen}/${_f}" \
+      || die "cp -a /boot/${_f} to aios-gen/${_id} failed"
+    need_boot_file "${_gen}/${_f}"
+  done
+  log "ESP generation ${_id}"
+}
+
+map_last_id() {
+  [ -f "${MAP}" ] || return 0
+  grep -v '^[[:space:]]*#' "${MAP}" | grep -v '^[[:space:]]*$' | tail -n 1 | awk '{print $1}'
+}
+
+# Retention N=2: current post + previous successful post. Delete the rest in the same window.
+retain_esp_generations() {
+  _post=$1
+  require_numeric_id "${_post}" "retain post id"
+  _prev=$(map_last_id || true)
+  case "${_prev}" in
+    "${_post}"|'') _prev= ;;
+    *[!0-9]*) die "malformed esp-generations last id: ${_prev}" ;;
+  esac
+  if [ -n "${_prev}" ] && [ "${_prev}" -eq 0 ]; then
+    die "esp-generations last id must be > 0"
+  fi
+
+  _tmp="${WINDOW_LOCK}.map.$$"
+  {
+    printf '%s\n' '# snapper_id esp_dir'
+    if [ -n "${_prev}" ]; then
+      printf '%s /boot/aios-gen/%s\n' "${_prev}" "${_prev}"
+    fi
+    printf '%s /boot/aios-gen/%s\n' "${_post}" "${_post}"
+  } > "${_tmp}" || die "write ${_tmp} failed"
+  cat "${_tmp}" > "${MAP}" || die "write ${MAP} failed"
+  rm -f "${_tmp}"
+
+  [ -d "${GENROOT}" ] || die "missing ${GENROOT}"
+  for _d in "${GENROOT}"/*; do
+    [ -e "${_d}" ] || continue
+    [ -d "${_d}" ] || die "unexpected non-directory in aios-gen: ${_d}"
+    _id=${_d##*/}
+    require_numeric_id "${_id}" "aios-gen directory"
+    if [ "${_id}" = "${_post}" ]; then
+      continue
+    fi
+    if [ -n "${_prev}" ] && [ "${_id}" = "${_prev}" ]; then
+      continue
+    fi
+    rm -rf "${_d}" || die "failed to drop stale ESP generation ${_id}"
+    log "dropped stale ESP generation ${_id}"
+  done
+
+  if [ -n "${_prev}" ]; then
+    write_aios_prev "${_prev}"
+  else
+    # boot-seatbelt: aios-prev.conf must be absent until a second generation exists.
+    rm -f /boot/loader/entries/aios-prev.conf
+  fi
+  printf '%s\n' "${_prev}"
+}
+
+root_uuid() {
+  _u=
+  if command -v findmnt >/dev/null 2>&1; then
+    _u=$(findmnt -n -o UUID / 2>/dev/null || true)
+  fi
+  if [ -z "${_u}" ] && command -v findmnt >/dev/null 2>&1; then
+    _src=$(findmnt -n -o SOURCE / 2>/dev/null || true)
+    if [ -n "${_src}" ]; then
+      _u=$(blkid -s UUID -o value "${_src}" 2>/dev/null || true)
+    fi
+  fi
+  [ -n "${_u}" ] || die "cannot determine root UUID for aios-prev.conf"
+  printf '%s\n' "${_u}"
+}
+
+# Firmware previous-kernel menu only; still rootflags=subvol=@. P7.7 restore is aios-rollback.conf, not this.
+write_aios_prev() {
+  _prev=$1
+  require_numeric_id "${_prev}" "previous generation id"
+  _linux="${GENROOT}/${_prev}/vmlinuz-linux"
+  _initrd="${GENROOT}/${_prev}/initramfs-linux.img"
+  need_boot_file "${_linux}"
+  need_boot_file "${_initrd}"
+  _opts=
+  if [ -f /boot/loader/entries/aios-linux.conf ]; then
+    _opts=$(awk '/^options[[:space:]]/ { sub(/^options[[:space:]]+/, ""); print; exit }' \
+      /boot/loader/entries/aios-linux.conf || true)
+  fi
+  if [ -z "${_opts}" ]; then
+    _uuid=$(root_uuid)
+    _opts="root=UUID=${_uuid} rootflags=subvol=@ rw console=tty0"
+  fi
+  mkdir -p /boot/loader/entries || die "mkdir /boot/loader/entries failed"
+  cat > /boot/loader/entries/aios-prev.conf <<EOF || die "write aios-prev.conf failed"
+title   AIOS (previous)
+linux   /aios-gen/${_prev}/vmlinuz-linux
+initrd  /aios-gen/${_prev}/initramfs-linux.img
+options ${_opts}
+EOF
+}
+
+# Pacman -Qqe pin; linux and linux-lts stay explicit (HI-06).
+write_packages_txt() {
+  [ -d "${STATE}" ] || die "missing ${STATE}"
+  _tmp="${WINDOW_LOCK}.packages.$$"
+  pacman -Qqe > "${_tmp}" || die "pacman -Qqe failed"
+  [ -s "${_tmp}" ] || die "pacman -Qqe produced no explicit packages"
+  grep -qx linux "${_tmp}" || die "linux missing from packages.txt (HI-06)"
+  grep -qx linux-lts "${_tmp}" || die "linux-lts missing from packages.txt (HI-06)"
+  cat "${_tmp}" > "${PIN}" || die "write ${PIN} failed"
+  rm -f "${_tmp}"
+}
+
+clear_git_env() {
+  unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY
+}
+
+# Mechanical pin, not the proposer: author is aios so HI-03 (no aios-agent on main) stays true.
+git_state() {
+  git -c safe.directory="${STATE}" \
+    -c user.name=aios \
+    -c user.email=aios@localhost \
+    -C "${STATE}" "$@"
+}
+
+record_state_git() {
+  _pre=$1
+  _post=$2
+  _slug=$3
+  clear_git_env
+  git -C "${STATE}" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+    || die "${STATE} is not a git worktree (HI-01)"
+  git_state add -- packages.txt esp-generations \
+    || die "git add packages.txt esp-generations failed"
+  if git_state diff --cached --quiet; then
+    log "state pin unchanged"
+    return 0
+  fi
+  git_state commit -m "feat(state): ${_slug} window
+
+Snapshot: snapper pre #${_pre} post #${_post}
+ESP: /boot/aios-gen/${_post}" \
+    || die "git commit ${STATE} failed"
+  _br=$(git_state symbolic-ref --short HEAD) \
+    || die "${STATE} HEAD is not a branch"
+  [ -n "${_br}" ] || die "${STATE} branch name empty"
+  git_state push origin "HEAD:refs/heads/${_br}" \
+    || die "git push ${STATE} ${_br} failed (HI-01)"
+}
+
+restore_state_owner() {
+  # Root wrote pin files (and maybe git objects) in an aios-agent worktree.
+  # Do not chown -R the tree: brake and bootstrap-in-progress stay root-owned (L-12, L-20).
+  _own=$(stat -c '%U:%G' "${STATE}") || die "cannot stat ${STATE}"
+  chown "${_own}" "${PIN}" "${MAP}" || die "chown pin files failed"
+  if [ -d "${STATE}/.git" ]; then
+    chown -R "${_own}" "${STATE}/.git" || die "chown ${STATE}/.git failed"
+  fi
+}
+
+run_policy() {
+  _name=$1
+  _tag=$2
+  for _p in "/srv/aios/checker/policy/${_name}" "/usr/lib/aios/checker/policy/${_name}"; do
+    if [ -x "${_p}" ]; then
+      "${_p}" || die "${_name} failed after window (${_tag})"
+      return 0
+    fi
+  done
+  die "${_name} missing (${_tag})"
+}
+
+bootctl_update() {
+  /usr/bin/bootctl --esp-path=/boot update \
+    || die "bootctl update failed"
+}
+
+finish_window() {
+  _pre=$1
+  _post=$2
+  _slug=$3
+  require_esp
+  require_kernels
+  copy_esp_generation "${_post}"
+  retain_esp_generations "${_post}" >/dev/null
+  write_packages_txt
+  record_state_git "${_pre}" "${_post}" "${_slug}"
+  restore_state_owner
+  bootctl_update
+  # Predicates must stay true after the window (HI-06, L-19); checker will re-run them.
+  run_policy boot-seatbelt.sh "HI-06, L-19"
+  run_policy packages-drift.sh "HI-01"
+}
+
 cmd_syu() {
-  # P4.5 owns the full -Syu window. Naming the verb is the allowlist; do not run pacman here.
-  die "syu window is not this phase (P4.5)"
+  [ "$#" -le 1 ] || die "syu takes optional SLUG only"
+  _slug=$(parse_slug "${1:-syu}")
+  acquire_window
+  require_esp
+  require_kernels
+  _pre=$(create_pre "${_slug}")
+  # Full refresh+sysupgrade only. Partial pacman is not allowlisted (L-04, HI-06).
+  /usr/bin/pacman -Syu --noconfirm || die "pacman -Syu failed"
+  require_kernels
+  _post=$(create_post "${_pre}" "${_slug}")
+  finish_window "${_pre}" "${_post}" "${_slug}"
+  printf 'pre %s\npost %s\nesp /boot/aios-gen/%s\n' "${_pre}" "${_post}" "${_post}"
 }
 
 cmd_snapper_pre() {
-  die "snapper pre is not this phase (P4.5)"
+  [ "$#" -le 1 ] || die "snapper-pre takes optional SLUG only"
+  _slug=$(parse_slug "${1:-enact}")
+  acquire_window
+  create_pre "${_slug}"
 }
 
 cmd_snapper_post() {
-  die "snapper post + ESP copy is not this phase (P4.5)"
+  [ "$#" -ge 1 ] || die "snapper-post requires pre-number"
+  [ "$#" -le 2 ] || die "snapper-post takes PRE_NUMBER and optional SLUG"
+  _pre=$1
+  require_numeric_id "${_pre}" "pre-number"
+  _slug=$(parse_slug "${2:-enact}")
+  acquire_window
+  require_esp
+  _post=$(create_post "${_pre}" "${_slug}")
+  finish_window "${_pre}" "${_post}" "${_slug}"
+  printf 'pre %s\npost %s\nesp /boot/aios-gen/%s\n' "${_pre}" "${_post}" "${_post}"
 }
 
 cmd_bootctl() {
-  die "bootctl in the enact window is not this phase (P4.5)"
+  [ "$#" -eq 1 ] || die "bootctl takes install|update|list only"
+  case "$1" in
+    install) exec /usr/bin/bootctl --esp-path=/boot install ;;
+    update) exec /usr/bin/bootctl --esp-path=/boot update ;;
+    list) exec /usr/bin/bootctl --esp-path=/boot list ;;
+    *) die "bootctl action not allowlisted: $1" ;;
+  esac
 }
 
 cmd_unit() {

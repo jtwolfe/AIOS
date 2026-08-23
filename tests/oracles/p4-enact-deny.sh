@@ -84,6 +84,13 @@ _d_rc=$(deny_rc unit start aios-installer.service)
 _e_out=$(run_enact pacman -S foo)
 need_tag "${_e_out}" "L-04" "enact pacman"
 
+_e_out=$(run_enact -Syu)
+need_tag "${_e_out}" "L-04" "enact -Syu"
+
+_e_out=$(run_enact syu)
+need_tag "${_e_out}" "L-04" "enact syu as non-root"
+[ "$(enact_rc syu)" != 0 ] || fail "enact syu allowed as non-root"
+
 if [ "${failed}" -ne 0 ]; then
   printf 'error: p4-enact-deny failed (%s check(s))\n' "${failed}" >&2
   exit 1

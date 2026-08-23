@@ -18,8 +18,8 @@ default; live is Grok device-code (L-17). The live OS token is
 `/srv/aios/state/provider/os.token` (mode `0600`, uid `aios-agent`, not
 in git). `aios-work` cannot read it (L-16, HI-13, HI-16). The checker
 does not import this tree (HI-02). No turn loop (P4.3). No machine-goal
-runner (P4.4). No `-Syu` window (P4.5). The unit with no arguments still
-idles (L-21).
+runner (P4.4). `enact syu` is the full `-Syu` window (P4.5). The unit
+with no arguments still idles (L-21).
 
 ## Deny-list
 

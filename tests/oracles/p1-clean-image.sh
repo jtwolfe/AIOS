@@ -80,8 +80,16 @@ grep -q 'etckeeper.timer' "${AIROOTFS}/usr/lib/aios/agent/aios_agent/deny.py" \
   || fail "agent deny-list missing etckeeper"
 grep -q 'partial pacman is not allowlisted' "${ENACT}" \
   || fail "enact allowlist missing partial-pacman refusal"
-grep -q 'syu window is not this phase (P4.5)' "${ENACT}" \
-  || fail "enact cmd_syu must die closed (P4.5)"
+grep -q -- 'pacman -Syu' "${ENACT}" \
+  || fail "enact cmd_syu must run pacman -Syu (P4.5)"
+grep -q 'syu window is not this phase' "${ENACT}" \
+  && fail "enact cmd_syu must not die closed (P4.5)"
+grep -q '/boot/aios-gen/' "${ENACT}" \
+  || fail "enact must copy ESP generation (L-19)"
+grep -q 'initramfs-linux-lts.img' "${ENACT}" \
+  || fail "enact ESP copy missing linux-lts initramfs (L-19)"
+grep -E '^ESP_FILES=.*fallback' "${ENACT}" \
+  && fail "enact must not copy fallback initramfs (L-19)"
 grep -Fq 'syu|snapper-pre|snapper-post|bootctl|unit' "${ENACT}" \
   || fail "enact allowlist verbs missing"
 grep -q 'ACCEPT_STAMP=/etc/aios/envelope-accepted' "${ENACT}" \
