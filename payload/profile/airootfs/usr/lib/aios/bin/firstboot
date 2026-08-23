@@ -746,13 +746,214 @@ init_etc_mirror() {
   [ -d "${TARGET}/srv/aios/etc-mirror" ] || die "etc-mirror missing"
 }
 
+# Root (oracles, recovery) is not aios-checker; git 2.35+ refuses other-owner dirs.
+write_git_safe_directory() {
+  [ -x "${TARGET}/usr/bin/git" ] || die "git missing on target"
+  for _p in \
+    /srv/aios/git/envelope.git \
+    /srv/aios/git/memory.git \
+    /srv/aios/git/skills.git \
+    /srv/aios/git/agent.git \
+    /srv/aios/git/checker.git \
+    /srv/aios/git/state.git \
+    /srv/aios/git/seeds.git \
+    /srv/aios/envelope \
+    /srv/aios/memory \
+    /srv/aios/skills \
+    /srv/aios/agent \
+    /srv/aios/checker \
+    /srv/aios/state \
+    /srv/aios/seeds
+  do
+    arch-chroot "${TARGET}" /usr/bin/git config --system --add safe.directory "${_p}" \
+      || die "git safe.directory ${_p} failed"
+  done
+}
+
+write_machine_agents_md() {
+  cat > "${TARGET}/srv/aios/AGENTS.md" <<'EOF' || die "write /srv/aios/AGENTS.md failed"
+# AGENTS.md
+
+This file is the contract for any AI agent working on this machine.
+Nested AGENTS.md files in subdirectories override this file for their
+tree. Direct human instruction always wins, except where a hard
+invariant forbids it; those conflicts are raised, not swallowed.
+
+Canonical hard invariants: envelope/hard-invariants.md (HI-01 … HI-17).
+Quote them by id. Do not extend them in this file.
+
+Do not invent a parallel handbook in the prompt.
+
+## What this is
+
+AIOS is an operating system a privileged AI agent maintains so the human
+does not have to administer the machine. Definitional and reconstructible:
+a living envelope of checkable conditions on Arch Linux, enacted as local
+git.
+
+It is not a person, not a new language, and not a memory product. The
+privileged agent is a systemd service, not a self.
+
+An optional work runtime for user tasks may be synthesised at bootstrap.
+It is not privileged. It files intents at /run/aios/intent.sock. The
+kernel enforces the boundary. The work runtime stays off until the
+envelope records an explicit yes (HI-15).
+
+## Non-negotiable
+
+1. Never enact a privileged change that fails mechanical validation against
+   the current envelope.
+2. A privileged proposal is intent plus oracles. No oracle set, no enactment.
+3. All code you write and all software you install is recorded in local git.
+   No unversioned live mutations (HI-01).
+4. Never commit to main as the proposer. Branch, test, request merge, wait
+   for the checker (HI-03, L-03).
+5. Never force-push, never rewrite published history, never curl|sh, never
+   mutate /usr outside pacman (HI-04).
+6. The human is the source of the highest conditions and the emergency brake.
+   The human is not CI — you verify (HI-05, HI-08).
+7. Prefer editing existing files to creating new ones.
+8. Do not invent a parallel envelope, skill tree, architecture, language, or
+   identity store (HI-12).
+9. The proposing model does not decide what memory is worth keeping (HI-11).
+10. Work agents never enact privileged change. They file intents. The
+    privilege boundary is an OS property (HI-13, HI-16), not a request to
+    the model.
+
+Bare privileged git is under /srv/aios/git/, owned by aios-checker (L-03).
+Agent working trees are /srv/aios/<name> and push only refs/heads/agent/*.
+EOF
+  [ -f "${TARGET}/srv/aios/AGENTS.md" ] || die "/srv/aios/AGENTS.md missing"
+}
+
+install_hook_stubs() {
+  _hookdir="${TARGET}/srv/aios/git/${1}.git/hooks"
+  mkdir -p "${_hookdir}" || die "mkdir ${_hookdir} failed"
+  for _h in update pre-receive reference-transaction; do
+    cat > "${_hookdir}/${_h}" <<'EOF' || die "write git hook failed"
+#!/bin/sh
+# L-03 hook path (HI-02, HI-03).
+exit 0
+EOF
+    chmod 0755 "${_hookdir}/${_h}" || die "chmod ${_hookdir}/${_h} failed"
+  done
+}
+
+# L-03 / HI-01: checker-owned bare git; working copy at /srv/aios/<name> with origin push.
+init_one_git() {
+  _name=$1
+  case "${_name}" in
+    envelope)
+      _purpose='Current checkable conditions. Canonical hard invariants: hard-invariants.md.'
+      ;;
+    memory)
+      _purpose='Operational history. Significant exchanges are stored verbatim (HI-11).'
+      ;;
+    skills)
+      _purpose='Crystallized SKILL.md files for the privileged agent.'
+      ;;
+    agent)
+      _purpose='Privileged proposer. Does not merge to main (HI-03).'
+      ;;
+    checker)
+      _purpose='Independent validator. No model client (HI-02).'
+      ;;
+    state)
+      _purpose='System-intent log: installs, units, snapshots. packages.txt is pacman -Qqe.'
+      ;;
+    seeds)
+      _purpose='Payload-materialised seed trees (HI-17). Reconstruction does not fetch GitHub.'
+      ;;
+    *)
+      die "unknown git tree ${_name}"
+      ;;
+  esac
+  _wt="/srv/aios/${_name}"
+  _bare="/srv/aios/git/${_name}.git"
+  _host_wt="${TARGET}${_wt}"
+  _host_bare="${TARGET}${_bare}"
+
+  [ ! -e "${_host_bare}" ] || die "${_bare} already exists"
+  [ ! -e "${_host_wt}/.git" ] || die "${_wt} is already a git repo"
+  mkdir -p "${_host_wt}" || die "mkdir ${_wt} failed"
+
+  printf '# %s\n\n%s\n' "${_name}" "${_purpose}" > "${_host_wt}/README.md" \
+    || die "write ${_wt}/README.md failed"
+  printf '# Local git is the source of truth (HI-01).\n' > "${_host_wt}/.gitignore" \
+    || die "write ${_wt}/.gitignore failed"
+  if [ "${_name}" = envelope ]; then
+    [ -f "${_host_wt}/hard-invariants.md" ] \
+      || die "${_wt}/hard-invariants.md missing before git"
+  fi
+
+  arch-chroot "${TARGET}" /usr/bin/git init -b main "${_wt}" \
+    || die "git init ${_wt} failed"
+  arch-chroot "${TARGET}" /usr/bin/git -C "${_wt}" add -A \
+    || die "git add ${_wt} failed"
+  arch-chroot "${TARGET}" /usr/bin/git \
+    -c user.name=aios \
+    -c user.email=aios@localhost \
+    -C "${_wt}" \
+    commit -m "chore(${_name}): initialise tree" \
+    || die "git commit ${_wt} failed"
+  arch-chroot "${TARGET}" /usr/bin/git init --bare -b main "${_bare}" \
+    || die "git init --bare ${_bare} failed"
+  arch-chroot "${TARGET}" /usr/bin/git -C "${_wt}" remote add origin "${_bare}" \
+    || die "git remote add ${_name} failed"
+  arch-chroot "${TARGET}" /usr/bin/git -C "${_wt}" push -u origin main \
+    || die "git push ${_name} main failed"
+  install_hook_stubs "${_name}"
+  [ -x "${_host_bare}/hooks/update" ] \
+    && [ -x "${_host_bare}/hooks/pre-receive" ] \
+    && [ -x "${_host_bare}/hooks/reference-transaction" ] \
+    || die "${_bare} hook paths missing"
+  arch-chroot "${TARGET}" /usr/bin/git -C "${_bare}" rev-parse main >/dev/null \
+    || die "${_bare} has no main"
+}
+
+init_privileged_git() {
+  mountpoint -q "${TARGET}/srv" \
+    || die "/srv is not mounted; refuse to write git onto @"
+  [ -x "${TARGET}/usr/bin/git" ] || die "git missing on target"
+  arch-chroot "${TARGET}" /usr/bin/id -u aios-checker >/dev/null \
+    || die "aios-checker missing (systemd-sysusers)"
+  arch-chroot "${TARGET}" /usr/bin/id -u aios-agent >/dev/null \
+    || die "aios-agent missing (systemd-sysusers)"
+  [ ! -e "${TARGET}/srv/aios/src" ] \
+    || die "/srv/aios/src must not exist (HI-15)"
+  [ -d "${TARGET}/srv/aios/etc-mirror" ] || die "etc-mirror missing before privileged git"
+  mkdir -p "${TARGET}/srv/aios/git" || die "mkdir /srv/aios/git failed"
+  write_machine_agents_md
+  for _name in envelope memory skills agent checker state seeds; do
+    init_one_git "${_name}"
+  done
+  arch-chroot "${TARGET}" /usr/bin/chown -R aios-checker:aios-checker /srv/aios/git \
+    || die "chown /srv/aios/git failed"
+  for _name in envelope memory skills agent checker state seeds; do
+    arch-chroot "${TARGET}" /usr/bin/chown -R aios-agent:aios-agent "/srv/aios/${_name}" \
+      || die "chown /srv/aios/${_name} failed"
+  done
+  [ -f "${TARGET}/srv/aios/envelope/hard-invariants.md" ] \
+    || die "envelope worktree missing hard-invariants.md"
+  [ -f "${TARGET}/srv/aios/state/packages.txt" ] \
+    || die "state worktree missing packages.txt"
+  [ -d "${TARGET}/srv/aios/etc-mirror" ] || die "etc-mirror missing after privileged git"
+  [ ! -e "${TARGET}/srv/aios/src" ] || die "/srv/aios/src must not exist (HI-15)"
+  [ ! -e "${TARGET}/srv/aios/.git" ] || die "/srv/aios must not be a git repository"
+  arch-chroot "${TARGET}" /usr/bin/git -C /srv/aios/git/envelope.git rev-parse main >/dev/null \
+    || die "git -C /srv/aios/git/envelope.git rev-parse main failed"
+  log "privileged git trees"
+}
+
 configure_seatbelts() {
   ensure_l07_mounts
   configure_snapper
   write_packages_txt
+  write_git_safe_directory
   init_etc_mirror
   create_first_snapshot
   copy_first_esp_generation
+  init_privileged_git
 }
 
 reboot_to_disk() {
