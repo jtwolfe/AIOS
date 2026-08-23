@@ -27,7 +27,7 @@ f149a45300c941cf8ba3a3bffa38ff5ce83e94bc8e9743f3aeb881d3465d32b0  payload/profil
 2bab2db9a0e56faf68fa8e3fe347dc61dd1b479873d27549028ccf8876cc99d6  payload/profile/airootfs/usr/lib/aios/checker/README.md
 76a5a05b232bc740df60544a01f33313249c36e800a2accb5b62bcf4d4175380  payload/profile/airootfs/usr/lib/aios/agent/.gitignore
 2a3e0886a43275556cf3ace1f6e8cdab13ce24203ccf1f46bf7287a6904bab88  payload/profile/airootfs/usr/lib/aios/agent/AGENTS.md
-9e1c3f57a4d5d81a6be188659b64bce0456074504f2bf442740702d4fb2327c6  payload/profile/airootfs/usr/lib/aios/agent/README.md
+2a2752d09cde0846cfe214c84cc94eb27db730ea7f4994a32963555b6f69198d  payload/profile/airootfs/usr/lib/aios/agent/README.md
 2fe8409585a96711decd7c023cb652d077cb8fcde843e1c3f4ee428ade81387f  payload/profile/airootfs/usr/lib/aios/agent/aios_agent/deny.py
 2a59115312e5c1142a7fccd38a8b6601c19a0ec831d2ebd618b4e0b7ec36f6f7  payload/profile/airootfs/usr/lib/aios/agent/aios_agent/main.py
 e1108b9ad337358eea3aeadc8b506a31a5b36f7ada645ff3fe45c0fb3c128d6c  payload/profile/airootfs/usr/lib/aios/agent/pyproject.toml
@@ -52,7 +52,7 @@ cff863f5917a8ef85e7e38a7d09cf91de4849f5398a5ac4d2848bb8a3b28ab8c  payload/profil
 9d36ac5e54804016c07d8cb345299c05612d6eff96e5698cd43278836bb48a63  payload/profile/airootfs/usr/lib/aios/checker/policy/hi-13-work-slice.sh
 2a89321e8308b3c33c97b909c9ba143f1d47991a1f4fce725612359ebe24c280  payload/profile/airootfs/usr/lib/aios/checker/policy/hi-14-failure-handoff.sh
 ed6563af85ec92c2fe0931673a017eb7c27375fa9a911bc909d058562a9f1922  payload/profile/airootfs/usr/lib/aios/checker/policy/hi-15-work-default-off.sh
-8b54df906a038d7a161150448ff2385ac5b4032d1f7af8d4a24d3e93c69542dc  payload/profile/airootfs/usr/lib/aios/checker/policy/hi-16-os-privilege.sh
+2cf86343046125aa5d9d4be8f33d3457c58d56b4227ecc7a6256a3cd7a18bb1c  payload/profile/airootfs/usr/lib/aios/checker/policy/hi-16-os-privilege.sh
 019040fa8c7c82642997faa688b7455a9391c9280069049627997f4c3e9ebb8d  payload/profile/airootfs/usr/lib/aios/checker/policy/hi-17-seeds-local.sh
 99bef58841ee59c6be637c1c26c22ffd72d5d313aa745bf58dfd91f18803fe92  payload/profile/airootfs/usr/lib/aios/checker/policy/no-curl-sh.sh
 8fda36c38ac13fd0a51419d97580e970a0c433691ea9e47163c87ab0579b0831  payload/profile/airootfs/usr/lib/aios/checker/policy/no-partial-upgrade.sh
@@ -63,7 +63,7 @@ ef06e6305365d44648da2b320fc9760554d782f551a4d57b2b64c3172eff4e02  payload/profil
 7bc2b6cf5d74e5455e484a9cd841902d16704d861f6703e566b0d60fefa4fe90  payload/profile/airootfs/usr/lib/aios/checker/policy/work-slice.sh
 546d914b824dadfa8726db967bddc6c07c4c241012a3275f84300d28f25abbf9  payload/profile/airootfs/usr/lib/aios/envelope/hard-invariants.md
 546d914b824dadfa8726db967bddc6c07c4c241012a3275f84300d28f25abbf9  payload/profile/airootfs/usr/lib/aios/hard-invariants.md
-f00f4e26a64bbcacd670ec91738f2ecedb6c10b8c548c2a21e6a075366ce648f  payload/profile/airootfs/usr/lib/aios/hashes.txt
+f130e861793bf86ac520259690d2da7c5f18183bf99ea16ad679c56096bee03c  payload/profile/airootfs/usr/lib/aios/hashes.txt
 9016e60116d7d4cb81db8e67a6e1cee82bfe021433b7febb36d176fa5fa3bdcb  payload/profile/airootfs/usr/lib/aios/minisign.pub
 33ec044a92385c806b950ab40674f1a5b374a388da79eb7a93d324ad753fa095  payload/profile/airootfs/usr/lib/aios/pacstrap.x86_64
 1dfab8088c3562fa1238017fb8a0a67af26846cca6b76a0dc7546d6290153da5  payload/profile/airootfs/usr/lib/sysusers.d/aios.conf
@@ -74,7 +74,7 @@ f149a45300c941cf8ba3a3bffa38ff5ce83e94bc8e9743f3aeb881d3465d32b0  checker/AGENTS
 2bab2db9a0e56faf68fa8e3fe347dc61dd1b479873d27549028ccf8876cc99d6  checker/README.md
 76a5a05b232bc740df60544a01f33313249c36e800a2accb5b62bcf4d4175380  agent/.gitignore
 2a3e0886a43275556cf3ace1f6e8cdab13ce24203ccf1f46bf7287a6904bab88  agent/AGENTS.md
-9e1c3f57a4d5d81a6be188659b64bce0456074504f2bf442740702d4fb2327c6  agent/README.md
+2a2752d09cde0846cfe214c84cc94eb27db730ea7f4994a32963555b6f69198d  agent/README.md
 2fe8409585a96711decd7c023cb652d077cb8fcde843e1c3f4ee428ade81387f  agent/aios_agent/deny.py
 2a59115312e5c1142a7fccd38a8b6601c19a0ec831d2ebd618b4e0b7ec36f6f7  agent/aios_agent/main.py
 e1108b9ad337358eea3aeadc8b506a31a5b36f7ada645ff3fe45c0fb3c128d6c  agent/pyproject.toml
@@ -99,7 +99,7 @@ cff863f5917a8ef85e7e38a7d09cf91de4849f5398a5ac4d2848bb8a3b28ab8c  checker/policy
 9d36ac5e54804016c07d8cb345299c05612d6eff96e5698cd43278836bb48a63  checker/policy/hi-13-work-slice.sh
 2a89321e8308b3c33c97b909c9ba143f1d47991a1f4fce725612359ebe24c280  checker/policy/hi-14-failure-handoff.sh
 ed6563af85ec92c2fe0931673a017eb7c27375fa9a911bc909d058562a9f1922  checker/policy/hi-15-work-default-off.sh
-8b54df906a038d7a161150448ff2385ac5b4032d1f7af8d4a24d3e93c69542dc  checker/policy/hi-16-os-privilege.sh
+2cf86343046125aa5d9d4be8f33d3457c58d56b4227ecc7a6256a3cd7a18bb1c  checker/policy/hi-16-os-privilege.sh
 019040fa8c7c82642997faa688b7455a9391c9280069049627997f4c3e9ebb8d  checker/policy/hi-17-seeds-local.sh
 99bef58841ee59c6be637c1c26c22ffd72d5d313aa745bf58dfd91f18803fe92  checker/policy/no-curl-sh.sh
 8fda36c38ac13fd0a51419d97580e970a0c433691ea9e47163c87ab0579b0831  checker/policy/no-partial-upgrade.sh
@@ -134,5 +134,5 @@ a5b81963da94036faedc37c4c7b22dff329266510e7d17b6fcb50229be205aea  payload/profil
 7adb333b2eecfff7aa75c7466baa8be7e4cb07009fdf437e0ef6de61c3579262  payload/profile/airootfs/usr/lib/aios/agent/aios_agent/provider/base.py
 49bd78e0543f71c19e32fa42ed995ff81e0b9ed9b4cc4ae4e14e1f9d2ea9c32e  agent/aios_agent/provider/fixture.py
 49bd78e0543f71c19e32fa42ed995ff81e0b9ed9b4cc4ae4e14e1f9d2ea9c32e  payload/profile/airootfs/usr/lib/aios/agent/aios_agent/provider/fixture.py
-4a41259b7996d437cab83d9ba897fb1a19a88c5f8636748321f65b239d996456  agent/aios_agent/provider/live.py
-4a41259b7996d437cab83d9ba897fb1a19a88c5f8636748321f65b239d996456  payload/profile/airootfs/usr/lib/aios/agent/aios_agent/provider/live.py
+58abd79db4c24cbdbdb2ee0c6063060533a375d92dd2b91843fb90f79451e1f3  agent/aios_agent/provider/live.py
+58abd79db4c24cbdbdb2ee0c6063060533a375d92dd2b91843fb90f79451e1f3  payload/profile/airootfs/usr/lib/aios/agent/aios_agent/provider/live.py

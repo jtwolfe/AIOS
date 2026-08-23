@@ -47,6 +47,9 @@ if [ -f "${U}" ]; then
     || fail "work-runtime user unit does not hide enact"
   grep -q 'InaccessiblePaths=.*envelope' "${U}" \
     || fail "work-runtime user unit does not hide envelope"
+  # L-16: the live OS token lives under /srv/aios/state.
+  grep -q 'InaccessiblePaths=.*state' "${U}" \
+    || fail "work-runtime user unit does not hide state"
 fi
 
 if [ -f /etc/systemd/system/aios-work.slice ]; then

@@ -145,6 +145,89 @@ except ProviderError:
 else:
     raise SystemExit("/etc/aios token path accepted")
 
+def http_http_uri(method, url, data=None, headers=None, timeout=30):
+    if url.endswith("/device/code"):
+        return 200, {
+            "device_code": "hidden-device",
+            "user_code": "WDJB-MJHT",
+            "verification_uri": "http://evil.example/device",
+            "interval": 0,
+            "expires_in": 60,
+        }
+    raise AssertionError("token poll must not run for a bad URI")
+
+err = io.StringIO()
+p = LiveProvider(token_path=tok, accept_stamp=stamp, answers_path=answers, http=http_http_uri, sleep=lambda s: None)
+try:
+    p.login(err=err)
+except ProviderError as exc:
+    if "https" not in str(exc):
+        raise SystemExit("expected https refusal, got %s" % exc)
+else:
+    raise SystemExit("http URI accepted")
+shown = err.getvalue()
+if "evil.example" in shown or "http://" in shown:
+    raise SystemExit("bad URI printed: %s" % shown)
+
+def http_nl_uri(method, url, data=None, headers=None, timeout=30):
+    if url.endswith("/device/code"):
+        return 200, {
+            "device_code": "hidden-device",
+            "user_code": "WDJB-MJHT",
+            "verification_uri": "https://auth.x.ai/device\nhttps://evil.example",
+            "interval": 0,
+            "expires_in": 60,
+        }
+    raise AssertionError("token poll must not run for a bad URI")
+
+err = io.StringIO()
+p = LiveProvider(token_path=tok, accept_stamp=stamp, answers_path=answers, http=http_nl_uri, sleep=lambda s: None)
+try:
+    p.login(err=err)
+except ProviderError as exc:
+    if "whitespace" not in str(exc):
+        raise SystemExit("expected whitespace refusal, got %s" % exc)
+else:
+    raise SystemExit("newline URI accepted")
+if "evil.example" in err.getvalue():
+    raise SystemExit("newline URI printed")
+
+import provider.live as live_mod
+
+class FakePw(object):
+    pw_uid = 4242
+    pw_gid = 4243
+
+class FakePwd(object):
+    @staticmethod
+    def getpwnam(name):
+        if name != "aios-agent":
+            raise KeyError(name)
+        return FakePw()
+
+chowned = []
+saved_euid = live_mod.os.geteuid
+saved_chown = live_mod.os.chown
+saved_pwd = live_mod.pwd
+live_mod.os.geteuid = lambda: 0
+live_mod.os.chown = lambda path, uid, gid: chowned.append((path, uid, gid))
+live_mod.pwd = FakePwd
+pending["n"] = 0
+err = io.StringIO()
+p = LiveProvider(token_path=tok, accept_stamp=stamp, answers_path=answers, http=http2, sleep=lambda s: None)
+try:
+    p.login(err=err)
+finally:
+    live_mod.os.geteuid = saved_euid
+    live_mod.os.chown = saved_chown
+    live_mod.pwd = saved_pwd
+if not chowned:
+    raise SystemExit("root write did not chown")
+if not any(t[1] == 4242 and t[2] == 4243 for t in chowned):
+    raise SystemExit("chown ids %s" % (chowned,))
+if not any(t[0] == tok for t in chowned):
+    raise SystemExit("token path not chowned: %s" % (chowned,))
+
 # Fixture still has no network client.
 from provider.fixture import FixtureProvider
 fx = os.path.join(tmp, "turn.json")
@@ -159,8 +242,21 @@ else:
     raise SystemExit("exhausted fixture did not fire")
 PY
 
-grep -q '/provider/' "${ROOT}/payload/profile/airootfs/usr/lib/aios/bin/firstboot" \
-  || fail "firstboot does not gitignore /provider/ (L-16)"
+# Needle firstboot's grep -qx uses: a gitignore line that is exactly /provider/.
+# Quoted so the die-string '/provider/' inside a longer sentence does not pass.
+grep -Eq "^[[:space:]]+'/provider/'[[:space:]]*\\\\$" \
+  "${ROOT}/payload/profile/airootfs/usr/lib/aios/bin/firstboot" \
+  || fail "firstboot printf payload missing exact /provider/ gitignore line (L-16)"
+grep -qx '**/os.token' "${ROOT}/.gitignore" \
+  || fail ".gitignore missing **/os.token (L-16)"
+grep -qx '**/.os.token.*' "${ROOT}/.gitignore" \
+  || fail ".gitignore missing **/.os.token.* (L-16)"
+grep '^InaccessiblePaths=' "${ROOT}/docs/implementation.md" \
+  | grep -Fq '/srv/aios/state' \
+  || fail "implementation.md floor InaccessiblePaths missing /srv/aios/state (L-16)"
+grep -q "InaccessiblePaths=.*state" \
+  "${ROOT}/checker/policy/hi-16-os-privilege.sh" \
+  || fail "hi-16-os-privilege.sh does not require InaccessiblePaths state (L-16)"
 
 if [ "${failed}" -ne 0 ]; then
   printf 'error: p4-provider failed (%s check(s))\n' "${failed}" >&2

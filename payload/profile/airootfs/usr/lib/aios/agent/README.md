@@ -46,7 +46,9 @@ With no arguments the service idles. It does not propose. It does not
 parse intents or proposals (a malformed document must not exit the unit).
 VM tests set `AIOS_PROVIDER=fixture` and `AIOS_FIXTURE`. Live login
 prints a verification URL and user code on stderr; the token never
-appears in the transcript.
+appears in the transcript. Run `provider live login` as `aios-agent`
+(the unit). Do not `sudo` it; P7.6 TUI must not sudo this CLI. If
+invoked as root, the adapter `chown`s the token to `aios-agent`.
 
 ## enact
 

@@ -234,8 +234,10 @@ _prov=$(grep -R -n -- 'provider' "${ROOT}/checker" 2>/dev/null | head -n 1 || tr
 grep -q '/srv/aios/state/provider/os.token' \
   "${AIROOTFS}/usr/lib/aios/agent/aios_agent/provider/base.py" \
   || fail "ISO agent missing P4.2 OS token lock"
-grep -q '/provider/' "${FIRSTBOOT}" \
-  || fail "firstboot must gitignore state /provider/ (L-16)"
+grep -Eq "^[[:space:]]+'/provider/'[[:space:]]*\\\\$" "${FIRSTBOOT}" \
+  || fail "firstboot printf payload missing exact /provider/ gitignore line (L-16)"
+grep -qx '**/os.token' "${ROOT}/.gitignore" \
+  || fail ".gitignore missing **/os.token (L-16)"
 
 if [ "${failed}" -ne 0 ]; then
   printf 'error: P1.5 clean-image oracle failed (%s check(s))\n' "${failed}" >&2

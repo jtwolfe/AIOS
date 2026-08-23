@@ -2,6 +2,7 @@
 
 import json
 import os
+import pwd
 import stat
 import sys
 import tempfile
@@ -60,6 +61,18 @@ def http_json(method, url, data=None, headers=None, timeout=30):
     return status, payload
 
 
+def _https_uri(value, what="verification_uri"):
+    # Print only a single https URL. An injected http:// or newline is a
+    # transcript/open-redirect footgun (RFC 8628 device-code hardening).
+    if not isinstance(value, str) or not value:
+        raise ProviderError("%s is not https (L-17)" % what)
+    if value != value.strip() or any(c.isspace() for c in value):
+        raise ProviderError("%s has whitespace (L-17)" % what)
+    if not value.startswith("https://"):
+        raise ProviderError("%s is not https (L-17)" % what)
+    return value
+
+
 def _as_messages(messages):
     if isinstance(messages, str):
         return [{"role": "user", "content": messages}]
@@ -112,11 +125,14 @@ class LiveProvider(Provider):
         device_code = payload.get("device_code")
         if not user_code or not uri or not device_code:
             raise ProviderError("device-code response incomplete (L-17)")
+        uri = _https_uri(uri)
+        complete = payload.get("verification_uri_complete")
+        if complete:
+            complete = _https_uri(complete, "verification_uri_complete")
         # Human opens this on another device. Never print device_code or tokens.
         err.write("%s\n" % uri)
         err.write("user_code: %s\n" % user_code)
         err.flush()
-        complete = payload.get("verification_uri_complete")
         if complete and complete != uri:
             err.write("%s\n" % complete)
             err.flush()
@@ -226,8 +242,21 @@ class LiveProvider(Provider):
     def _write_token(self, payload):
         path = self.token_path
         parent = os.path.dirname(path)
+        # Root `sudo` would otherwise leave root:root 0600; the unit user
+        # could not read its own token (L-16). Non-root is the unit itself.
+        agent_ids = None
+        if os.geteuid() == 0:
+            try:
+                spec = pwd.getpwnam("aios-agent")
+            except KeyError:
+                raise ProviderError(
+                    "aios-agent missing; cannot chown OS token (L-16)"
+                )
+            agent_ids = (spec.pw_uid, spec.pw_gid)
         os.makedirs(parent, mode=0o700, exist_ok=True)
         os.chmod(parent, 0o700)
+        if agent_ids:
+            os.chown(parent, agent_ids[0], agent_ids[1])
         keep = {}
         for key in _TOKEN_KEYS:
             if key in payload:
@@ -242,6 +271,8 @@ class LiveProvider(Provider):
                 fh.write("\n")
             os.replace(tmp, path)
             os.chmod(path, 0o600)
+            if agent_ids:
+                os.chown(path, agent_ids[0], agent_ids[1])
         except Exception:
             try:
                 os.unlink(tmp)
