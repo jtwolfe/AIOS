@@ -27,7 +27,7 @@ d56893180f0f7238dee1888a0bdf61a983cee1b091bf02518bd992845575acc2  payload/profil
 40836c45bdf2074d93ce7285d150976dbe9a4f6b8f890bc86ed3a1692f4f3896  payload/profile/airootfs/usr/lib/aios/checker/aios_checker/main.py
 120c0916ca24bd50303c38ecabe58a354da3c257a25047ccd6a6e8c64b5bdf7a  payload/profile/airootfs/usr/lib/aios/checker/aios_checker/merge.py
 c65405858117af1559f83e1e22e69147d2547135595b7a392bd5dd2f03470b49  payload/profile/airootfs/usr/lib/aios/checker/aios_checker/schema.py
-fe34fcfac05899a0011e1dbe78efb0b1aab6ed947e27e991c801766ceb2e3352  payload/profile/airootfs/usr/lib/aios/checker/policy/boot-seatbelt.sh
+543119f732396ff54ab8698a0c02fb0006247a30b63c827591af480fc97d013f  payload/profile/airootfs/usr/lib/aios/checker/policy/boot-seatbelt.sh
 3ba2640bd4aadbd2c1c5baa3adfd0b3ef2d62596c9a9d61d9aac2787a3908002  payload/profile/airootfs/usr/lib/aios/checker/policy/etckeeper-enabled.sh
 dff895d4bd222959656f871bd64ab6be8cfa0d2936a7200fd3319069e5601ee8  payload/profile/airootfs/usr/lib/aios/checker/policy/hi-01-git-source.sh
 222a8271893ae354531febfc0a026a0e4cbdb2e3e2b8fd213a870a1e961bb971  payload/profile/airootfs/usr/lib/aios/checker/policy/hi-02-split.sh
@@ -53,7 +53,7 @@ ef06e6305365d44648da2b320fc9760554d782f551a4d57b2b64c3172eff4e02  payload/profil
 e3722a4f988a5d8942d8b42809da612965fc0d871f0623867a3d0cae5c9472ce  payload/profile/airootfs/usr/lib/aios/checker/policy/work-slice.sh
 546d914b824dadfa8726db967bddc6c07c4c241012a3275f84300d28f25abbf9  payload/profile/airootfs/usr/lib/aios/envelope/hard-invariants.md
 546d914b824dadfa8726db967bddc6c07c4c241012a3275f84300d28f25abbf9  payload/profile/airootfs/usr/lib/aios/hard-invariants.md
-d9739d6457abcdea2477f1cf5e32bbd2c5424e4e28fcdc487f12d26c4c7da086  payload/profile/airootfs/usr/lib/aios/hashes.txt
+f1bc0b6b65ab5aa70283f24668742c9ddeb472509bf37b896264660ed700e8fe  payload/profile/airootfs/usr/lib/aios/hashes.txt
 9016e60116d7d4cb81db8e67a6e1cee82bfe021433b7febb36d176fa5fa3bdcb  payload/profile/airootfs/usr/lib/aios/minisign.pub
 33ec044a92385c806b950ab40674f1a5b374a388da79eb7a93d324ad753fa095  payload/profile/airootfs/usr/lib/aios/pacstrap.x86_64
 1dfab8088c3562fa1238017fb8a0a67af26846cca6b76a0dc7546d6290153da5  payload/profile/airootfs/usr/lib/sysusers.d/aios.conf
@@ -66,7 +66,7 @@ d56893180f0f7238dee1888a0bdf61a983cee1b091bf02518bd992845575acc2  checker/README
 40836c45bdf2074d93ce7285d150976dbe9a4f6b8f890bc86ed3a1692f4f3896  checker/aios_checker/main.py
 120c0916ca24bd50303c38ecabe58a354da3c257a25047ccd6a6e8c64b5bdf7a  checker/aios_checker/merge.py
 c65405858117af1559f83e1e22e69147d2547135595b7a392bd5dd2f03470b49  checker/aios_checker/schema.py
-fe34fcfac05899a0011e1dbe78efb0b1aab6ed947e27e991c801766ceb2e3352  checker/policy/boot-seatbelt.sh
+543119f732396ff54ab8698a0c02fb0006247a30b63c827591af480fc97d013f  checker/policy/boot-seatbelt.sh
 3ba2640bd4aadbd2c1c5baa3adfd0b3ef2d62596c9a9d61d9aac2787a3908002  checker/policy/etckeeper-enabled.sh
 dff895d4bd222959656f871bd64ab6be8cfa0d2936a7200fd3319069e5601ee8  checker/policy/hi-01-git-source.sh
 222a8271893ae354531febfc0a026a0e4cbdb2e3e2b8fd213a870a1e961bb971  checker/policy/hi-02-split.sh

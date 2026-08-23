@@ -11,11 +11,11 @@ need_file() {
   [ -s "$1" ] || fail "missing or empty $1"
 }
 
-# Highest non-timeline pre/post/single id from snapper itself (not the map).
-# aios-checker is not root; sudoers names this exact command (HI-06).
-# Do not read 750 /.snapshots or substitute state/esp-generations.
-last_snapper_window() {
-  LASTWIN=
+# Privileged id is the last esp-generations row (firstboot single / last enact post).
+# snapper list must still contain that id; timeline singles may be newer (HI-06).
+# aios-checker is not root; sudoers names this exact command. Not 750 /.snapshots.
+snapper_has_id() {
+  _want=$1
   SNAP=
   command -v snapper >/dev/null 2>&1 || fail "snapper binary missing"
   if SNAP=$(snapper --no-dbus -c root list 2>/dev/null) && [ -n "${SNAP}" ]; then
@@ -27,21 +27,18 @@ last_snapper_window() {
   else
     fail "cannot list snapper windows as this uid"
   fi
-  LASTWIN=$(
-    printf '%s\n' "${SNAP}" | awk -F'|' '
-      /^[[:space:]]*[0-9]+/ {
+  _found=$(
+    printf '%s\n' "${SNAP}" | awk -F'|' -v want="${_want}" '
+      /^[[:space:]]*[0-9]/ {
         gsub(/^[[:space:]]+|[[:space:]]+$/, "", $1)
-        n=$1
-        if (n+0 == 0) next
-        type=$2
-        gsub(/^[[:space:]]+|[[:space:]]+$/, "", type)
-        if (type == "timeline" || type == "number") next
-        if (n+0 >= best+0) { best=n; lasttype=type }
+        gsub(/[-+*]$/, "", $1)
+        if ($1+0 == want+0 && want+0 > 0) { print 1; found=1; exit }
       }
-      END { if (best != "") print best, lasttype }
+      END { if (!found) print 0 }
     '
   )
-  [ -n "${LASTWIN}" ] || fail "snapper list has no pre/post/single window"
+  [ "${_found}" = 1 ] \
+    || fail "snapper list does not contain privileged id ${_want}"
 }
 
 MAP=/srv/aios/state/esp-generations
@@ -132,23 +129,7 @@ if [ "${N}" -ge 2 ]; then
     || fail "bootctl list does not show previous after a second generation exists"
 fi
 
-last_snapper_window
-WID=${LASTWIN%% *}
-WTYPE=${LASTWIN#* }
-[ -n "${WID}" ] && [ -n "${WTYPE}" ] && [ "${WID}" != "${LASTWIN}" ] \
-  || fail "malformed snapper window: ${LASTWIN}"
-case "${WID}" in
-  ''|*[!0-9]*) fail "snapper window id is not numeric: ${WID}" ;;
-esac
-if [ "${WTYPE}" = pre ]; then
-  fail "incomplete snapper pre ${WID} has no matching ESP generation"
-fi
-# Independent id must have an ESP generation on the mounted ESP (not the map).
-need_file "${GENROOT}/${WID}/vmlinuz-linux"
-need_file "${GENROOT}/${WID}/vmlinuz-linux-lts"
-need_file "${GENROOT}/${WID}/initramfs-linux.img"
-need_file "${GENROOT}/${WID}/initramfs-linux-lts.img"
-[ "${WID}" = "${ID}" ] \
-  || fail "last snapper window ${WID} (${WTYPE}) != esp-generations ${ID}"
+# Membership, not last-row: hourly Type=single timeline snapshots are newer.
+snapper_has_id "${ID}"
 
 exit 0
