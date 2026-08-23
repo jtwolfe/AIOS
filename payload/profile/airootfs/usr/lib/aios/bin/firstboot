@@ -875,6 +875,31 @@ EOF
   [ -f "${TARGET}/srv/aios/AGENTS.md" ] || die "/srv/aios/AGENTS.md missing"
 }
 
+# The files git execs must be the templates, not an exit-0 stub beside common.sh.
+verify_privileged_hooks() {
+  _hookdir=$1
+  _src=$2
+  [ -d "${_src}" ] || die "checker hook templates missing"
+  for _h in common.sh update pre-receive reference-transaction; do
+    [ -f "${_src}/${_h}" ] || die "checker hook template ${_h} missing"
+    [ -f "${_hookdir}/${_h}" ] || die "missing ${_hookdir}/${_h}"
+    _hs=$(sha256sum "${_src}/${_h}")
+    _hs=${_hs%% *}
+    _hd=$(sha256sum "${_hookdir}/${_h}")
+    _hd=${_hd%% *}
+    [ "${_hs}" = "${_hd}" ] || die "${_hookdir}/${_h} does not match template"
+  done
+  for _h in update pre-receive reference-transaction; do
+    [ -x "${_hookdir}/${_h}" ] || die "${_hookdir}/${_h} not executable"
+    grep -q 'common.sh' "${_hookdir}/${_h}" \
+      || die "${_hookdir}/${_h} does not source common.sh"
+    grep -q 'check_ref_update' "${_hookdir}/${_h}" \
+      || die "${_hookdir}/${_h} does not call check_ref_update"
+  done
+  grep -q 'proposer cannot update main (HI-03)' "${_hookdir}/common.sh" \
+    || die "${_hookdir} common.sh is a stub"
+}
+
 # L-03 / HI-03: copy checker-owned templates after the first main push.
 install_privileged_hooks() {
   _hookdir="${TARGET}/srv/aios/git/${1}.git/hooks"
@@ -889,8 +914,7 @@ install_privileged_hooks() {
     cp -a "${_src}/${_h}" "${_hookdir}/${_h}" || die "copy hook ${_h} failed"
     chmod 0755 "${_hookdir}/${_h}" || die "chmod ${_hookdir}/${_h} failed"
   done
-  grep -q 'proposer cannot update main (HI-03)' "${_hookdir}/common.sh" \
-    || die "${_hookdir} hooks are stubs"
+  verify_privileged_hooks "${_hookdir}" "${_src}"
 }
 
 # L-03 / HI-01: checker-owned bare git; working copy at /srv/aios/<name> with origin push.
@@ -961,13 +985,7 @@ init_one_git() {
   arch-chroot "${TARGET}" /usr/bin/git -C "${_wt}" push -u origin main \
     || die "git push ${_name} main failed"
   install_privileged_hooks "${_name}"
-  [ -x "${_host_bare}/hooks/update" ] \
-    && [ -x "${_host_bare}/hooks/pre-receive" ] \
-    && [ -x "${_host_bare}/hooks/reference-transaction" ] \
-    && [ -f "${_host_bare}/hooks/common.sh" ] \
-    || die "${_bare} hook paths missing"
-  grep -q 'proposer cannot update main (HI-03)' "${_host_bare}/hooks/common.sh" \
-    || die "${_bare} hooks are stubs"
+  verify_privileged_hooks "${_host_bare}/hooks" "${TARGET}/srv/aios/checker/hooks"
   arch-chroot "${TARGET}" /usr/bin/git -C "${_bare}" rev-parse main >/dev/null \
     || die "${_bare} has no main"
 }

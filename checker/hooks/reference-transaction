@@ -10,11 +10,13 @@ HOOK_HOME=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd) \
 . "${HOOK_HOME}/common.sh"
 
 [ "$#" -ge 1 ] || deny "reference-transaction requires a state (HI-03)"
+# githooks(5): preparing (queued, unlocked) and prepared (locked) both
+# abort the transaction on non-zero. Unknown states fail closed.
 case "$1" in
   committed|aborted)
     exit 0
     ;;
-  prepared)
+  preparing|prepared)
     ;;
   *)
     deny "unknown reference-transaction state (HI-03)"

@@ -71,6 +71,14 @@ git_repo() {
   )
 }
 
+# Force-update (no old-oid) also sends all-zero old (githooks(5)
+# reference-transaction). Zero-old is create only if the ref is absent.
+ref_exists() {
+  git_repo rev-parse --verify --quiet --end-of-options "$1" >/dev/null 2>&1 \
+    || return 1
+  return 0
+}
+
 is_fast_forward() {
   _ff_old=$1
   _ff_new=$2
@@ -79,6 +87,12 @@ is_fast_forward() {
   [ "${_ff_old}" = "${_ff_new}" ] && return 0
   git_repo merge-base --is-ancestor "${_ff_old}" "${_ff_new}" || return 1
   return 0
+}
+
+deny_if_zero_old_force() {
+  is_zero_oid "$1" || return 0
+  ref_exists "$2" || return 0
+  deny "refusing non-fast-forward of published ref (HI-03)"
 }
 
 require_commit() {
@@ -98,6 +112,7 @@ check_ref_update() {
   if is_main_ref "${_ref}"; then
     is_checker || deny "proposer cannot update main (HI-03)"
     is_zero_oid "${_new}" && deny "refusing delete of main (HI-03)"
+    deny_if_zero_old_force "${_old}" "${_ref}"
     is_zero_oid "${_old}" && deny "refusing create of main (HI-03)"
     require_commit "${_new}" || deny "main must point at a commit (HI-03)"
     is_fast_forward "${_old}" "${_new}" \
@@ -113,8 +128,19 @@ check_ref_update() {
   if is_checker; then
     if is_published_ref "${_ref}"; then
       is_zero_oid "${_new}" && deny "refusing delete of published ref (HI-03)"
-      is_fast_forward "${_old}" "${_new}" \
-        || deny "refusing non-fast-forward of published ref (HI-03)"
+      deny_if_zero_old_force "${_old}" "${_ref}"
+      case "${_ref}" in
+        refs/tags/*)
+          # Tag moves are force even when the new tip is a descendant.
+          if ! is_zero_oid "${_old}"; then
+            deny "refusing non-fast-forward of published ref (HI-03)"
+          fi
+          ;;
+        *)
+          is_fast_forward "${_old}" "${_new}" \
+            || deny "refusing non-fast-forward of published ref (HI-03)"
+          ;;
+      esac
     fi
     return 0
   fi
