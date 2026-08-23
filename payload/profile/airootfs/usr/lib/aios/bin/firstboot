@@ -629,6 +629,119 @@ EOF
   arch-chroot "${TARGET}" mkinitcpio -P 2>&1 | tee_consoles
 }
 
+# Wiki Snapper suggested layout: nested .snapshots under @ would hide @snapshots.
+# HI-06 / L-19: first ESP generation is keyed by snapper id, not a timestamp.
+configure_snapper() {
+  [ -x "${TARGET}/usr/bin/snapper" ] || die "snapper missing on target"
+  [ -n "${ROOTP}" ] && [ -b "${ROOTP}" ] || die "root partition missing for snapper"
+  mountpoint -q "${TARGET}/.snapshots" \
+    || die "/.snapshots is not the @snapshots mount"
+  umount "${TARGET}/.snapshots" || die "umount /.snapshots failed"
+  rmdir "${TARGET}/.snapshots" || die "remove /.snapshots mountpoint failed"
+  arch-chroot "${TARGET}" /usr/bin/snapper --no-dbus -c root create-config / \
+    || die "snapper -c root create-config failed"
+  btrfs subvolume delete "${TARGET}/.snapshots" >/dev/null \
+    || die "could not delete snapper nested .snapshots under @"
+  mkdir -p "${TARGET}/.snapshots" || die "mkdir /.snapshots failed"
+  mount -o subvol=@snapshots "${ROOTP}" "${TARGET}/.snapshots" \
+    || die "remount @snapshots at /.snapshots failed"
+  chmod 750 "${TARGET}/.snapshots"
+
+  # Nested /home/.snapshots stays a subvolume of @home; do not mount @snapshots there.
+  arch-chroot "${TARGET}" /usr/bin/snapper --no-dbus -c home create-config /home \
+    || die "snapper -c home create-config failed"
+  [ -d "${TARGET}/home/.snapshots" ] || die "home .snapshots missing after create-config"
+
+  systemctl --root="${TARGET}" enable snapper-timeline.timer snapper-cleanup.timer \
+    || die "failed to enable snapper timers"
+  systemctl --root="${TARGET}" is-enabled snapper-timeline.timer >/dev/null \
+    || die "snapper-timeline.timer not enabled"
+  systemctl --root="${TARGET}" is-enabled snapper-cleanup.timer >/dev/null \
+    || die "snapper-cleanup.timer not enabled"
+  log "snapper root and home configs"
+}
+
+create_first_snapshot() {
+  SNAP_ID=$(arch-chroot "${TARGET}" /usr/bin/snapper --no-dbus -c root create \
+    --type single --print-number --description firstboot) \
+    || die "snapper create firstboot snapshot failed"
+  SNAP_ID=$(printf '%s\n' "${SNAP_ID}" | tr -d ' \t\r')
+  case "${SNAP_ID}" in
+    ''|*[!0-9]*) die "snapper print-number gave '${SNAP_ID}'" ;;
+  esac
+  [ "${SNAP_ID}" -gt 0 ] || die "snapper id must be > 0"
+  log "snapper root id ${SNAP_ID}"
+}
+
+copy_first_esp_generation() {
+  [ -n "${SNAP_ID}" ] || die "snapper id unset for ESP generation"
+  _gen="${TARGET}/boot/aios-gen/${SNAP_ID}"
+  mkdir -p "${_gen}" || die "mkdir ${_gen} failed"
+  # Four live images only; 1G ESP cannot hold fallback initramfs copies.
+  for _f in vmlinuz-linux vmlinuz-linux-lts initramfs-linux.img initramfs-linux-lts.img; do
+    [ -f "${TARGET}/boot/${_f}" ] || die "missing /boot/${_f} for ESP generation"
+    cp -a "${TARGET}/boot/${_f}" "${_gen}/${_f}" \
+      || die "cp -a /boot/${_f} to aios-gen/${SNAP_ID} failed"
+  done
+  mkdir -p "${TARGET}/srv/aios/state"
+  cat > "${TARGET}/srv/aios/state/esp-generations" <<EOF
+# snapper_id esp_dir
+${SNAP_ID} /boot/aios-gen/${SNAP_ID}
+EOF
+  [ -f "${_gen}/vmlinuz-linux" ] && [ -f "${_gen}/vmlinuz-linux-lts" ] \
+    && [ -f "${_gen}/initramfs-linux.img" ] && [ -f "${_gen}/initramfs-linux-lts.img" ] \
+    || die "ESP generation ${SNAP_ID} missing a kernel or initramfs"
+  [ ! -e "${TARGET}/boot/loader/entries/aios-prev.conf" ] \
+    || die "aios-prev.conf must be absent until a second generation exists"
+  log "ESP generation ${SNAP_ID}"
+}
+
+write_packages_txt() {
+  mkdir -p "${TARGET}/srv/aios/state"
+  arch-chroot "${TARGET}" pacman -Qqe > "${TARGET}/srv/aios/state/packages.txt" \
+    || die "pacman -Qqe failed"
+  grep -qx linux "${TARGET}/srv/aios/state/packages.txt" \
+    || die "linux missing from packages.txt"
+  grep -qx linux-lts "${TARGET}/srv/aios/state/packages.txt" \
+    || die "linux-lts missing from packages.txt"
+}
+
+# etckeeper remote of /etc at /srv/aios/etc-mirror (architecture.md).
+init_etc_mirror() {
+  [ -x "${TARGET}/usr/bin/etckeeper" ] || die "etckeeper missing on target"
+  [ -x "${TARGET}/usr/bin/git" ] || die "git missing on target"
+  [ ! -e "${TARGET}/srv/aios/etc-mirror" ] || die "etc-mirror already exists"
+  arch-chroot "${TARGET}" /usr/bin/etckeeper init \
+    || die "etckeeper init failed"
+  arch-chroot "${TARGET}" /usr/bin/git -C /etc config user.name aios
+  arch-chroot "${TARGET}" /usr/bin/git -C /etc config user.email aios@localhost
+  if ! arch-chroot "${TARGET}" /usr/bin/git -C /etc rev-parse --verify HEAD >/dev/null 2>&1; then
+    arch-chroot "${TARGET}" /usr/bin/etckeeper commit firstboot \
+      || die "etckeeper commit failed"
+  fi
+  arch-chroot "${TARGET}" /usr/bin/git -C /etc rev-parse --verify HEAD >/dev/null \
+    || die "etckeeper has no HEAD"
+  arch-chroot "${TARGET}" /usr/bin/git init --bare /srv/aios/etc-mirror \
+    || die "etc-mirror git init failed"
+  arch-chroot "${TARGET}" /usr/bin/git -C /etc remote add origin /srv/aios/etc-mirror \
+    || die "etc-mirror remote add failed"
+  _br=$(arch-chroot "${TARGET}" /usr/bin/git -C /etc symbolic-ref --short HEAD) \
+    || die "etckeeper HEAD is not a branch"
+  [ -n "${_br}" ] || die "etckeeper branch name empty"
+  arch-chroot "${TARGET}" /usr/bin/git -C /etc push origin "HEAD:refs/heads/${_br}" \
+    || die "etc-mirror push failed"
+  [ -d "${TARGET}/srv/aios/etc-mirror" ] || die "etc-mirror missing"
+}
+
+configure_seatbelts() {
+  ensure_l07_mounts
+  configure_snapper
+  write_packages_txt
+  init_etc_mirror
+  create_first_snapshot
+  copy_first_esp_generation
+}
+
 reboot_to_disk() {
   copy_log
   sync
@@ -655,5 +768,6 @@ partition_and_mount
 pacstrap_target
 configure_target
 configure_boot
+configure_seatbelts
 log "disk install complete"
 reboot_to_disk
