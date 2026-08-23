@@ -104,16 +104,27 @@ if [ -n "${key_hits}" ]; then
   printf '%s\n' "${key_hits}" >&2
 fi
 
-# pii-scan style: no emails/phones in payload/. Skip systemd instance names
-# (getty@tty1.service looks like local-part@host.tld).
-email_hits=$(find "${PAYLOAD}" -type f ! -name '*.png' ! -name '*.jpg' ! -name '*.jpeg' \
-  -exec grep -E -n -- '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' {} + 2>/dev/null \
-  | grep -Ev '@[A-Za-z0-9_.-]+\.(service|socket|device|mount|automount|swap|target|path|timer|slice|scope)([^A-Za-z]|$)' \
-  || true)
+# pii-scan style: no emails/phones in payload/. Skip a token only when that
+# token is a systemd instance (getty@tty1.service). Path prefixes and other
+# text on the line must not hide a real address.
+email_re='[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
+unit_tok='^[A-Za-z0-9._%+-]+@[A-Za-z0-9_.-]+\.(service|socket|device|mount|automount|swap|target|path|timer|slice|scope)$'
+email_hits=$(
+  find "${PAYLOAD}" -type f ! -name '*.png' ! -name '*.jpg' ! -name '*.jpeg' -print \
+  | while IFS= read -r _f; do
+      grep -E -h -o -- "${email_re}" "${_f}" 2>/dev/null \
+      | while IFS= read -r _tok; do
+          [ -n "${_tok}" ] || continue
+          printf '%s\n' "${_tok}" | grep -Eq -- "${unit_tok}" && continue
+          printf '%s:%s\n' "${_f}" "${_tok}"
+        done
+    done
+)
 if [ -n "${email_hits}" ]; then
   fail "email-like PII in payload/"
   printf '%s\n' "${email_hits}" >&2
 fi
+
 
 phone_hits=$(find "${PAYLOAD}" -type f ! -name '*.png' ! -name '*.jpg' ! -name '*.jpeg' \
   -exec grep -E -n -- '(^|[^0-9])[0-9]{3}[-.][0-9]{3}[-.][0-9]{4}([^0-9]|$)|(^|[^0-9])\+[0-9][-0-9(). ]{8,18}[0-9]' \
