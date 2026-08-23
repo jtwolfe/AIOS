@@ -63,7 +63,7 @@ ef06e6305365d44648da2b320fc9760554d782f551a4d57b2b64c3172eff4e02  payload/profil
 7bc2b6cf5d74e5455e484a9cd841902d16704d861f6703e566b0d60fefa4fe90  payload/profile/airootfs/usr/lib/aios/checker/policy/work-slice.sh
 546d914b824dadfa8726db967bddc6c07c4c241012a3275f84300d28f25abbf9  payload/profile/airootfs/usr/lib/aios/envelope/hard-invariants.md
 546d914b824dadfa8726db967bddc6c07c4c241012a3275f84300d28f25abbf9  payload/profile/airootfs/usr/lib/aios/hard-invariants.md
-9d36b56b24da0006c8724ea7f30444f0c480a203736b5123ac9a1a88800025bc  payload/profile/airootfs/usr/lib/aios/hashes.txt
+f7494f316f947b0b3cd0ae98e3779656fbab80709a0522f884f472383b4461d0  payload/profile/airootfs/usr/lib/aios/hashes.txt
 9016e60116d7d4cb81db8e67a6e1cee82bfe021433b7febb36d176fa5fa3bdcb  payload/profile/airootfs/usr/lib/aios/minisign.pub
 33ec044a92385c806b950ab40674f1a5b374a388da79eb7a93d324ad753fa095  payload/profile/airootfs/usr/lib/aios/pacstrap.x86_64
 1dfab8088c3562fa1238017fb8a0a67af26846cca6b76a0dc7546d6290153da5  payload/profile/airootfs/usr/lib/sysusers.d/aios.conf
@@ -144,5 +144,5 @@ dfdfda4f0a5faf69d6433ff55c943ad0029772b61db367f48e1efc8fcae5500e  payload/profil
 051f287002172541028f42a3eabddf65380dc508f14d2748364612e31777d329  payload/profile/airootfs/usr/lib/aios/agent/aios_agent/skills.py
 7d8602c307c04d2c3b9a76cacd642051900e2bc2ca84bab4d66421ec219858f2  agent/aios_agent/triage.py
 7d8602c307c04d2c3b9a76cacd642051900e2bc2ca84bab4d66421ec219858f2  payload/profile/airootfs/usr/lib/aios/agent/aios_agent/triage.py
-b27d3a9100b3c849bea1876316eb0cefd6e6fcdb50f78c881edafe9a5402fd5a  agent/aios_agent/goals.py
-b27d3a9100b3c849bea1876316eb0cefd6e6fcdb50f78c881edafe9a5402fd5a  payload/profile/airootfs/usr/lib/aios/agent/aios_agent/goals.py
+8822c5772ff55148f9d1205cf56bbeed70ae3b1d77efc6dc91cec940e9c92a46  agent/aios_agent/goals.py
+8822c5772ff55148f9d1205cf56bbeed70ae3b1d77efc6dc91cec940e9c92a46  payload/profile/airootfs/usr/lib/aios/agent/aios_agent/goals.py

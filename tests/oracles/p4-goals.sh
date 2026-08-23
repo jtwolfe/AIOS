@@ -371,6 +371,24 @@ assert doc.get("status") != "idle", doc
 PY
 
 rm -f "${TMP}/goals.json"
+printf '%s\n' '{"status":"idle","declared":["sysupgrade"]}' > "${TMP}/goals.json"
+_out=$(goals) || true
+printf '%s\n' "${_out}" | grep -q '"status": "waiting-accept"' \
+  || fail "declared sysupgrade must plan: ${_out}"
+_out=$(goals '{"kind":"work-runtime"}') || true
+printf '%s\n' "${_out}" | grep -q 'HI-15' \
+  || fail "work-runtime skip after sysupgrade: ${_out}"
+printf '%s\n' "${_out}" | grep -q '"proposal": null' \
+  || fail "work-runtime skip must drop the plan: ${_out}"
+_out=$(goals) || true
+printf '%s\n' "${_out}" | grep -q '"paused": true' \
+  && fail "work-runtime skip must not SAME_GAP stall sysupgrade: ${_out}" || true
+printf '%s\n' "${_out}" | grep -q '"status": "waiting-accept"' \
+  || fail "empty tick after HI-15 skip must re-plan sysupgrade: ${_out}"
+printf '%s\n' "${_out}" | grep -q 'gated-p45' \
+  || fail "re-planned sysupgrade still gated-p45: ${_out}"
+
+rm -f "${TMP}/goals.json"
 _evt='{"kind":"unit-failed","unit":"flap.service","journal":"j","commit":"c","snapper_id":3,"clause":"HI-14"}'
 _out=$(goals "${_evt}") || true
 printf '%s\n' "${_out}" | grep -q '"status": "waiting-accept"' \

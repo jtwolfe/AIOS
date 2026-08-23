@@ -756,6 +756,10 @@ def _tick(
                 reason = "work-runtime synthesis is P8.1; not this loop (HI-15)"
             state["status"] = "idle"
             state["proposal"] = None
+            # Skip is not a gap. Do not poison SAME_GAP for a later declared window.
+            state["last_gap"] = None
+            state["gap_count"] = 0
+            state["handoff"] = None
             state["reason"] = reason
             state["hi"] = "HI-15"
             save_state(state, path)
