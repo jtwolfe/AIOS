@@ -340,6 +340,13 @@ check_firstboot_payload() {
     || die "serial-getty autologin must exec firstboot"
   grep -q 'TTYPath=/dev/console' "${iso}/etc/systemd/system/aios-installer.service" \
     || die "installer unit must bind /dev/console"
+  grep -q 'After=.*getty@tty1.service' "${iso}/etc/systemd/system/aios-installer.service" \
+    || die "installer unit must After= gettys so it wins /dev/console"
+  grep -q '^Type=simple$' "${iso}/etc/systemd/system/aios-installer.service" \
+    || die "installer unit must not use Type=idle against getty"
+  grep -q 'mask getty@tty1.service serial-getty@ttyS0.service' \
+    "${iso}/usr/lib/aios/bin/firstboot" \
+    || die "firstboot must mask gettys in the chroot"
   grep -q 'vmlinuz-linux-lts' "${iso}/usr/lib/aios/bin/firstboot" \
     || die "firstboot must write a linux-lts boot entry"
   grep -q 'vmlinuz-linux' "${iso}/usr/lib/aios/bin/firstboot" \

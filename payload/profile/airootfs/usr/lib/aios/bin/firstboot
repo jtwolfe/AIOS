@@ -23,9 +23,37 @@ TARGET_MOUNTED=0
 mkdir -p "${RUN_DIR}"
 touch "${LIVE_LOG}"
 
+this_tty() {
+  tty 2>/dev/null || true
+}
+
+# Mirror progress to the other live getty so QEMU -serial stdio and a VT both see it.
+fanout_line() {
+  _line=$1
+  _self=$(this_tty)
+  for _d in /dev/ttyS0 /dev/tty1; do
+    [ -c "${_d}" ] || continue
+    [ "${_d}" = "${_self}" ] && continue
+    printf '%s\n' "${_line}" >"${_d}" 2>/dev/null || true
+  done
+}
+
 log() {
-  printf '%s\n' "$*"
   printf '%s\n' "$*" >> "${LIVE_LOG}"
+  printf '%s\n' "$*"
+  fanout_line "$*"
+}
+
+tee_consoles() {
+  _self=$(this_tty)
+  _tee="${LIVE_LOG}"
+  for _d in /dev/ttyS0 /dev/tty1; do
+    [ -c "${_d}" ] || continue
+    [ "${_d}" = "${_self}" ] && continue
+    _tee="${_tee} ${_d}"
+  done
+  # shellcheck disable=SC2086
+  tee -a ${_tee}
 }
 
 die() {
@@ -84,14 +112,62 @@ require_tools() {
   grep -qx linux-lts "${PACSTRAP_LIST}" || die "linux-lts missing from pacstrap list"
 }
 
+console_serial() {
+  _fw=$(fw_cfg opt/org.aios/console || true)
+  [ "${_fw}" = serial ]
+}
+
+# One installer. Prefer ttyS0 when fw_cfg asks for serial (QEMU -serial stdio).
+is_operator_instance() {
+  _t=$(this_tty)
+  if console_serial; then
+    case "${_t}" in
+      /dev/ttyS0|/dev/console) return 0 ;;
+      '') return 0 ;;
+      *) return 1 ;;
+    esac
+  fi
+  case "${_t}" in
+    /dev/ttyS0)
+      [ -c /dev/tty1 ] && return 1
+      return 0
+      ;;
+  esac
+  return 0
+}
+
 acquire_lock() {
   exec 9>"${RUN_DIR}/firstboot.lock"
-  if flock -n 9; then
-    return 0
+  if is_operator_instance; then
+    if flock -n 9; then
+      return 0
+    fi
   fi
-  log "firstboot already running on another console; waiting"
+  printf '%s\n' "firstboot running on the operator console; this TTY waits"
   flock 9
+  printf '%s\n' "firstboot finished on the operator console"
+  sleep 86400
   exit 0
+}
+
+# Confirm on the operator TTY (serial when fw_cfg console=serial).
+read_operator() {
+  _var=$1
+  _dev=$(this_tty)
+  if console_serial && [ -r /dev/ttyS0 ]; then
+    _dev=/dev/ttyS0
+  elif [ -z "${_dev}" ] || [ ! -r "${_dev}" ]; then
+    if [ -r /dev/tty ]; then
+      _dev=/dev/tty
+    else
+      _dev=
+    fi
+  fi
+  if [ -n "${_dev}" ]; then
+    read -r "${_var}" <"${_dev}"
+  else
+    read -r "${_var}"
+  fi
 }
 
 # hashes.txt + minisign must pass before any block device is touched.
@@ -208,11 +284,6 @@ firstboot_mode() {
   printf '%s\n' "${_mode}"
 }
 
-console_serial() {
-  _fw=$(fw_cfg opt/org.aios/console || true)
-  [ "${_fw}" = serial ]
-}
-
 confirm_disk() {
   _mode=$(firstboot_mode)
   _n=$(count_cands)
@@ -237,13 +308,13 @@ confirm_disk() {
     DISK=$(head -n 1 "${CAND_FILE}")
     log "Install AIOS to ${DISK} (this erases the disk)."
     log "Type yes to continue."
-    read -r _ans || die "no TTY confirm"
+    read_operator _ans || die "no TTY confirm"
     [ "${_ans}" = yes ] || die "not confirmed"
     return 0
   fi
 
   log "Type the disk path to install (this erases it), or abort."
-  read -r _ans || die "no TTY confirm"
+  read_operator _ans || die "no TTY confirm"
   _d=0
   while IFS= read -r DISK; do
     if [ "${DISK}" = "${_ans}" ]; then
@@ -291,6 +362,8 @@ partition_and_mount() {
   wipefs -a "${ROOTP}" >/dev/null 2>&1 || true
   mkfs.fat -F 32 "${ESP}" >/dev/null
   mkfs.btrfs -f "${ROOTP}" >/dev/null
+  udevadm settle || true
+  blkid -c /dev/null "${ESP}" "${ROOTP}" >/dev/null || true
   mount "${ROOTP}" "${TARGET}"
   btrfs subvolume create "${TARGET}/@" >/dev/null
   btrfs subvolume create "${TARGET}/@home" >/dev/null
@@ -305,7 +378,7 @@ partition_and_mount() {
   mount --mkdir -o subvol=@var_log "${ROOTP}" "${TARGET}/var/log"
   mount --mkdir -o subvol=@snapshots "${ROOTP}" "${TARGET}/.snapshots"
   TARGET_MOUNTED=1
-  ROOT_UUID=$(blkid -s UUID -o value "${ROOTP}")
+  ROOT_UUID=$(blkid -c /dev/null -s UUID -o value "${ROOTP}")
   [ -n "${ROOT_UUID}" ] || die "no UUID on root filesystem"
   copy_log
 }
@@ -329,7 +402,7 @@ pacstrap_target() {
   log "pacstrap -K from ${PACSTRAP_LIST}"
   # Word splitting of the locked name list is intended.
   # shellcheck disable=SC2086
-  pacstrap -K "${TARGET}" ${_pkgs} 2>&1 | tee -a "${LIVE_LOG}"
+  pacstrap -K "${TARGET}" ${_pkgs} 2>&1 | tee_consoles
 }
 
 write_boot_entry() {
@@ -366,15 +439,16 @@ configure_boot() {
   else
     DEFAULT_ENTRY=aios-linux.conf
   fi
-  log "bootctl set-default ${DEFAULT_ENTRY}"
-  arch-chroot -S "${TARGET}" /usr/bin/bootctl set-default "${DEFAULT_ENTRY}" \
-    || true
   cat > "${TARGET}/boot/loader/loader.conf" <<EOF
 default ${DEFAULT_ENTRY}
 timeout 5
 console-mode keep
 editor no
 EOF
+  log "loader.conf default ${DEFAULT_ENTRY}"
+  if ! bootctl --root="${TARGET}" set-default "${DEFAULT_ENTRY}"; then
+    log "bootctl set-default failed; loader.conf default=${DEFAULT_ENTRY}"
+  fi
 }
 
 write_os_release() {
@@ -429,7 +503,13 @@ copy_payload_into_target() {
 }
 
 configure_target() {
+  udevadm settle || true
   genfstab -U "${TARGET}" >> "${TARGET}/etc/fstab"
+  # Prefer subvol=@ over subvolid= (subvolid can change on restore).
+  if command -v sed >/dev/null 2>&1; then
+    sed -i -e 's/,subvolid=[0-9][0-9]*//g' -e 's/subvolid=[0-9][0-9]*,//g' \
+      "${TARGET}/etc/fstab"
+  fi
   grep -q 'subvol=@' "${TARGET}/etc/fstab" || die "fstab missing subvol=@"
 
   printf 'aios\n' > "${TARGET}/etc/hostname"
@@ -464,6 +544,8 @@ EOF
 
   systemctl --root="${TARGET}" enable aios-installer.service \
     || die "failed to enable aios-installer.service in the chroot"
+  systemctl --root="${TARGET}" mask getty@tty1.service serial-getty@ttyS0.service \
+    || die "failed to mask gettys (installer must own /dev/console)"
   systemctl --root="${TARGET}" enable systemd-networkd.service systemd-resolved.service \
     || die "failed to enable networkd/resolved"
   systemctl --root="${TARGET}" disable sshd.service 2>/dev/null || true
@@ -471,12 +553,16 @@ EOF
   systemctl --root="${TARGET}" disable iwd.service 2>/dev/null || true
   systemctl --root="${TARGET}" is-enabled aios-installer.service >/dev/null \
     || die "aios-installer.service not enabled in the chroot"
+  _g1=$(systemctl --root="${TARGET}" is-enabled getty@tty1.service 2>/dev/null || true)
+  _gs=$(systemctl --root="${TARGET}" is-enabled serial-getty@ttyS0.service 2>/dev/null || true)
+  [ "${_g1}" = masked ] || die "getty@tty1.service is not masked on the target"
+  [ "${_gs}" = masked ] || die "serial-getty@ttyS0.service is not masked on the target"
   if systemctl --root="${TARGET}" is-enabled sshd.service >/dev/null 2>&1 \
     || systemctl --root="${TARGET}" is-enabled openssh.service >/dev/null 2>&1; then
     die "openssh/sshd must stay disabled"
   fi
 
-  arch-chroot "${TARGET}" mkinitcpio -P 2>&1 | tee -a "${LIVE_LOG}"
+  arch-chroot "${TARGET}" mkinitcpio -P 2>&1 | tee_consoles
 }
 
 reboot_to_disk() {
