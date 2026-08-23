@@ -234,10 +234,24 @@ scan_file() {
   return 0
 }
 
+# 0 = skip content (dangling or target outside this find root).
+# In-tree relative links still scan.
+symlink_skip_content() {
+  [ -L "$1" ] || return 1
+  [ -e "$1" ] || return 0
+  _res=$(readlink -f "$1" 2>/dev/null || true)
+  [ -n "${_res}" ] || return 0
+  case "${_res}" in
+    "$2"|"$2"/*) return 1 ;;
+  esac
+  return 0
+}
+
 scan_worktree_path() {
   _f=$1
-  # Dangling non-secret names (ISO systemd .wants) are not PII.
-  if [ -L "${_f}" ] && [ ! -e "${_f}" ]; then
+  _root=$2
+  # Host files behind ISO links (resolv.conf, .wants) are not the payload.
+  if symlink_skip_content "${_f}" "${_root}"; then
     return 0
   fi
   [ -r "${_f}" ] || fail "unreadable: ${_f}"
@@ -256,7 +270,7 @@ while IFS= read -r _tree; do
   fi
   while IFS= read -r _f; do
     [ -n "${_f}" ] || continue
-    scan_worktree_path "${_f}"
+    scan_worktree_path "${_f}" "${_tree}"
   done <"${LIST}"
 done <"${WORK}/trees.u"
 
