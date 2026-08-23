@@ -59,3 +59,12 @@ With no arguments the service watches `proposals/` and schema-gates each
 document. It does not re-run oracles or merge.
 
 Exit 0 on pass, non-zero on fail. One-line reason on stderr.
+
+## Policy
+
+POSIX `sh` oracles in `policy/`. Same contract: exit 0 on pass, non-zero
+on fail, one-line reason on stderr. The checker re-runs them without a
+model client (HI-02, HI-08). One script per hard invariant (HI-01…17)
+plus `packages-drift.sh`, `snapper-enabled.sh`, `etckeeper-enabled.sh`,
+`boot-seatbelt.sh`, `no-partial-upgrade.sh`, `no-curl-sh.sh`, and
+`work-slice.sh`. They fail closed. `true` is not an oracle.

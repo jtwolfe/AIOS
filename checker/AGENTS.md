@@ -53,3 +53,4 @@ checker-owned bare repo.
 - [hooks/update](hooks/update)
 - [hooks/pre-receive](hooks/pre-receive)
 - [hooks/reference-transaction](hooks/reference-transaction)
+- [policy/](policy/)
