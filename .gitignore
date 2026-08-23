@@ -17,6 +17,8 @@ Thumbs.db
 # Tooling
 node_modules/
 dist/
+work/
+*.iso
 .cache/
 *.pyc
 __pycache__/
