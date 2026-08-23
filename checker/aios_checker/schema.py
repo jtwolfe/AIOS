@@ -1,6 +1,7 @@
-"""Privileged proposal documents: intent plus oracles (HI-08, HI-10)."""
+"""Privileged proposal documents: intent plus oracles (HI-08, HI-10, P4.6)."""
 
 import json
+import re
 import uuid
 
 INTENT_SOURCES = ("human", "envelope-clause", "machine-goal", "work-intent")
@@ -18,9 +19,46 @@ ALLOWED_TOP = REQUIRED_TOP + ("citations",)
 ALLOWED_INTENT = ("source", "asked", "clause")
 ALLOWED_EVIDENCE = ("ran", "snapper_pre")
 
+# P4.6 / L-20: wiki or man this turn. Infer class from the document so
+# omitting a label cannot skip the gate.
+_CLASS_MARKERS = (
+    (
+        "pacman",
+        re.compile(
+            r"(?i)(\bpacman\b|\bpacstrap\b|\b-syu\b|packages\.txt|"
+            r"packages-drift|no-partial-upgrade)"
+        ),
+    ),
+    (
+        "systemd",
+        re.compile(
+            r"(?i)(\bsystemd\b|\bsystemctl\b|\.service\b|\.timer\b|"
+            r"\.socket\b|\.slice\b|/etc/systemd|unit file)"
+        ),
+    ),
+    (
+        "btrfs",
+        re.compile(
+            r"(?i)(\bbtrfs\b|\bsnapper\b|\bsubvol(?:ume)?\b|\bfstab\b)"
+        ),
+    ),
+    (
+        "boot",
+        re.compile(
+            r"(?i)(\bbootctl\b|\bmkinitcpio\b|\bbootloader\b|boot-seatbelt|"
+            r"\bvmlinuz\b|\binitramfs\b|\blinux-lts\b|/boot\b|"
+            r"systemd-boot|\besp\b|\buki\b)"
+        ),
+    ),
+)
+_WIKI_CITE = re.compile(r"(?i)^https://wiki\.archlinux\.org/\S+$")
+_MAN_WEB_CITE = re.compile(r"(?i)^https://man\.archlinux\.org/\S+$")
+_MAN_CMD_CITE = re.compile(r"(?i)^man(\s+[0-9]+)?\s+[A-Za-z0-9._:-]+$")
+_MAN_PAGE_CITE = re.compile(r"(?i)^[A-Za-z0-9._:-]+\([0-9][a-z]?\)$")
+
 
 class ProposalSchemaError(Exception):
-    """Proposal is not intent-plus-oracles, or evidence is missing."""
+    """Proposal is not intent-plus-oracles, or P4.6 citations are missing."""
 
 
 def _need_dict(value, what):
@@ -138,10 +176,51 @@ def _evidence(value):
     return out
 
 
-def _citations(value):
+def citation_ok(item):
+    text = item.strip() if isinstance(item, str) else ""
+    if not text:
+        return False
+    return bool(
+        _WIKI_CITE.match(text)
+        or _MAN_WEB_CITE.match(text)
+        or _MAN_CMD_CITE.match(text)
+        or _MAN_PAGE_CITE.match(text)
+    )
+
+
+def citation_classes(intent, oracles, evidence=None):
+    asked = ""
+    if isinstance(intent, dict):
+        asked = intent.get("asked") or ""
+        if not isinstance(asked, str):
+            asked = str(asked)
+    parts = [asked]
+    if isinstance(oracles, (list, tuple)):
+        parts.extend(str(item) for item in oracles)
+    ran = (evidence or {}).get("ran") if isinstance(evidence, dict) else None
+    if isinstance(ran, (list, tuple)):
+        parts.extend(str(item) for item in ran)
+    hay = "\n".join(parts)
+    return tuple(name for name, pattern in _CLASS_MARKERS if pattern.search(hay))
+
+
+def _citations(value, required_classes):
     if value is None:
-        return []
-    return _need_str_list(value, "citations", min_len=0)
+        items = []
+    else:
+        items = [item.strip() for item in _need_str_list(value, "citations", min_len=0)]
+    if required_classes and not items:
+        raise ProposalSchemaError(
+            "citations must not be empty for %s (P4.6)"
+            % ", ".join(required_classes)
+        )
+    for i, item in enumerate(items):
+        if not citation_ok(item):
+            raise ProposalSchemaError(
+                "citations[%s] must be wiki.archlinux.org or man (P4.6)" % i
+            )
+        items[i] = item
+    return items
 
 
 def validate_proposal(obj):
@@ -162,14 +241,17 @@ def validate_proposal(obj):
             raise ProposalSchemaError("intent missing (HI-10)")
         raise ProposalSchemaError("missing field %s" % ", ".join(missing))
     oracles = _oracles(data["oracles"])
+    intent = _intent(data["intent"])
+    evidence = _evidence(data["evidence"])
+    required = citation_classes(intent, oracles, evidence)
     return {
         "id": _uuid4(data["id"]),
         "branch": _branch(data["branch"]),
         "repos": _repos(data["repos"]),
-        "intent": _intent(data["intent"]),
+        "intent": intent,
         "oracles": oracles,
-        "citations": _citations(data.get("citations")),
-        "evidence": _evidence(data["evidence"]),
+        "citations": _citations(data.get("citations"), required),
+        "evidence": evidence,
     }
 
 

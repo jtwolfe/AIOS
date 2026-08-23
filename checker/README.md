@@ -5,8 +5,9 @@ Independent validator for privileged proposals. systemd unit
 (HI-02, L-08).
 
 A proposal is intent plus oracles. Empty oracle set → reject (HI-10).
-Missing evidence → reject (HI-08). Only this uid fast-forwards or
-squash-merges to `main` (HI-03, L-03).
+Missing evidence → reject (HI-08). Empty wiki/man citations on
+pacman/systemd/btrfs/boot classes → reject (P4.6). Only this uid
+fast-forwards or squash-merges to `main` (HI-03, L-03).
 
 On the machine the live tree is `/srv/aios/checker`. Bare git is
 `/srv/aios/git/checker.git`, owned by `aios-checker`.

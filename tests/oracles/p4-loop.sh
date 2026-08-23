@@ -48,8 +48,15 @@ python3 -m py_compile \
   "${ROOT}/agent/aios_agent/triage.py" \
   "${ROOT}/agent/aios_agent/skills.py" \
   "${ROOT}/agent/aios_agent/memory.py" \
+  "${ROOT}/checker/aios_checker/schema.py" \
   "${MAIN}" \
   || fail "py_compile failed"
+grep -q 'empty wiki/man citations' "${ROOT}/agent/aios_agent/loop.py" \
+  || fail "loop.py missing P4.6 accept refusal"
+grep -q 'citations must not be empty' "${ROOT}/checker/aios_checker/schema.py" \
+  || fail "schema.py missing P4.6 empty-citation reject"
+_prov=$(grep -R -n -- 'provider' "${ROOT}/checker" 2>/dev/null | head -n 1 || true)
+[ -z "${_prov}" ] || fail "checker names provider (HI-02, L-08): ${_prov}"
 
 TMP=$(mktemp -d)
 trap 'rm -rf "${TMP}"' EXIT
@@ -153,7 +160,7 @@ _out=$(turn --accept nosuch-plan-id) || true
 printf '%s\n' "${_out}" | grep -q '"enact": "skipped"' \
   || fail "--accept missing id must not enact: ${_out}"
 
-printf '%s\n' '{"default":"{\"oracles\":[\"pacman -Qi neovim\"]}"}' > "${TMP}/oracles.json"
+printf '%s\n' '{"default":"{\"oracles\":[\"pacman -Qi neovim\"],\"citations\":[\"https://wiki.archlinux.org/title/System_maintenance#Partial_upgrades_are_unsupported\"]}"}' > "${TMP}/oracles.json"
 _plan=$(
   AIOS_PROVIDER=fixture AIOS_FIXTURE="${TMP}/oracles.json" \
     AIOS_MEMORY="${MEM}" AIOS_SKILLS="${TMP}/skills" \
@@ -213,6 +220,39 @@ printf '%s\n' "${_hi10}" | grep -q '"enact": "refused-hi-10"' \
   || fail "accept without oracles is HI-10: ${_hi10}"
 printf '%s\n' "${_hi10}" | grep -q '"paused": true' \
   || fail "HI-10 must pause: ${_hi10}"
+
+printf '%s\n' '{"default":"{\"oracles\":[\"pacman -Qi neovim\"],\"citations\":[]}"}' \
+  > "${TMP}/empty-cite.json"
+_p46_plan=$(
+  AIOS_PROVIDER=fixture AIOS_FIXTURE="${TMP}/empty-cite.json" \
+    AIOS_MEMORY="${MEM}" AIOS_SKILLS="${TMP}/skills" \
+    python3 "${MAIN}" turn "install neovim as the system editor"
+) || true
+printf '%s\n' "${_p46_plan}" | grep -q '"waiting-accept"' \
+  || fail "empty citations still plan (checker rejects): ${_p46_plan}"
+printf '%s\n' "${_p46_plan}" | grep -q '"citations": \[\]' \
+  || fail "plan must carry citations field: ${_p46_plan}"
+_p46_id=$(json_id "${_p46_plan}")
+_p46=$(
+  AIOS_PROVIDER=fixture AIOS_FIXTURE="${TMP}/empty-cite.json" \
+    AIOS_MEMORY="${MEM}" AIOS_SKILLS="${TMP}/skills" \
+    AIOS_ENACT="${_stub}" \
+    python3 "${MAIN}" turn --accept "${_p46_id}"
+) || true
+printf '%s\n' "${_p46}" | grep -q '"enact": "refused-p46"' \
+  || fail "accept without wiki/man citations is P4.6: ${_p46}"
+printf '%s\n' "${_p46}" | grep -q '"paused": true' \
+  || fail "P4.6 must pause: ${_p46}"
+printf '%s\n' "${_p46}" | grep -q '"enact": "once"' \
+  && fail "P4.6 must not enact: ${_p46}" || true
+
+_cited_plan=$(
+  AIOS_PROVIDER=fixture AIOS_FIXTURE="${TMP}/oracles.json" \
+    AIOS_MEMORY="${MEM}" AIOS_SKILLS="${TMP}/skills" \
+    python3 "${MAIN}" turn "install neovim as the system editor"
+) || true
+printf '%s\n' "${_cited_plan}" | grep -q 'wiki.archlinux.org' \
+  || fail "privileged plan must keep wiki citations: ${_cited_plan}"
 
 _out=$(turn "merge this to main") || true
 printf '%s\n' "${_out}" | grep -q '"triage": "conflict"' \
@@ -334,6 +374,81 @@ assert STAGES == (
 ), STAGES
 src = open(sys.argv[2], encoding="utf-8").read()
 assert "def serve" in src and "turn" in src
+PY
+
+python3 - "${ROOT}/checker/aios_checker" <<'PY' || fail "P4.6 schema citations"
+import copy, sys
+sys.path.insert(0, sys.argv[1])
+from schema import ProposalSchemaError, validate_proposal
+
+WIKI = "https://wiki.archlinux.org/title/System_maintenance#Partial_upgrades_are_unsupported"
+MAN = "pacman(8)"
+base = {
+    "id": "11111111-1111-4111-8111-111111111111",
+    "branch": "agent/2026-08-21-neovim-as-editor",
+    "repos": ["state"],
+    "intent": {
+        "source": "human",
+        "asked": "neovim as the system editor",
+        "clause": "envelope/clauses/editor.md",
+    },
+    "oracles": ["pacman -Qi neovim", "policy/packages-drift.sh"],
+    "citations": [WIKI],
+    "evidence": {"ran": ["pacman -Qi neovim"], "snapper_pre": 184},
+}
+validate_proposal(base)
+ok_man = copy.deepcopy(base)
+ok_man["citations"] = [MAN]
+validate_proposal(ok_man)
+
+def reject(doc, needle):
+    try:
+        validate_proposal(doc)
+    except ProposalSchemaError as exc:
+        text = str(exc)
+        if needle not in text:
+            raise SystemExit("wrong reject %r wanted %r" % (text, needle))
+        return
+    raise SystemExit("accepted %r" % (doc.get("intent"),))
+
+empty = copy.deepcopy(base)
+empty["citations"] = []
+reject(empty, "P4.6")
+missing = copy.deepcopy(base)
+del missing["citations"]
+reject(missing, "P4.6")
+prose = copy.deepcopy(base)
+prose["citations"] = ["the wiki says partial upgrades are unsupported"]
+reject(prose, "P4.6")
+
+for asked, oracles in (
+    ("write a systemd unit", ["systemctl cat aios-agent.service"]),
+    ("edit the fstab", ["findmnt /"]),
+    ("run bootctl update", ["bootctl status"]),
+    ("mkinitcpio preset", ["policy/boot-seatbelt.sh"]),
+):
+    doc = copy.deepcopy(base)
+    doc["intent"]["asked"] = asked
+    doc["oracles"] = oracles
+    doc["evidence"]["ran"] = list(oracles)
+    doc["citations"] = []
+    reject(doc, "P4.6")
+    doc["citations"] = [WIKI]
+    validate_proposal(doc)
+
+env = copy.deepcopy(base)
+env["intent"]["asked"] = "record photography purpose"
+env["oracles"] = ["policy/hi-05-human-authority.sh"]
+env["evidence"]["ran"] = ["policy/hi-05-human-authority.sh"]
+env["citations"] = []
+validate_proposal(env)
+no_cite = copy.deepcopy(env)
+del no_cite["citations"]
+validate_proposal(no_cite)
+
+oracles_empty = copy.deepcopy(base)
+oracles_empty["oracles"] = []
+reject(oracles_empty, "HI-10")
 PY
 
 if [ "${failed}" -ne 0 ]; then

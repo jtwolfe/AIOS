@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -77,24 +78,108 @@ class _Named:
         self.references = []
 
 
-def _oracles_from_reply(reply):
+# Same markers as checker/aios_checker/schema.py (HI-02: do not import the checker).
+_CLASS_MARKERS = (
+    (
+        "pacman",
+        re.compile(
+            r"(?i)(\bpacman\b|\bpacstrap\b|\b-syu\b|packages\.txt|"
+            r"packages-drift|no-partial-upgrade)"
+        ),
+    ),
+    (
+        "systemd",
+        re.compile(
+            r"(?i)(\bsystemd\b|\bsystemctl\b|\.service\b|\.timer\b|"
+            r"\.socket\b|\.slice\b|/etc/systemd|unit file)"
+        ),
+    ),
+    (
+        "btrfs",
+        re.compile(
+            r"(?i)(\bbtrfs\b|\bsnapper\b|\bsubvol(?:ume)?\b|\bfstab\b)"
+        ),
+    ),
+    (
+        "boot",
+        re.compile(
+            r"(?i)(\bbootctl\b|\bmkinitcpio\b|\bbootloader\b|boot-seatbelt|"
+            r"\bvmlinuz\b|\binitramfs\b|\blinux-lts\b|/boot\b|"
+            r"systemd-boot|\besp\b|\buki\b)"
+        ),
+    ),
+)
+_WIKI_CITE = re.compile(r"(?i)^https://wiki\.archlinux\.org/\S+$")
+_MAN_WEB_CITE = re.compile(r"(?i)^https://man\.archlinux\.org/\S+$")
+_MAN_CMD_CITE = re.compile(r"(?i)^man(\s+[0-9]+)?\s+[A-Za-z0-9._:-]+$")
+_MAN_PAGE_CITE = re.compile(r"(?i)^[A-Za-z0-9._:-]+\([0-9][a-z]?\)$")
+
+
+def _items_from_reply(reply, field, prefixes):
     text = reply if isinstance(reply, str) else str(reply or "")
     try:
         obj = json.loads(text)
     except ValueError:
         obj = None
     if isinstance(obj, dict):
-        raw = obj.get("oracles")
+        raw = obj.get(field)
         if isinstance(raw, list):
-            return [str(item) for item in raw if str(item).strip()]
+            return [str(item).strip() for item in raw if str(item).strip()]
     found = []
     for line in text.splitlines():
         stripped = line.strip()
-        if stripped.lower().startswith("oracle:"):
-            item = stripped.split(":", 1)[1].strip()
+        lower = stripped.lower()
+        for prefix in prefixes:
+            if not lower.startswith(prefix):
+                continue
+            rest = stripped[len(prefix) :]
+            # "man:" is a label; "manager:" is not.
+            if rest and rest[0].isalnum():
+                continue
+            item = rest.strip()
             if item:
                 found.append(item)
+            break
     return found
+
+
+def _oracles_from_reply(reply):
+    return _items_from_reply(reply, "oracles", ("oracle:",))
+
+
+def _citations_from_reply(reply):
+    return _items_from_reply(reply, "citations", ("citation:", "wiki:", "man:"))
+
+
+def citation_ok(item):
+    text = item.strip() if isinstance(item, str) else ""
+    if not text:
+        return False
+    return bool(
+        _WIKI_CITE.match(text)
+        or _MAN_WEB_CITE.match(text)
+        or _MAN_CMD_CITE.match(text)
+        or _MAN_PAGE_CITE.match(text)
+    )
+
+
+def citation_classes(asked, oracles, skills=None):
+    parts = [asked if isinstance(asked, str) else str(asked or "")]
+    if isinstance(oracles, (list, tuple)):
+        parts.extend(str(item) for item in oracles)
+    if skills:
+        for skill in skills:
+            name = getattr(skill, "name", skill)
+            parts.append(str(name or ""))
+    hay = "\n".join(parts)
+    return tuple(name for name, pattern in _CLASS_MARKERS if pattern.search(hay))
+
+
+def citations_usable(items, required_classes):
+    cleaned = [str(item).strip() for item in (items or []) if str(item).strip()]
+    if required_classes and not cleaned:
+        return False
+    return all(citation_ok(item) for item in cleaned)
 
 
 def _messages(asked, skills, triage):
@@ -104,6 +189,7 @@ def _messages(asked, skills, triage):
         "Do not synthesise the work runtime (HI-15).",
         "Do not decide what memory is worth keeping (HI-11).",
         "Research is plan-only. Do not enact while planning (L-20).",
+        "Wiki/man this turn for pacman/systemd/btrfs/boot; empty citations are rejected (P4.6).",
         "triage: %s" % triage.kind,
         "asked: %s" % asked,
     ]
@@ -231,18 +317,48 @@ def accept_plan(ident, memory_root=None, skills_root=None, enact_bin=None, provi
     asked = rec.get("asked") or ""
     plan = rec.get("plan") if isinstance(rec.get("plan"), dict) else {}
     oracles = plan.get("oracles") or []
+    citations = plan.get("citations") if isinstance(plan.get("citations"), list) else []
     triage = classify(asked)
     loaded = _skills_from_rec(rec)
     if not loaded:
         loaded = match_skills(asked, root=skills_root)
     reply = rec.get("reply") or ""
     hi = rec.get("hi")
+    required = citation_classes(asked, oracles, loaded)
 
     if not oracles:
         enacted = "refused-hi-10"
         paused = True
         outcome = "pause"
         reply = (reply + "\n" if reply else "") + "no oracle set, no enactment (HI-10)"
+        paths = _remember(
+            asked,
+            triage,
+            loaded,
+            plan,
+            True,
+            enacted,
+            evidence,
+            outcome,
+            paused,
+            reply,
+            hi,
+            memory_root,
+            extra={"plan_id": rec.get("id") or ident},
+        )
+        return Turn(
+            asked, triage, loaded, plan, True, enacted, evidence, outcome, paused, reply, paths, hi=hi
+        )
+
+    if not citations_usable(citations, required):
+        # L-20: wiki/man this turn in the plan. Checker would also reject (P4.6).
+        enacted = "refused-p46"
+        paused = True
+        outcome = "pause"
+        kind = ", ".join(required) if required else "wiki/man"
+        reply = (reply + "\n" if reply else "") + (
+            "empty wiki/man citations on %s, no enactment (P4.6)" % kind
+        )
         paths = _remember(
             asked,
             triage,
@@ -412,12 +528,13 @@ def run_turn(
 
     # Privileged: plan (docs) is the only write this invocation (L-20).
     oracles = _oracles_from_reply(reply)
+    citations = _citations_from_reply(reply)
     plan = {
         "intent": {"source": "human", "asked": asked},
         "oracles": oracles,
         "skills": skill_note,
         "enact": "not-while-planning",
-        "citations": [],
+        "citations": citations,
     }
     outcome = "waiting-accept"
     paths = _remember(
