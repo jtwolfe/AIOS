@@ -79,12 +79,13 @@ class _Named:
 
 
 # Same markers as checker/aios_checker/schema.py (HI-02: do not import the checker).
+# '-' is non-word, so no leading word-boundary before -syu.
 _CLASS_MARKERS = (
     (
         "pacman",
         re.compile(
-            r"(?i)(\bpacman\b|\bpacstrap\b|\b-syu\b|packages\.txt|"
-            r"packages-drift|no-partial-upgrade)"
+            r"(?i)(\bpacman\b|\bpacstrap\b|-syu\b|packages\.txt|"
+            r"\binstall\s+\S+|as the system editor)"
         ),
     ),
     (
@@ -103,12 +104,13 @@ _CLASS_MARKERS = (
     (
         "boot",
         re.compile(
-            r"(?i)(\bbootctl\b|\bmkinitcpio\b|\bbootloader\b|boot-seatbelt|"
+            r"(?i)(\bbootctl\b|\bmkinitcpio\b|\bbootloader\b|"
             r"\bvmlinuz\b|\binitramfs\b|\blinux-lts\b|/boot\b|"
             r"systemd-boot|\besp\b|\buki\b)"
         ),
     ),
 )
+_POLICY_ORACLE = re.compile(r"(?i)(^|[\s/])policy/|^[\w./-]+\.sh$")
 _WIKI_CITE = re.compile(r"(?i)^https://wiki\.archlinux\.org/\S+$")
 _MAN_WEB_CITE = re.compile(r"(?i)^https://man\.archlinux\.org/\S+$")
 _MAN_CMD_CITE = re.compile(r"(?i)^man(\s+[0-9]+)?\s+[A-Za-z0-9._:-]+$")
@@ -133,10 +135,13 @@ def _items_from_reply(reply, field, prefixes):
             if not lower.startswith(prefix):
                 continue
             rest = stripped[len(prefix) :]
-            # "man:" is a label; "manager:" is not.
-            if rest and rest[0].isalnum():
+            # "man:" is a label; "manager:" is not. "wiki:https://..." is a URL.
+            if rest.startswith("https://") or rest.startswith("http://"):
+                item = rest.strip()
+            elif not rest or rest[0].isspace():
+                item = rest.strip()
+            else:
                 continue
-            item = rest.strip()
             if item:
                 found.append(item)
             break
@@ -163,14 +168,20 @@ def citation_ok(item):
     )
 
 
-def citation_classes(asked, oracles, skills=None):
+def _oracle_class_text(item):
+    text = str(item).strip()
+    if not text or _POLICY_ORACLE.search(text):
+        return ""
+    return text
+
+
+def citation_classes(asked, oracles):
     parts = [asked if isinstance(asked, str) else str(asked or "")]
     if isinstance(oracles, (list, tuple)):
-        parts.extend(str(item) for item in oracles)
-    if skills:
-        for skill in skills:
-            name = getattr(skill, "name", skill)
-            parts.append(str(name or ""))
+        for item in oracles:
+            text = _oracle_class_text(item)
+            if text:
+                parts.append(text)
     hay = "\n".join(parts)
     return tuple(name for name, pattern in _CLASS_MARKERS if pattern.search(hay))
 
@@ -324,7 +335,7 @@ def accept_plan(ident, memory_root=None, skills_root=None, enact_bin=None, provi
         loaded = match_skills(asked, root=skills_root)
     reply = rec.get("reply") or ""
     hi = rec.get("hi")
-    required = citation_classes(asked, oracles, loaded)
+    required = citation_classes(asked, oracles)
 
     if not oracles:
         enacted = "refused-hi-10"
@@ -351,13 +362,14 @@ def accept_plan(ident, memory_root=None, skills_root=None, enact_bin=None, provi
         )
 
     if not citations_usable(citations, required):
-        # L-20: wiki/man this turn in the plan. Checker would also reject (P4.6).
+        # L-20: wiki/man this turn in the plan (asked + commands, same as schema).
         enacted = "refused-p46"
         paused = True
         outcome = "pause"
         kind = ", ".join(required) if required else "wiki/man"
         reply = (reply + "\n" if reply else "") + (
-            "empty wiki/man citations on %s, no enactment (P4.6)" % kind
+            "missing or invalid wiki/man citations on %s, no enactment (P4.6)"
+            % kind
         )
         paths = _remember(
             asked,

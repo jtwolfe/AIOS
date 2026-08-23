@@ -44,7 +44,7 @@ _RULE_TALK = re.compile(
 _PLEASE = re.compile(r"(?i)\b(please|go ahead|do it)\b")
 
 _PRIVILEGED = re.compile(
-    r"(?i)(\bpacman\b|\b-syu\b|\benact\b|\bbootctl\b|\bmkinitcpio\b|"
+    r"(?i)(\bpacman\b|-syu\b|\benact\b|\bbootctl\b|\bmkinitcpio\b|"
     r"\bsystemctl\b|\bfstab\b|install\s+\S+|/\s*etc/systemd|"
     r"\benvelope\b|hard.invariant|skill\.md|unit file)"
 )

@@ -51,10 +51,17 @@ python3 -m py_compile \
   "${ROOT}/checker/aios_checker/schema.py" \
   "${MAIN}" \
   || fail "py_compile failed"
-grep -q 'empty wiki/man citations' "${ROOT}/agent/aios_agent/loop.py" \
+grep -q 'missing or invalid wiki/man citations' "${ROOT}/agent/aios_agent/loop.py" \
   || fail "loop.py missing P4.6 accept refusal"
 grep -q 'citations must not be empty' "${ROOT}/checker/aios_checker/schema.py" \
   || fail "schema.py missing P4.6 empty-citation reject"
+if grep -F '\b-syu\b' "${ROOT}/checker/aios_checker/schema.py" \
+  "${ROOT}/agent/aios_agent/loop.py" \
+  "${ROOT}/agent/aios_agent/triage.py" >/dev/null; then
+  fail '\\b-syu\\b never matches -Syu'
+fi
+grep -F -- '-syu\b' "${ROOT}/checker/aios_checker/schema.py" >/dev/null \
+  || fail "schema.py must match -Syu without a leading word boundary"
 _prov=$(grep -R -n -- 'provider' "${ROOT}/checker" 2>/dev/null | head -n 1 || true)
 [ -z "${_prov}" ] || fail "checker names provider (HI-02, L-08): ${_prov}"
 
@@ -221,7 +228,7 @@ printf '%s\n' "${_hi10}" | grep -q '"enact": "refused-hi-10"' \
 printf '%s\n' "${_hi10}" | grep -q '"paused": true' \
   || fail "HI-10 must pause: ${_hi10}"
 
-printf '%s\n' '{"default":"{\"oracles\":[\"pacman -Qi neovim\"],\"citations\":[]}"}' \
+printf '%s\n' '{"default":"{\"oracles\":[\"policy/hi-08-human-not-ci.sh\"],\"citations\":[]}"}' \
   > "${TMP}/empty-cite.json"
 _p46_plan=$(
   AIOS_PROVIDER=fixture AIOS_FIXTURE="${TMP}/empty-cite.json" \
@@ -245,6 +252,27 @@ printf '%s\n' "${_p46}" | grep -q '"paused": true' \
   || fail "P4.6 must pause: ${_p46}"
 printf '%s\n' "${_p46}" | grep -q '"enact": "once"' \
   && fail "P4.6 must not enact: ${_p46}" || true
+printf '%s\n' "${_p46}" | grep -q 'missing or invalid wiki/man citations' \
+  || fail "P4.6 refuse text: ${_p46}"
+
+_syu_plan=$(
+  AIOS_PROVIDER=fixture AIOS_FIXTURE="${TMP}/empty-cite.json" \
+    AIOS_MEMORY="${MEM}" AIOS_SKILLS="${TMP}/skills" \
+    python3 "${MAIN}" turn "run a full -Syu"
+) || true
+printf '%s\n' "${_syu_plan}" | grep -q '"waiting-accept"' \
+  || fail "-Syu without pacman still plans: ${_syu_plan}"
+_syu_id=$(json_id "${_syu_plan}")
+_syu=$(
+  AIOS_PROVIDER=fixture AIOS_FIXTURE="${TMP}/empty-cite.json" \
+    AIOS_MEMORY="${MEM}" AIOS_SKILLS="${TMP}/skills" \
+    AIOS_ENACT="${_stub}" \
+    python3 "${MAIN}" turn --accept "${_syu_id}"
+) || true
+printf '%s\n' "${_syu}" | grep -q '"enact": "refused-p46"' \
+  || fail "full -Syu without wiki/man is P4.6: ${_syu}"
+printf '%s\n' "${_syu}" | grep -q '"enact": "once"' \
+  && fail "-Syu P4.6 must not enact: ${_syu}" || true
 
 _cited_plan=$(
   AIOS_PROVIDER=fixture AIOS_FIXTURE="${TMP}/oracles.json" \
@@ -376,13 +404,16 @@ src = open(sys.argv[2], encoding="utf-8").read()
 assert "def serve" in src and "turn" in src
 PY
 
-python3 - "${ROOT}/checker/aios_checker" <<'PY' || fail "P4.6 schema citations"
+python3 - "${ROOT}/checker/aios_checker" "${ROOT}/agent/aios_agent" <<'PY' || fail "P4.6 schema citations"
 import copy, sys
 sys.path.insert(0, sys.argv[1])
-from schema import ProposalSchemaError, validate_proposal
+from schema import ProposalSchemaError, citation_classes, validate_proposal
+sys.path.insert(0, sys.argv[2])
+from loop import _citations_from_reply, citation_classes as agent_classes
 
 WIKI = "https://wiki.archlinux.org/title/System_maintenance#Partial_upgrades_are_unsupported"
 MAN = "pacman(8)"
+HI08 = "policy/hi-08-human-not-ci.sh"
 base = {
     "id": "11111111-1111-4111-8111-111111111111",
     "branch": "agent/2026-08-21-neovim-as-editor",
@@ -425,7 +456,11 @@ for asked, oracles in (
     ("write a systemd unit", ["systemctl cat aios-agent.service"]),
     ("edit the fstab", ["findmnt /"]),
     ("run bootctl update", ["bootctl status"]),
-    ("mkinitcpio preset", ["policy/boot-seatbelt.sh"]),
+    ("mkinitcpio preset", [HI08]),
+    ("run a full -Syu", [HI08]),
+    ("full -Syu window", [HI08]),
+    ("install neovim as the system editor", [HI08]),
+    ("neovim as the system editor", [HI08]),
 ):
     doc = copy.deepcopy(base)
     doc["intent"]["asked"] = asked
@@ -435,6 +470,9 @@ for asked, oracles in (
     reject(doc, "P4.6")
     doc["citations"] = [WIKI]
     validate_proposal(doc)
+    assert agent_classes(asked, oracles) == citation_classes(
+        {"asked": asked}, oracles
+    ), (asked, oracles)
 
 env = copy.deepcopy(base)
 env["intent"]["asked"] = "record photography purpose"
@@ -446,9 +484,30 @@ no_cite = copy.deepcopy(env)
 del no_cite["citations"]
 validate_proposal(no_cite)
 
+seat = copy.deepcopy(env)
+seat["oracles"] = [
+    "policy/hi-06-seatbelts.sh",
+    "policy/packages-drift.sh",
+    "policy/boot-seatbelt.sh",
+    "policy/snapper-enabled.sh",
+    "policy/no-partial-upgrade.sh",
+]
+seat["evidence"]["ran"] = list(seat["oracles"])
+validate_proposal(seat)
+
+syu = citation_classes({"asked": "run a full -Syu"}, [HI08])
+assert "pacman" in syu, syu
+assert agent_classes("run a full -Syu", [HI08]) == syu
+
 oracles_empty = copy.deepcopy(base)
 oracles_empty["oracles"] = []
 reject(oracles_empty, "HI-10")
+
+got = _citations_from_reply("wiki:https://wiki.archlinux.org/title/Pacman")
+assert got == ["https://wiki.archlinux.org/title/Pacman"], got
+got = _citations_from_reply("wiki: https://wiki.archlinux.org/title/Pacman")
+assert got == ["https://wiki.archlinux.org/title/Pacman"], got
+assert _citations_from_reply("manager: ignore") == []
 PY
 
 if [ "${failed}" -ne 0 ]; then

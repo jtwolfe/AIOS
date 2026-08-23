@@ -19,14 +19,15 @@ ALLOWED_TOP = REQUIRED_TOP + ("citations",)
 ALLOWED_INTENT = ("source", "asked", "clause")
 ALLOWED_EVIDENCE = ("ran", "snapper_pre")
 
-# P4.6 / L-20: wiki or man this turn. Infer class from the document so
-# omitting a label cannot skip the gate.
+# P4.6 / L-20: wiki or man this turn. Infer class from asked + commands so
+# omitting a label cannot skip the gate. '-' is non-word, so no leading
+# word-boundary before -syu.
 _CLASS_MARKERS = (
     (
         "pacman",
         re.compile(
-            r"(?i)(\bpacman\b|\bpacstrap\b|\b-syu\b|packages\.txt|"
-            r"packages-drift|no-partial-upgrade)"
+            r"(?i)(\bpacman\b|\bpacstrap\b|-syu\b|packages\.txt|"
+            r"\binstall\s+\S+|as the system editor)"
         ),
     ),
     (
@@ -45,12 +46,14 @@ _CLASS_MARKERS = (
     (
         "boot",
         re.compile(
-            r"(?i)(\bbootctl\b|\bmkinitcpio\b|\bbootloader\b|boot-seatbelt|"
+            r"(?i)(\bbootctl\b|\bmkinitcpio\b|\bbootloader\b|"
             r"\bvmlinuz\b|\binitramfs\b|\blinux-lts\b|/boot\b|"
             r"systemd-boot|\besp\b|\buki\b)"
         ),
     ),
 )
+# Seatbelt script names are not a class; scan commands and asked text.
+_POLICY_ORACLE = re.compile(r"(?i)(^|[\s/])policy/|^[\w./-]+\.sh$")
 _WIKI_CITE = re.compile(r"(?i)^https://wiki\.archlinux\.org/\S+$")
 _MAN_WEB_CITE = re.compile(r"(?i)^https://man\.archlinux\.org/\S+$")
 _MAN_CMD_CITE = re.compile(r"(?i)^man(\s+[0-9]+)?\s+[A-Za-z0-9._:-]+$")
@@ -188,18 +191,27 @@ def citation_ok(item):
     )
 
 
-def citation_classes(intent, oracles, evidence=None):
+def _oracle_class_text(item):
+    text = str(item).strip()
+    if not text or _POLICY_ORACLE.search(text):
+        return ""
+    return text
+
+
+def citation_classes(intent, oracles):
     asked = ""
     if isinstance(intent, dict):
         asked = intent.get("asked") or ""
         if not isinstance(asked, str):
             asked = str(asked)
+    elif intent is not None:
+        asked = intent if isinstance(intent, str) else str(intent)
     parts = [asked]
     if isinstance(oracles, (list, tuple)):
-        parts.extend(str(item) for item in oracles)
-    ran = (evidence or {}).get("ran") if isinstance(evidence, dict) else None
-    if isinstance(ran, (list, tuple)):
-        parts.extend(str(item) for item in ran)
+        for item in oracles:
+            text = _oracle_class_text(item)
+            if text:
+                parts.append(text)
     hay = "\n".join(parts)
     return tuple(name for name, pattern in _CLASS_MARKERS if pattern.search(hay))
 
@@ -243,7 +255,7 @@ def validate_proposal(obj):
     oracles = _oracles(data["oracles"])
     intent = _intent(data["intent"])
     evidence = _evidence(data["evidence"])
-    required = citation_classes(intent, oracles, evidence)
+    required = citation_classes(intent, oracles)
     return {
         "id": _uuid4(data["id"]),
         "branch": _branch(data["branch"]),
