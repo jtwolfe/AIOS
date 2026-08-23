@@ -204,6 +204,8 @@ printf '%s\n' "${_colon}" | grep -q 'view: chrome' \
 if grep -n 'sleep(3600)' "${MAIN}" >/dev/null; then
   fail "TTY path must not sleep(3600) on EOF (L-09)"
 fi
+grep -q 'signal.SIG_IGN' "${MAIN}" \
+  || fail "TTY must ignore SIGINT so readline is not interrupted (L-09)"
 
 TMP=$(mktemp -d)
 trap 'rm -rf "${TMP}"' EXIT
@@ -243,33 +245,7 @@ import sys
 import time
 
 main = sys.argv[1]
-
-
-def drain(fd, deadline, needle=None):
-    buf = b""
-    while time.monotonic() < deadline:
-        remain = min(0.2, max(0.0, deadline - time.monotonic()))
-        ready, _, _ = select.select([fd], [], [], remain)
-        if not ready:
-            if needle is not None and needle in buf:
-                break
-            continue
-        try:
-            chunk = os.read(fd, 8192)
-        except OSError:
-            break
-        if not chunk:
-            break
-        buf += chunk
-        if needle is not None and needle in buf:
-            extra, _, _ = select.select([fd], [], [], 0.05)
-            if extra:
-                try:
-                    buf += os.read(fd, 8192)
-                except OSError:
-                    pass
-            break
-    return buf
+ROUNDS = 8
 
 
 def still_running(pid):
@@ -279,28 +255,156 @@ def still_running(pid):
     return False, status
 
 
+def drain_until(fd, needle, timeout=3.0):
+    buf = b""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        remain = min(0.2, max(0.0, deadline - time.monotonic()))
+        ready, _, _ = select.select([fd], [], [], remain)
+        if not ready:
+            if needle in buf:
+                break
+            continue
+        try:
+            chunk = os.read(fd, 8192)
+        except OSError:
+            break
+        if not chunk:
+            break
+        buf += chunk
+        if needle in buf:
+            extra, _, _ = select.select([fd], [], [], 0.05)
+            if extra:
+                try:
+                    buf += os.read(fd, 8192)
+                except OSError:
+                    pass
+            break
+    quiet_until = time.monotonic() + 0.08
+    while time.monotonic() < quiet_until:
+        ready, _, _ = select.select([fd], [], [], 0.04)
+        if not ready:
+            break
+        try:
+            chunk = os.read(fd, 8192)
+        except OSError:
+            break
+        if not chunk:
+            break
+        buf += chunk
+        quiet_until = time.monotonic() + 0.08
+    return buf
+
+
+def wait_read_block(pid, timeout=3.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        alive, status = still_running(pid)
+        if not alive:
+            return False, status
+        blocked = False
+        try:
+            wchan = open(
+                "/proc/%d/wchan" % pid, encoding="ascii", errors="replace"
+            ).read().strip()
+        except OSError:
+            wchan = ""
+        if wchan and wchan not in ("0",):
+            blocked = True
+        try:
+            sc = open(
+                "/proc/%d/syscall" % pid, encoding="ascii", errors="replace"
+            ).read().split()
+            if sc and sc[0] in ("0", "19", "63", "0x0", "0x13", "0x3f"):
+                blocked = True
+        except OSError:
+            pass
+        if blocked:
+            return True, None
+        time.sleep(0.02)
+    return False, None
+
+
 pid, master = pty.fork()
 if pid == 0:
     os.execv(sys.executable, [sys.executable, "-u", main])
     os._exit(127)
 
 buf = b""
+died = None
 try:
-    buf += drain(master, time.monotonic() + 3, b"view: questions")
+    chunk = drain_until(master, b"view: questions")
+    buf += chunk
+    if b"Traceback" in buf:
+        raise SystemExit("traceback on TTY during start: %s" % buf)
+    ok, status = wait_read_block(pid)
+    if not ok:
+        raise SystemExit("child not blocked in readline after start status=%s" % status)
     os.write(master, b"\x04")
-    time.sleep(0.15)
+    ok, status = wait_read_block(pid)
+    if not ok:
+        raise SystemExit("child not blocked in readline after Ctrl+D status=%s" % status)
     os.write(master, b"view chrome\n")
-    buf += drain(master, time.monotonic() + 3, b"view: chrome")
+    buf += drain_until(master, b"view: chrome")
     alive, status = still_running(pid)
     if not alive:
+        died = "Ctrl+D"
         raise SystemExit("child died after Ctrl+D status=%s" % status)
-    os.write(master, b"\x03")
-    time.sleep(0.15)
-    os.write(master, b"view envelope\n")
-    buf += drain(master, time.monotonic() + 3, b"view: envelope")
-    alive, status = still_running(pid)
-    if not alive:
-        raise SystemExit("child died after Ctrl+C status=%s" % status)
+    if b"view: chrome" not in buf:
+        raise SystemExit("Ctrl+D then view did not render: %s" % buf)
+    for _round in range(ROUNDS):
+        ok, status = wait_read_block(pid)
+        if not ok:
+            raise SystemExit(
+                "child not blocked in readline before Ctrl+C round %s status=%s"
+                % (_round, status)
+            )
+        os.write(master, b"\x03")
+        # VINTR flushes the input queue when n_tty sees it; wait until the
+        # child is still blocked in read after that byte has been consumed.
+        settle = time.monotonic() + 0.05
+        while time.monotonic() < settle:
+            alive, status = still_running(pid)
+            if not alive:
+                died = "Ctrl+C"
+                raise SystemExit(
+                    "child died after Ctrl+C round %s status=%s" % (_round, status)
+                )
+            time.sleep(0.01)
+        ok, status = wait_read_block(pid)
+        if not ok:
+            alive, status = still_running(pid)
+            if not alive:
+                died = "Ctrl+C"
+                raise SystemExit(
+                    "child died after Ctrl+C round %s status=%s" % (_round, status)
+                )
+            raise SystemExit(
+                "child not blocked in readline after Ctrl+C round %s" % _round
+            )
+        os.write(master, b"view envelope\n")
+        got = drain_until(master, b"view: envelope")
+        buf += got
+        alive, status = still_running(pid)
+        if not alive:
+            died = "Ctrl+C"
+            raise SystemExit(
+                "child died after Ctrl+C round %s status=%s" % (_round, status)
+            )
+        if b"Traceback" in got or b"Traceback" in buf:
+            raise SystemExit("traceback on TTY after Ctrl+C: %s" % buf)
+        if b"view: envelope" not in got:
+            raise SystemExit(
+                "next view not rendered after Ctrl+C round %s: %s" % (_round, got)
+            )
+        ok, status = wait_read_block(pid)
+        if not ok:
+            raise SystemExit(
+                "child not blocked in readline after envelope round %s status=%s"
+                % (_round, status)
+            )
+        os.write(master, b"view chrome\n")
+        buf += drain_until(master, b"view: chrome")
 finally:
     try:
         os.kill(pid, signal.SIGTERM)
@@ -316,12 +420,10 @@ finally:
         pass
 
 text = buf.decode("utf-8", "replace")
+if died:
+    raise SystemExit("child died after %s" % died)
 if "Traceback" in text:
     raise SystemExit("traceback on TTY: %s" % text)
-if "view: chrome" not in text:
-    raise SystemExit("Ctrl+D then view did not render: %s" % text)
-if "view: envelope" not in text:
-    raise SystemExit("Ctrl+C then view did not render: %s" % text)
 PY
 
 (cd "${ROOT}" && grep -E '^[0-9a-f]{64} ' "${HASHES}" | sha256sum -c --strict - >/dev/null) \

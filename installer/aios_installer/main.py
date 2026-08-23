@@ -2,6 +2,7 @@
 """Installer TUI in installer mode (L-09, L-18, L-12, L-20). Same catalog as the OS client."""
 
 import os
+import signal
 import sys
 import time
 
@@ -387,56 +388,64 @@ def serve(stdin=None, stdout=None):
         sess.piped = not stdin.isatty()
     except Exception:
         sess.piped = True
+    prev_int = None
+    if not sess.piped:
+        # L-09: kernel VINTR still discards a partial line; systemd stop is SIGTERM.
+        prev_int = signal.signal(signal.SIGINT, signal.SIG_IGN)
     try:
-        _line(stdout, "views: %s" % " ".join(VIEWS))
-        sess.render(stdout)
-    except BrokenPipeError:
-        if sess.piped:
-            return 0
-    except KeyboardInterrupt:
-        if sess.piped:
-            return 0
-    while True:
         try:
+            _line(stdout, "views: %s" % " ".join(VIEWS))
+            sess.render(stdout)
+        except BrokenPipeError:
+            if sess.piped:
+                return 0
+        except KeyboardInterrupt:
+            if sess.piped:
+                return 0
+        while True:
             try:
-                raw = stdin.readline()
+                try:
+                    raw = stdin.readline()
+                except KeyboardInterrupt:
+                    if sess.piped:
+                        return 0
+                    continue
+                if raw == "":
+                    if sess.piped:
+                        return 0
+                    nxt = _fresh_stdin(stdin)
+                    if nxt is stdin:
+                        time.sleep(0.05)
+                    else:
+                        stdin = nxt
+                    continue
+                result = sess.handle(raw)
+                if result == "quit":
+                    if sess.piped:
+                        return 0
+                    sess.note_text = "installer stays up until accept (L-09)"
+                sess.render(stdout)
             except KeyboardInterrupt:
                 if sess.piped:
                     return 0
                 continue
-            if raw == "":
-                if sess.piped:
-                    return 0
-                nxt = _fresh_stdin(stdin)
-                if nxt is stdin:
-                    time.sleep(0.05)
-                else:
-                    stdin = nxt
-                continue
-            result = sess.handle(raw)
-            if result == "quit":
-                if sess.piped:
-                    return 0
-                sess.note_text = "installer stays up until accept (L-09)"
-            sess.render(stdout)
-        except KeyboardInterrupt:
-            if sess.piped:
-                return 0
-            continue
-        except BrokenPipeError:
-            if sess.piped:
-                return 0
-            continue
-        except Exception as exc:
-            try:
-                _line(stdout, "error: %s" % exc)
-            except (BrokenPipeError, KeyboardInterrupt):
+            except BrokenPipeError:
                 if sess.piped:
                     return 0
                 continue
-            if sess.piped:
-                return 0
-            continue
+            except Exception as exc:
+                try:
+                    _line(stdout, "error: %s" % exc)
+                except (BrokenPipeError, KeyboardInterrupt):
+                    if sess.piped:
+                        return 0
+                    continue
+                if sess.piped:
+                    return 0
+                continue
+    finally:
+        if prev_int is not None:
+            signal.signal(signal.SIGINT, prev_int)
 
 
 def main(argv=None):
