@@ -108,7 +108,7 @@ require_uefi() {
 
 require_tools() {
   for _c in pacstrap genfstab arch-chroot sgdisk mkfs.fat mkfs.btrfs btrfs \
-    mount umount bootctl lsblk blkid findmnt sha256sum minisign \
+    mount umount mountpoint bootctl lsblk blkid findmnt sha256sum minisign \
     systemctl cp tee udevadm partx systemd-sysusers systemd-tmpfiles \
     flock ip wipefs; do
     command -v "${_c}" >/dev/null 2>&1 || die "missing ${_c}"
@@ -217,7 +217,9 @@ collect_iso_devs() {
           _real=$(readlink -f "/dev/disk/by-uuid/${_u}")
           printf '%s\n' "${_real}" >> "${ISO_FILE}"
           _pk=$(lsblk -dn -o PKNAME "${_real}" 2>/dev/null || true)
-          [ -n "${_pk}" ] && printf '%s\n' "/dev/${_pk}" >> "${ISO_FILE}"
+          if [ -n "${_pk}" ]; then
+            printf '%s\n' "/dev/${_pk}" >> "${ISO_FILE}"
+          fi
         fi
         ;;
     esac
@@ -227,7 +229,9 @@ collect_iso_devs() {
     _real=$(readlink -f "${_src}" 2>/dev/null || printf '%s' "${_src}")
     printf '%s\n' "${_real}" >> "${ISO_FILE}"
     _pk=$(lsblk -dn -o PKNAME "${_real}" 2>/dev/null || true)
-    [ -n "${_pk}" ] && printf '%s\n' "/dev/${_pk}" >> "${ISO_FILE}"
+    if [ -n "${_pk}" ]; then
+      printf '%s\n' "/dev/${_pk}" >> "${ISO_FILE}"
+    fi
   fi
 }
 
@@ -248,10 +252,12 @@ is_iso_related() {
 probe_disks() {
   collect_iso_devs
   : > "${CAND_FILE}"
-  lsblk -dn -p -o NAME,TYPE,RO > "${RUN_DIR}/lsblk"
-  while read -r _name _type _ro; do
+  log "probing block devices"
+  if ! lsblk -dn -p -o NAME,TYPE > "${RUN_DIR}/lsblk"; then
+    die "lsblk failed"
+  fi
+  while read -r _name _type _rest || [ -n "${_name}" ]; do
     [ "${_type}" = disk ] || continue
-    [ "${_ro}" = 0 ] || continue
     case "${_name}" in
       /dev/loop*|/dev/sr*|/dev/rom*|/dev/zram*|/dev/ram*|/dev/fd*|/dev/md*|/dev/nbd*)
         continue
@@ -262,11 +268,12 @@ probe_disks() {
     fi
     _base=${_name#/dev/}
     [ -r "/sys/block/${_base}/size" ] || continue
-    _sectors=$(cat "/sys/block/${_base}/size")
+    _sectors=$(cat "/sys/block/${_base}/size") || continue
     # 4 GiB in 512-byte sectors: 1G ESP plus a usable root.
     [ "${_sectors}" -ge 8388608 ] || continue
     printf '%s\n' "${_name}" >> "${CAND_FILE}"
   done < "${RUN_DIR}/lsblk"
+  return 0
 }
 
 count_cands() {
@@ -359,19 +366,23 @@ wait_block() {
 partition_and_mount() {
   ESP=$(part_node "${DISK}" 1)
   ROOTP=$(part_node "${DISK}" 2)
+  if findmnt "${DISK}" >/dev/null 2>&1 || findmnt "${ESP}" >/dev/null 2>&1 \
+    || findmnt "${ROOTP}" >/dev/null 2>&1; then
+    die "${DISK} is already mounted; refuse to repartition"
+  fi
   log "partition GPT L-07 on ${DISK}"
-  sgdisk --zap-all "${DISK}" >/dev/null
-  sgdisk --clear "${DISK}" >/dev/null
-  sgdisk -n 1:0:+1G -t 1:EF00 -c 1:esp "${DISK}" >/dev/null
-  sgdisk -n 2:0:0 -t 2:8300 -c 2:rootfs "${DISK}" >/dev/null
+  sgdisk --zap-all "${DISK}" >/dev/null || die "sgdisk zap-all failed"
+  sgdisk --clear "${DISK}" >/dev/null || die "sgdisk clear failed"
+  sgdisk -n 1:0:+1G -t 1:EF00 -c 1:esp "${DISK}" >/dev/null || die "sgdisk ESP failed"
+  sgdisk -n 2:0:0 -t 2:8300 -c 2:rootfs "${DISK}" >/dev/null || die "sgdisk rootfs failed"
   partx -u "${DISK}" 2>/dev/null || true
   udevadm settle || true
   wait_block "${ESP}"
   wait_block "${ROOTP}"
   wipefs -a "${ESP}" >/dev/null 2>&1 || true
   wipefs -a "${ROOTP}" >/dev/null 2>&1 || true
-  mkfs.fat -F 32 "${ESP}" >/dev/null
-  mkfs.btrfs -f "${ROOTP}" >/dev/null
+  mkfs.fat -F 32 "${ESP}" >/dev/null || die "mkfs.fat ESP failed"
+  mkfs.btrfs -f "${ROOTP}" >/dev/null || die "mkfs.btrfs root failed"
   udevadm settle || true
   blkid -c /dev/null "${ESP}" "${ROOTP}" >/dev/null || true
   mount "${ROOTP}" "${TARGET}"
@@ -512,15 +523,58 @@ copy_payload_into_target() {
     || die "aios-installer.service missing on target"
 }
 
+# pacstrap bind-mounts /run onto /mnt/run; teardown can drop nested L-07 mounts.
+ensure_l07_mounts() {
+  mountpoint -q "${TARGET}" || die "target ${TARGET} is not a mountpoint after pacstrap"
+  [ -n "${ESP}" ] && [ -b "${ESP}" ] || die "ESP partition missing after pacstrap"
+  [ -n "${ROOTP}" ] && [ -b "${ROOTP}" ] || die "root partition missing after pacstrap"
+  [ -n "${ROOT_UUID}" ] || die "root UUID unset after pacstrap"
+  mountpoint -q "${TARGET}/boot" \
+    || mount --mkdir "${ESP}" "${TARGET}/boot" \
+    || die "remount ESP failed"
+  mountpoint -q "${TARGET}/home" \
+    || mount --mkdir -o subvol=@home "${ROOTP}" "${TARGET}/home" \
+    || die "remount @home failed"
+  mountpoint -q "${TARGET}/srv" \
+    || mount --mkdir -o subvol=@srv "${ROOTP}" "${TARGET}/srv" \
+    || die "remount @srv failed"
+  mountpoint -q "${TARGET}/var/log" \
+    || mount --mkdir -o subvol=@var_log "${ROOTP}" "${TARGET}/var/log" \
+    || die "remount @var_log failed"
+  mountpoint -q "${TARGET}/.snapshots" \
+    || mount --mkdir -o subvol=@snapshots "${ROOTP}" "${TARGET}/.snapshots" \
+    || die "remount @snapshots failed"
+}
+
+# L-07 fstab from the UUIDs firstboot just created. genfstab is logged; it is
+# not the product file (empty here when findmnt sees no rows after pacstrap).
+write_l07_fstab() {
+  _esp_uuid=$(blkid -c /dev/null -s UUID -o value "${ESP}")
+  [ -n "${_esp_uuid}" ] || die "no UUID on ESP"
+  cat > "${TARGET}/etc/fstab" <<EOF
+# L-07: ESP vfat /boot (not in btrfs); subvol= not subvolid= (Btrfs wiki).
+UUID=${_esp_uuid} /boot vfat defaults 0 2
+UUID=${ROOT_UUID} / btrfs defaults,subvol=@ 0 0
+UUID=${ROOT_UUID} /home btrfs defaults,subvol=@home 0 0
+UUID=${ROOT_UUID} /srv btrfs defaults,subvol=@srv 0 0
+UUID=${ROOT_UUID} /var/log btrfs defaults,subvol=@var_log 0 0
+UUID=${ROOT_UUID} /.snapshots btrfs defaults,subvol=@snapshots 0 0
+EOF
+  grep -q 'subvol=@,' "${TARGET}/etc/fstab" || grep -q 'subvol=@ ' "${TARGET}/etc/fstab" \
+    || die "fstab missing subvol=@"
+}
+
 configure_target() {
   udevadm settle || true
-  genfstab -U "${TARGET}" >> "${TARGET}/etc/fstab"
-  # Prefer subvol=@ over subvolid= (subvolid can change on restore).
-  if command -v sed >/dev/null 2>&1; then
-    sed -i -e 's/,subvolid=[0-9][0-9]*//g' -e 's/subvolid=[0-9][0-9]*,//g' \
-      "${TARGET}/etc/fstab"
+  ensure_l07_mounts
+  copy_log
+  genfstab -U "${TARGET}" > "${RUN_DIR}/genfstab.out" 2>"${RUN_DIR}/genfstab.err" || true
+  if [ -s "${RUN_DIR}/genfstab.out" ]; then
+    log "genfstab produced $(wc -l < "${RUN_DIR}/genfstab.out" | tr -d ' ') lines (L-07 fstab is authoritative)"
+  else
+    log "genfstab produced no lines ($(tr '\n' ' ' < "${RUN_DIR}/genfstab.err" 2>/dev/null || true))"
   fi
-  grep -q 'subvol=@' "${TARGET}/etc/fstab" || die "fstab missing subvol=@"
+  write_l07_fstab
 
   printf 'aios\n' > "${TARGET}/etc/hostname"
   cat > "${TARGET}/etc/hosts" <<'EOF'
@@ -578,7 +632,9 @@ EOF
 reboot_to_disk() {
   copy_log
   sync
-  umount -R "${TARGET}"
+  # Busy nested mounts after pacstrap must not abort into a getty reinstall
+  # (that would zap-all a live disk). Lazy-unmount, then reboot.
+  umount -R "${TARGET}" 2>/dev/null || umount -R -l "${TARGET}" 2>/dev/null || true
   TARGET_MOUNTED=0
   trap - EXIT
   log "rebooting to disk"

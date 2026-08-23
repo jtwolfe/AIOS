@@ -255,9 +255,9 @@ check_hashes() {
 ensure_chroot_minisign() {
   [[ -n "${BOOTSTRAP_ROOT}" && -x "${BOOTSTRAP_ROOT}/bin/arch-chroot" ]] \
     || die "bootstrap chroot missing; cannot sign"
-  # Same freeze as archiso; install only, no sysupgrade.
-  "${BOOTSTRAP_ROOT}/bin/arch-chroot" "${BOOTSTRAP_ROOT}" pacman -S --noconfirm --needed minisign
-  "${BOOTSTRAP_ROOT}/bin/arch-chroot" "${BOOTSTRAP_ROOT}" command -v minisign >/dev/null \
+  # Same-day Archive freeze as the bootstrap tarball.
+  "${BOOTSTRAP_ROOT}/bin/arch-chroot" "${BOOTSTRAP_ROOT}" pacman -Syu --noconfirm --needed minisign
+  [[ -x "${BOOTSTRAP_ROOT}/usr/bin/minisign" ]] \
     || die "minisign missing after installing in the bootstrap chroot"
 }
 
@@ -539,11 +539,15 @@ prepare_chroot() {
     cp -L /etc/resolv.conf "${BOOTSTRAP_ROOT}/etc/resolv.conf"
   fi
 
+  # arch-chroot wants a mountpoint (Arch Wiki). Bind the root onto itself.
+  mount --bind "${BOOTSTRAP_ROOT}" "${BOOTSTRAP_ROOT}"
   "${BOOTSTRAP_ROOT}/bin/arch-chroot" "${BOOTSTRAP_ROOT}" pacman-key --init
   "${BOOTSTRAP_ROOT}/bin/arch-chroot" "${BOOTSTRAP_ROOT}" pacman-key --populate archlinux
-  # Frozen archive + bootstrap db: install only, no sysupgrade.
-  "${BOOTSTRAP_ROOT}/bin/arch-chroot" "${BOOTSTRAP_ROOT}" pacman -S --noconfirm --needed archiso
-  "${BOOTSTRAP_ROOT}/bin/arch-chroot" "${BOOTSTRAP_ROOT}" command -v mkarchiso >/dev/null \
+  # Same-day Archive freeze as the bootstrap tarball (not Harness A / not rolling).
+  # Bootstrap ships with empty sync dbs; -Syu against that freeze is a full
+  # upgrade of one snapshot, not a partial upgrade.
+  "${BOOTSTRAP_ROOT}/bin/arch-chroot" "${BOOTSTRAP_ROOT}" pacman -Syu --noconfirm --needed archiso
+  [[ -x "${BOOTSTRAP_ROOT}/usr/bin/mkarchiso" ]] \
     || die "mkarchiso missing after installing archiso in the bootstrap chroot"
 
   mkdir -p "${BOOTSTRAP_ROOT}/mnt/aios" "${DIST}"
