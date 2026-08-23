@@ -288,6 +288,10 @@ if ! "${SCRIPT_DIR}/p5-operator-login.sh"; then
   fail "p5-operator-login"
 fi
 
+if ! "${SCRIPT_DIR}/p9-vm-harness.sh"; then
+  fail "p9-vm-harness"
+fi
+
 _prov=$(grep -R -n -- 'provider' "${ROOT}/checker" 2>/dev/null | head -n 1 || true)
 [ -z "${_prov}" ] || fail "checker names provider (HI-02, L-08): ${_prov}"
 grep -q '/srv/aios/state/provider/os.token' \

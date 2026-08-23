@@ -1,12 +1,14 @@
 #!/bin/sh
-# P1 QEMU floor: OVMF pflash, serial stdio, fw_cfg auto on the live ISO.
+# QEMU floor: OVMF pflash, serial stdio, fw_cfg auto on the live ISO.
 # Fail closed if KVM or firmware is missing. Does not build the ISO.
-# P1.5 greps (tests/oracles/p1-clean-image.sh) do not require a built image.
+# Host greps (tests/oracles/p9-vm-harness.sh) do not require a built image.
 #
-# Usage: tests/vm/qemu.sh [probe|iso|disk]
+# Usage: tests/vm/qemu.sh [probe|iso|disk|snap]
 #   probe  (default)  require KVM+OVMF, print floor invocations, exit 0
 #   iso               boot live ISO (needs dist/aios-*.iso)
 #   disk              boot installed disk (needs work/aios.qcow2 + OVMF_VARS)
+#   snap [name]       persistent qcow2 snapshot (default: pre). recover reboots
+#                     this disk, so this is not a throwaway overlay.
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -85,6 +87,9 @@ qemu-system-x86_64 \\
   -device virtio-net-pci,netdev=n0 \\
   -serial stdio \\
   -display none
+
+# Persistent qcow2 snapshot after firstboot. recover reboots this disk.
+qemu-img snapshot -c pre ${WORK}/aios.qcow2
 EOF
 }
 
@@ -96,7 +101,7 @@ find_iso() {
     _iso=${_f}
     _n=$((_n + 1))
   done
-  [ "${_n}" -gt 0 ] || die "no dist/aios-*.iso (payload/build.sh; not required for P1.5 greps)"
+  [ "${_n}" -gt 0 ] || die "no dist/aios-*.iso (payload/build.sh; not required for host greps)"
   [ "${_n}" -eq 1 ] || die "multiple dist/aios-*.iso; leave one"
   printf '%s\n' "${_iso}"
 }
@@ -113,15 +118,31 @@ ensure_qcow() {
   fi
 }
 
+snap_disk() {
+  _name=$1
+  case "${_name}" in
+    ''|*/*|*'..'*) die "invalid snapshot name" ;;
+  esac
+  [ -f "${WORK}/aios.qcow2" ] || die "missing ${WORK}/aios.qcow2"
+  command -v qemu-img >/dev/null 2>&1 || die "qemu-img missing"
+  qemu-img snapshot -c "${_name}" "${WORK}/aios.qcow2" \
+    || die "qemu-img snapshot -c ${_name} failed"
+}
+
 mode=${1:-probe}
-require_kvm
-find_ovmf
 
 case "${mode}" in
-  probe|-h|--help)
+  probe)
+    require_kvm
+    find_ovmf
     print_floor
     ;;
+  -h|--help)
+    printf 'usage: %s [probe|iso|disk|snap]\n' "$0"
+    ;;
   iso)
+    require_kvm
+    find_ovmf
     require_qemu
     ISO=$(find_iso)
     ensure_qcow
@@ -144,6 +165,8 @@ case "${mode}" in
       -no-reboot
     ;;
   disk)
+    require_kvm
+    find_ovmf
     require_qemu
     [ -f "${WORK}/aios.qcow2" ] || die "missing ${WORK}/aios.qcow2"
     [ -f "${WORK}/OVMF_VARS.fd" ] || die "missing ${WORK}/OVMF_VARS.fd (run iso first)"
@@ -160,7 +183,10 @@ case "${mode}" in
       -serial stdio \
       -display none
     ;;
+  snap)
+    snap_disk "${2:-pre}"
+    ;;
   *)
-    die "usage: $0 [probe|iso|disk]"
+    die "usage: $0 [probe|iso|disk|snap]"
     ;;
 esac

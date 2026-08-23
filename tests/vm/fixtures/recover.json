@@ -1,0 +1,23 @@
+{
+  "name": "vm-recover",
+  "operator": "alice",
+  "purpose": "a lab vm",
+  "work_runtime": false,
+  "vetoes": {
+    "never_do": "never enact without oracles",
+    "networks": "local",
+    "remotes": false
+  },
+  "kill_after": [
+    "answer purpose a lab vm",
+    "skip work-runtime"
+  ],
+  "resume": [
+    "view recovery",
+    "resume",
+    "answer operator alice",
+    "answer never-do never enact without oracles",
+    "answer networks local",
+    "skip remotes"
+  ]
+}
