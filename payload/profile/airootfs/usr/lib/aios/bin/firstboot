@@ -493,6 +493,38 @@ copy_if_present() {
   fi
 }
 
+# HI-17: payload seeds become local git objects. Do not synthesise /srv/aios/src (HI-15).
+materialise_seeds() {
+  mountpoint -q "${TARGET}/srv" \
+    || die "/srv is not mounted; refuse to write seeds onto @"
+  mkdir -p "${TARGET}/srv/aios/seeds" || die "mkdir /srv/aios/seeds failed"
+  [ ! -e "${TARGET}/srv/aios/src" ] || die "/srv/aios/src must not exist (HI-15)"
+
+  if [ ! -d "${TARGET}/srv/aios/seeds/work-runtime" ] \
+    || [ ! -d "${TARGET}/srv/aios/seeds/work-runtime-bots" ]; then
+    _copied=0
+    if [ -d "${AIOS_LIB}/seeds" ]; then
+      cp -a "${AIOS_LIB}/seeds/." "${TARGET}/srv/aios/seeds/" \
+        || die "copy ${AIOS_LIB}/seeds failed"
+      _copied=1
+    fi
+    if [ -d /srv/aios/seeds ]; then
+      cp -a /srv/aios/seeds/. "${TARGET}/srv/aios/seeds/" \
+        || die "copy /srv/aios/seeds failed"
+      _copied=1
+    fi
+    [ "${_copied}" = 1 ] || die "payload seeds missing (HI-17)"
+  fi
+
+  [ -d "${TARGET}/srv/aios/seeds/work-runtime" ] \
+    || die "work-runtime seed missing (HI-17)"
+  [ -d "${TARGET}/srv/aios/seeds/work-runtime-bots" ] \
+    || die "work-runtime-bots seed missing (HI-17)"
+  [ -f "${TARGET}/srv/aios/envelope/hard-invariants.md" ] \
+    || die "envelope/hard-invariants.md missing (HI-17)"
+  [ ! -e "${TARGET}/srv/aios/src" ] || die "/srv/aios/src must not exist (HI-15)"
+}
+
 copy_payload_into_target() {
   mkdir -p "${TARGET}/usr/lib/aios/bin" \
     "${TARGET}/usr/lib/sysusers.d" \
@@ -511,12 +543,7 @@ copy_payload_into_target() {
     "${TARGET}/srv/aios/envelope/hard-invariants.md"
   copy_if_present "${AIOS_LIB}/envelope/hard-invariants.md" \
     "${TARGET}/srv/aios/envelope/hard-invariants.md"
-  if [ -d "${AIOS_LIB}/seeds" ]; then
-    cp -a "${AIOS_LIB}/seeds/." "${TARGET}/srv/aios/seeds/"
-  fi
-  if [ -d /srv/aios/seeds ]; then
-    cp -a /srv/aios/seeds/. "${TARGET}/srv/aios/seeds/"
-  fi
+  materialise_seeds
   [ -x "${TARGET}/usr/lib/aios/bin/installer" ] \
     || die "installer missing on target"
   [ -f "${TARGET}/etc/systemd/system/aios-installer.service" ] \
@@ -935,13 +962,27 @@ init_privileged_git() {
   done
   [ -f "${TARGET}/srv/aios/envelope/hard-invariants.md" ] \
     || die "envelope worktree missing hard-invariants.md"
+  [ -d "${TARGET}/srv/aios/seeds/work-runtime" ] \
+    || die "seeds/work-runtime missing (HI-17)"
+  [ -d "${TARGET}/srv/aios/seeds/work-runtime-bots" ] \
+    || die "seeds/work-runtime-bots missing (HI-17)"
   [ -f "${TARGET}/srv/aios/state/packages.txt" ] \
     || die "state worktree missing packages.txt"
+  grep -qx linux "${TARGET}/srv/aios/state/packages.txt" \
+    || die "linux missing from packages.txt"
+  grep -qx linux-lts "${TARGET}/srv/aios/state/packages.txt" \
+    || die "linux-lts missing from packages.txt"
   [ -d "${TARGET}/srv/aios/etc-mirror" ] || die "etc-mirror missing after privileged git"
   [ ! -e "${TARGET}/srv/aios/src" ] || die "/srv/aios/src must not exist (HI-15)"
   [ ! -e "${TARGET}/srv/aios/.git" ] || die "/srv/aios must not be a git repository"
   arch-chroot "${TARGET}" /usr/bin/git -C /srv/aios/git/envelope.git rev-parse main >/dev/null \
     || die "git -C /srv/aios/git/envelope.git rev-parse main failed"
+  arch-chroot "${TARGET}" /usr/bin/git -C /srv/aios/git/seeds.git cat-file -e main:work-runtime \
+    || die "seeds.git missing work-runtime (HI-17)"
+  arch-chroot "${TARGET}" /usr/bin/git -C /srv/aios/git/seeds.git cat-file -e main:work-runtime-bots \
+    || die "seeds.git missing work-runtime-bots (HI-17)"
+  arch-chroot "${TARGET}" /usr/bin/git -C /srv/aios/git/envelope.git cat-file -e main:hard-invariants.md \
+    || die "envelope.git missing hard-invariants.md (HI-17)"
   log "privileged git trees"
 }
 
@@ -953,6 +994,7 @@ configure_seatbelts() {
   init_etc_mirror
   create_first_snapshot
   copy_first_esp_generation
+  materialise_seeds
   init_privileged_git
 }
 
