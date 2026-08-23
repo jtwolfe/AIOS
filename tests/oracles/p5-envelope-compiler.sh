@@ -124,6 +124,7 @@ dump("skip.json", {"work_runtime": "skip"})
 dump("strtrue.json", {"work_runtime": "true"})
 dump("on.json", {"work_runtime": "on"})
 dump("please.json", {"work_runtime": "yes please"})
+dump("int1.json", {"work_runtime": 1})
 dump("yes.json", {"work_runtime": True})
 PY
 
@@ -204,6 +205,10 @@ compile "${TMP}/please.json" "${TMP}/please.out" \
   || fail "compile yes please failed"
 expect_off "yes-please" "${TMP}/please.out"
 
+compile "${TMP}/int1.json" "${TMP}/int1.out" \
+  || fail "compile integer 1 failed"
+expect_off "int1" "${TMP}/int1.out"
+
 compile "${TMP}/yes.json" "${TMP}/yes.out" \
   || fail "compile explicit true failed"
 _yesder=$(derived_of "${TMP}/yes.out")
@@ -216,6 +221,18 @@ grep -qF '## HI-15' "${TMP}/yes.out" || fail "explicit yes: missing canonical HI
 grep -qF 'Do not synthesise /srv/aios/src/work-runtime' "${TMP}/yes.out" \
   || fail "explicit yes must still refuse synthesis here (HI-15)"
 expect_purpose_vetoes "yes" "${TMP}/yes.out"
+
+printf '%s\n' '{' > "${TMP}/bad.json"
+_bad_rc=0
+AIOS_HI="${HI}" python3 "${COMPILER}" "${TMP}/bad.json" \
+  > "${TMP}/bad.out" 2> "${TMP}/bad.err" || _bad_rc=$?
+[ "${_bad_rc}" -eq 1 ] \
+  || fail "malformed JSON must exit 1, got ${_bad_rc}"
+if grep -q Traceback "${TMP}/bad.err" "${TMP}/bad.out" 2>/dev/null; then
+  fail "malformed JSON must not print Traceback"
+fi
+grep -q '^error:' "${TMP}/bad.err" \
+  || fail "malformed JSON must print error on stderr"
 
 # Default-path compile (no AIOS_HI): still finds a canonical file.
 AIOS_ENVELOPE_DRAFT="${TMP}/default.out.draft" \

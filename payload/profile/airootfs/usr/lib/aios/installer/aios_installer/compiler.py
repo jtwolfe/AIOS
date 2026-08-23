@@ -52,7 +52,6 @@ def _plain(value):
 
 
 def from_mapping(data):
-    # In-memory keys match questions.py (operator / never_do), not a second schema.
     answers = empty()
     if not isinstance(data, dict):
         return answers
@@ -157,7 +156,6 @@ def maybe_write(text):
 
 
 def draft(answers):
-    # Envelope view: full HI file plus derived clauses in plain language.
     try:
         text = compile_envelope(answers)
     except ValueError as exc:
