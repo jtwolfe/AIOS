@@ -24,6 +24,8 @@ HOME_RE='/home/[A-Za-z0-9._-]+'
 USERS_RE='/Users/[A-Za-z0-9._-]+'
 WIN_RE='[Cc]:[\\/]Users[\\/][A-Za-z0-9._-]+'
 MAC_RE='(^|[^0-9A-Fa-f])[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}([^0-9A-Fa-f]|$)'
+NAME_RE='^[[:space:]]*user\.name[[:space:]]*='
+TRAILER_RE='^(Signed-off-by|Co-authored-by):'
 
 # Assembled so this file does not contain role@host as a grep-able token.
 _at='@'
@@ -34,6 +36,15 @@ _d_aios='aios''.local'
 is_role_email() {
   _em=$1
   printf '%s\n' "${_em}" | grep -Eq -- "${UNIT_RE}" && return 0
+  # SSH remote (git at github.com), not a person. Whole token only.
+  case "${_em}" in
+    git"${_at}"*) return 0 ;;
+  esac
+  # RFC 2606 / regex-docs hosts, not a person. Domain of the token only.
+  _dom=${_em#*@}
+  case "${_dom}" in
+    example.com|example.org|example.net|host.tld|domain.tld) return 0 ;;
+  esac
   case "${_em}" in
     aios"${_at}${_d_local}"|operator"${_at}${_d_local}"|agent"${_at}${_d_local}"|root"${_at}${_d_local}") return 0 ;;
     aios-agent"${_at}${_d_local}"|aios-checker"${_at}${_d_local}"|aios-work"${_at}${_d_local}") return 0 ;;
@@ -56,7 +67,7 @@ is_role_home() {
 
 is_role_name() {
   case "$1" in
-    operator|AIOS|'AIOS agent'|aios-agent|aios-checker|aios-work) return 0 ;;
+    aios|operator|AIOS|'AIOS agent'|aios-agent|aios-checker|aios-work) return 0 ;;
     'Workstation implementer') return 0 ;;
   esac
   return 1
@@ -68,6 +79,8 @@ TREES="${WORK}/trees"
 GITS="${WORK}/gits"
 LIST="${WORK}/list"
 TOKS="${WORK}/toks"
+LINES="${WORK}/lines"
+BLOB="${WORK}/blob"
 : >"${TREES}"
 : >"${GITS}"
 SCANNED=0
@@ -119,96 +132,259 @@ fi
 
 [ "${SCANNED}" -gt 0 ] || fail "no payload or git tree to scan"
 
+# grep 0=match 1=no match; anything else cannot-scan (fail closed).
+grep_q() {
+  _gq_re=$1
+  _gq_f=$2
+  _rc=0
+  grep -I -E -q -- "${_gq_re}" "${_gq_f}" || _rc=$?
+  case "${_rc}" in
+    0) return 0 ;;
+    1) return 1 ;;
+    *) fail "cannot read ${_gq_f}" ;;
+  esac
+}
+
+grep_o() {
+  _go_re=$1
+  _go_f=$2
+  _go_out=$3
+  _rc=0
+  grep -I -E -h -o -- "${_go_re}" "${_go_f}" >>"${_go_out}" || _rc=$?
+  case "${_rc}" in
+    0|1) return 0 ;;
+    *) fail "cannot read ${_go_f}" ;;
+  esac
+}
+
+grep_lines() {
+  _gl_re=$1
+  _gl_f=$2
+  _gl_out=$3
+  _rc=0
+  grep -I -E -- "${_gl_re}" "${_gl_f}" >"${_gl_out}" || _rc=$?
+  case "${_rc}" in
+    0|1) return 0 ;;
+    *) fail "cannot read ${_gl_f}" ;;
+  esac
+}
+
 scan_emails() {
   _sf=$1
+  _sl=$2
   : >"${TOKS}"
-  grep -I -E -h -o -- "${EMAIL_RE}" "${_sf}" 2>/dev/null >>"${TOKS}" || true
-  grep -I -E -h -o -- "${LOCAL_RE}" "${_sf}" 2>/dev/null >>"${TOKS}" || true
+  grep_o "${EMAIL_RE}" "${_sf}" "${TOKS}"
+  grep_o "${LOCAL_RE}" "${_sf}" "${TOKS}"
   [ -s "${TOKS}" ] || return 0
   while IFS= read -r _tok; do
     [ -n "${_tok}" ] || continue
     is_role_email "${_tok}" && continue
-    fail "email in ${_sf}: ${_tok}"
+    fail "email in ${_sl}: ${_tok}"
   done <"${TOKS}"
 }
 
 scan_homes() {
   _sf=$1
+  _sl=$2
   : >"${TOKS}"
-  grep -I -E -h -o -- "${HOME_RE}" "${_sf}" 2>/dev/null >>"${TOKS}" || true
-  grep -I -E -h -o -- "${USERS_RE}" "${_sf}" 2>/dev/null >>"${TOKS}" || true
-  grep -I -E -h -o -- "${WIN_RE}" "${_sf}" 2>/dev/null >>"${TOKS}" || true
+  grep_o "${HOME_RE}" "${_sf}" "${TOKS}"
+  grep_o "${USERS_RE}" "${_sf}" "${TOKS}"
+  grep_o "${WIN_RE}" "${_sf}" "${TOKS}"
   [ -s "${TOKS}" ] || return 0
   while IFS= read -r _tok; do
     [ -n "${_tok}" ] || continue
     _u=${_tok##*/}
     _u=${_u##*\\}
     is_role_home "${_u}" && continue
-    fail "home-machine path in ${_sf}: ${_tok}"
+    fail "home-machine path in ${_sl}: ${_tok}"
   done <"${TOKS}"
 }
 
 scan_file() {
   _sf=$1
-  [ -f "${_sf}" ] || return 0
-  [ -r "${_sf}" ] || return 0
-  scan_emails "${_sf}"
-  scan_homes "${_sf}"
-  grep -I -E -q -- "${PHONE_RE}" "${_sf}" 2>/dev/null \
-    && fail "phone in ${_sf}"
-  grep -I -E -q -- "${STREET_RE}" "${_sf}" 2>/dev/null \
-    && fail "street address in ${_sf}"
-  grep -I -E -q -- "${MAC_RE}" "${_sf}" 2>/dev/null \
-    && fail "MAC address in ${_sf}"
-  if [ "${_sf##*/}" = hostname ]; then
+  _sl=${2:-$1}
+  scan_emails "${_sf}" "${_sl}"
+  scan_homes "${_sf}" "${_sl}"
+  grep_q "${PHONE_RE}" "${_sf}" && fail "phone in ${_sl}"
+  grep_q "${STREET_RE}" "${_sf}" && fail "street address in ${_sl}"
+  grep_q "${MAC_RE}" "${_sf}" && fail "MAC address in ${_sl}"
+  _base=${_sl##*/}
+  if [ "${_base}" = hostname ]; then
     _hn=$(grep -v '^[[:space:]]*#' "${_sf}" | grep -v '^[[:space:]]*$' | head -n 1 | tr -d '\r' || true)
     case "${_hn}" in
       ''|aios|localhost) ;;
-      *) fail "home-machine hostname in ${_sf}: ${_hn}" ;;
+      *) fail "home-machine hostname in ${_sl}: ${_hn}" ;;
     esac
   fi
   # Identity fields only. Title Case English ("Arch Linux") is not a name census.
-  if grep -I -E -q -- '^[[:space:]]*user\.name[[:space:]]*=' "${_sf}" 2>/dev/null; then
-    _n=$(grep -I -E -- '^[[:space:]]*user\.name[[:space:]]*=' "${_sf}" | head -n 1 | sed 's/.*=[[:space:]]*//')
-    is_role_name "${_n}" || fail "personal name in ${_sf}: ${_n}"
-  fi
-  if grep -I -E -q -- '^(Signed-off-by|Co-authored-by):' "${_sf}" 2>/dev/null; then
-    _n=$(grep -I -E -- '^(Signed-off-by|Co-authored-by):' "${_sf}" | head -n 1 | sed 's/^[^:]*:[[:space:]]*//' | sed 's/[[:space:]]*<.*//')
-    is_role_name "${_n}" || fail "personal name in ${_sf}: ${_n}"
-  fi
+  grep_lines "${NAME_RE}" "${_sf}" "${LINES}"
+  while IFS= read -r _line; do
+    [ -n "${_line}" ] || continue
+    _n=${_line#*=}
+    _n=$(printf '%s\n' "${_n}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    is_role_name "${_n}" || fail "personal name in ${_sl}: ${_n}"
+  done <"${LINES}"
+  grep_lines "${TRAILER_RE}" "${_sf}" "${LINES}"
+  while IFS= read -r _line; do
+    [ -n "${_line}" ] || continue
+    _n=${_line#*:}
+    _n=$(printf '%s\n' "${_n}" | sed 's/^[[:space:]]*//;s/[[:space:]]*<.*//;s/[[:space:]]*$//')
+    is_role_name "${_n}" || fail "personal name in ${_sl}: ${_n}"
+  done <"${LINES}"
   return 0
+}
+
+scan_worktree_path() {
+  _f=$1
+  # Dangling non-secret names (ISO systemd .wants) are not PII.
+  if [ -L "${_f}" ] && [ ! -e "${_f}" ]; then
+    return 0
+  fi
+  [ -r "${_f}" ] || fail "unreadable: ${_f}"
+  [ -f "${_f}" ] || return 0
+  scan_file "${_f}" "${_f}"
 }
 
 sort -u "${TREES}" >"${WORK}/trees.u"
 while IFS= read -r _tree; do
   [ -n "${_tree}" ] || continue
-  find "${_tree}" -type f ! -path '*/.git/*' -print >"${LIST}" 2>/dev/null || true
+  _rc=0
+  find "${_tree}" \( -type f -o -type l \) ! -path '*/.git/*' -print \
+    >"${LIST}" 2>"${WORK}/find.err" || _rc=$?
+  if [ "${_rc}" -ne 0 ] || [ -s "${WORK}/find.err" ]; then
+    fail "find failed under ${_tree}: $(tr '\n' ' ' <"${WORK}/find.err")"
+  fi
   while IFS= read -r _f; do
     [ -n "${_f}" ] || continue
-    scan_file "${_f}"
+    scan_worktree_path "${_f}"
   done <"${LIST}"
 done <"${WORK}/trees.u"
+
+# git grep <pattern> <tree> — SHAs are trees, never pathspecs after --.
+git_grep_run() {
+  _gd=$1
+  _pat=$2
+  _rev=$3
+  _out=$4
+  _mode=$5
+  _rc=0
+  case "${_mode}" in
+    o) git --git-dir="${_gd}" grep -I -E -o -e "${_pat}" "${_rev}" >"${_out}" || _rc=$? ;;
+    l) git --git-dir="${_gd}" grep -I -E -e "${_pat}" "${_rev}" >"${_out}" || _rc=$? ;;
+    q) git --git-dir="${_gd}" grep -I -E -q -e "${_pat}" "${_rev}" || _rc=$? ;;
+    *) fail "internal git_grep_run mode ${_mode}" ;;
+  esac
+  case "${_rc}" in
+    0) return 0 ;;
+    1) return 1 ;;
+    *) fail "git grep failed in ${_gd} ${_rev} (exit ${_rc})" ;;
+  esac
+}
+
+# Drop rev:path: so the token is the last field, not the surrounding path.
+git_toks() {
+  sed 's/^[^:]*:[^:]*://' "$1"
+}
+
+scan_git_rev() {
+  _g=$1
+  _rev=$2
+  _lab="${_g}:${_rev}"
+  if git_grep_run "${_g}" "${EMAIL_RE}" "${_rev}" "${WORK}/graw" o; then
+    git_toks "${WORK}/graw" >"${TOKS}"
+    while IFS= read -r _tok; do
+      [ -n "${_tok}" ] || continue
+      is_role_email "${_tok}" && continue
+      fail "email in git ${_lab}: ${_tok}"
+    done <"${TOKS}"
+  fi
+  if git_grep_run "${_g}" "${LOCAL_RE}" "${_rev}" "${WORK}/graw" o; then
+    git_toks "${WORK}/graw" >"${TOKS}"
+    while IFS= read -r _tok; do
+      [ -n "${_tok}" ] || continue
+      is_role_email "${_tok}" && continue
+      fail "email in git ${_lab}: ${_tok}"
+    done <"${TOKS}"
+  fi
+  if git_grep_run "${_g}" "${HOME_RE}" "${_rev}" "${WORK}/graw" o; then
+    git_toks "${WORK}/graw" >"${TOKS}"
+    while IFS= read -r _tok; do
+      [ -n "${_tok}" ] || continue
+      _u=${_tok##*/}
+      _u=${_u##*\\}
+      is_role_home "${_u}" && continue
+      fail "home-machine path in git ${_lab}: ${_tok}"
+    done <"${TOKS}"
+  fi
+  if git_grep_run "${_g}" "${USERS_RE}" "${_rev}" "${WORK}/graw" o; then
+    git_toks "${WORK}/graw" >"${TOKS}"
+    while IFS= read -r _tok; do
+      [ -n "${_tok}" ] || continue
+      _u=${_tok##*/}
+      is_role_home "${_u}" && continue
+      fail "home-machine path in git ${_lab}: ${_tok}"
+    done <"${TOKS}"
+  fi
+  if git_grep_run "${_g}" "${WIN_RE}" "${_rev}" "${WORK}/graw" o; then
+    git_toks "${WORK}/graw" >"${TOKS}"
+    while IFS= read -r _tok; do
+      [ -n "${_tok}" ] || continue
+      _u=${_tok##*/}
+      _u=${_u##*\\}
+      is_role_home "${_u}" && continue
+      fail "home-machine path in git ${_lab}: ${_tok}"
+    done <"${TOKS}"
+  fi
+  git_grep_run "${_g}" "${PHONE_RE}" "${_rev}" "${WORK}/graw" q \
+    && fail "phone in git ${_lab}"
+  git_grep_run "${_g}" "${STREET_RE}" "${_rev}" "${WORK}/graw" q \
+    && fail "street address in git ${_lab}"
+  git_grep_run "${_g}" "${MAC_RE}" "${_rev}" "${WORK}/graw" q \
+    && fail "MAC address in git ${_lab}"
+  if git_grep_run "${_g}" "${NAME_RE}" "${_rev}" "${WORK}/graw" l; then
+    git_toks "${WORK}/graw" >"${LINES}"
+    while IFS= read -r _line; do
+      [ -n "${_line}" ] || continue
+      _n=${_line#*=}
+      _n=$(printf '%s\n' "${_n}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+      is_role_name "${_n}" || fail "personal name in git ${_lab}: ${_n}"
+    done <"${LINES}"
+  fi
+  if git_grep_run "${_g}" "${TRAILER_RE}" "${_rev}" "${WORK}/graw" l; then
+    git_toks "${WORK}/graw" >"${LINES}"
+    while IFS= read -r _line; do
+      [ -n "${_line}" ] || continue
+      _n=${_line#*:}
+      _n=$(printf '%s\n' "${_n}" | sed 's/^[[:space:]]*//;s/[[:space:]]*<.*//;s/[[:space:]]*$//')
+      is_role_name "${_n}" || fail "personal name in git ${_lab}: ${_n}"
+    done <"${LINES}"
+  fi
+  git --git-dir="${_g}" ls-tree -r --name-only "${_rev}" >"${LIST}" 2>"${WORK}/git.err" \
+    || fail "git ls-tree failed in ${_g} ${_rev}: $(tr '\n' ' ' <"${WORK}/git.err")"
+  while IFS= read -r _p; do
+    [ -n "${_p}" ] || continue
+    [ "${_p##*/}" = hostname ] || continue
+    git --git-dir="${_g}" cat-file blob "${_rev}:${_p}" >"${BLOB}" 2>"${WORK}/git.err" \
+      || fail "git cat-file failed ${_g} ${_rev}:${_p}: $(tr '\n' ' ' <"${WORK}/git.err")"
+    _hn=$(grep -v '^[[:space:]]*#' "${BLOB}" | grep -v '^[[:space:]]*$' | head -n 1 | tr -d '\r' || true)
+    case "${_hn}" in
+      ''|aios|localhost) ;;
+      *) fail "home-machine hostname in git ${_lab}:${_p}: ${_hn}" ;;
+    esac
+  done <"${LIST}"
+}
 
 # Blobs, not author/committer: those metadata fields are not the tree.
 sort -u "${GITS}" >"${WORK}/gits.u"
 while IFS= read -r _g; do
   [ -n "${_g}" ] || continue
-  [ -d "${_g}" ] || continue
-  git --git-dir="${_g}" rev-list --all 2>/dev/null >"${WORK}/revs" || true
-  [ -s "${WORK}/revs" ] || continue
-  : >"${TOKS}"
-  # git grep -o prints rev:path:token; take the token, not the path.
-  xargs -r git --git-dir="${_g}" grep -I -E -o -e "${EMAIL_RE}" -- \
-    <"${WORK}/revs" 2>/dev/null | sed 's/.*://' >>"${TOKS}" || true
-  xargs -r git --git-dir="${_g}" grep -I -E -o -e "${LOCAL_RE}" -- \
-    <"${WORK}/revs" 2>/dev/null | sed 's/.*://' >>"${TOKS}" || true
-  [ -s "${TOKS}" ] || continue
-  sort -u "${TOKS}" >"${WORK}/toks.u"
-  while IFS= read -r _tok; do
-    [ -n "${_tok}" ] || continue
-    is_role_email "${_tok}" && continue
-    fail "email in git ${_g}: ${_tok}"
-  done <"${WORK}/toks.u"
+  [ -d "${_g}" ] || fail "git dir missing: ${_g}"
+  git --git-dir="${_g}" rev-list --all >"${WORK}/revs" 2>"${WORK}/git.err" \
+    || fail "git rev-list failed in ${_g}: $(tr '\n' ' ' <"${WORK}/git.err")"
+  while IFS= read -r _rev; do
+    [ -n "${_rev}" ] || continue
+    scan_git_rev "${_g}" "${_rev}"
+  done <"${WORK}/revs"
 done <"${WORK}/gits.u"
 
 exit 0

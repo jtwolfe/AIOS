@@ -22,17 +22,20 @@ _pgp='PGP PRIVATE KEY BLOCK-----'
 _msk='MINISIGN SECRET KEY-----'
 _mcom='minisign encrypted secret key'
 _akia='AKI''A[0-9A-Z]{16}'
+_asia='ASI''A[0-9A-Z]{16}'
 _ghp='ghp''_[A-Za-z0-9]{36}'
 _gho='gho''_[A-Za-z0-9]{36}'
 _ghu='ghu''_[A-Za-z0-9]{36}'
 _ghs='ghs''_[A-Za-z0-9]{36}'
 _ghr='ghr''_[A-Za-z0-9]{36}'
 _pat='github''_pat_[A-Za-z0-9_]{22,}'
-_aws='AWS''_SECRET''_ACCESS''_KEY[[:space:]]*=[[:space:]]*[^[:space:]]+'
-_gtk='GITHUB''_TOKEN[[:space:]]*=[[:space:]]*[^[:space:]]+'
-_ght='GH''_TOKEN[[:space:]]*=[[:space:]]*[^[:space:]]+'
 # Line-anchored PEM: sibling oracles quote these headers mid-line as grep patterns.
-CONTENT_RE="^[[:space:]]*${_beg} ([A-Z0-9]+ )?${_priv}|^[[:space:]]*${_beg} ${_osc}|^[[:space:]]*${_beg} ${_pgp}|^[[:space:]]*${_beg} ${_msk}|^[[:space:]]*untrusted comment: ${_mcom}|${_akia}|${_ghp}|${_gho}|${_ghu}|${_ghs}|${_ghr}|${_pat}|${_aws}|${_gtk}|${_ght}"
+CONTENT_RE="^[[:space:]]*${_beg} ([A-Z0-9]+ )?${_priv}|^[[:space:]]*${_beg} ${_osc}|^[[:space:]]*${_beg} ${_pgp}|^[[:space:]]*${_beg} ${_msk}|^[[:space:]]*untrusted comment: ${_mcom}|${_akia}|${_asia}|${_ghp}|${_gho}|${_ghu}|${_ghs}|${_ghr}|${_pat}"
+# Case-insensitive via grep -i. Live xAI prefix is a P4 must-close (L-16).
+_env_aws='aws''_secret''_access''_key[[:space:]]*=[[:space:]]*[^[:space:]]+'
+_env_gtk='github''_token[[:space:]]*=[[:space:]]*[^[:space:]]+'
+_env_ght='gh''_token[[:space:]]*=[[:space:]]*[^[:space:]]+'
+ENV_RE="${_env_aws}|${_env_gtk}|${_env_ght}"
 
 # Basename token, not surrounding path: nested keys still match; prefix/suffix
 # on the filename still match; a path fragment like docs/id_rsa.pub does not.
@@ -47,12 +50,61 @@ is_secret_name() {
     .env|.env.*) return 0 ;;
     .netrc|.netrc.*) return 0 ;;
   esac
+  # Git-relative `.aws/credentials` has no leading slash; worktree paths do.
   case "${_sn_path}" in
-    */.aws/credentials|*/.aws/credentials.*) return 0 ;;
+    .aws/credentials|.aws/credentials.*|*/.aws/credentials|*/.aws/credentials.*)
+      return 0
+      ;;
   esac
   printf '%s\n' "${_sn_base}" | grep -Fq 'minisign.key' && return 0
   printf '%s\n' "${_sn_base}" | grep -Eq 'id_(rsa|dsa|ecdsa|ed25519)' && return 0
   return 1
+}
+
+# grep 0=match 1=no match; anything else cannot-scan (fail closed).
+# $3 is -i or empty; never pass -- (it would eat -E).
+grep_q() {
+  _gq_re=$1
+  _gq_f=$2
+  _gq_i=${3:-}
+  _rc=0
+  if [ "${_gq_i}" = -i ]; then
+    grep -I -i -E -q -- "${_gq_re}" "${_gq_f}" || _rc=$?
+  else
+    grep -I -E -q -- "${_gq_re}" "${_gq_f}" || _rc=$?
+  fi
+  case "${_rc}" in
+    0) return 0 ;;
+    1) return 1 ;;
+    *) fail "cannot read ${_gq_f}" ;;
+  esac
+}
+
+scan_secret_content() {
+  _cf=$1
+  _cl=$2
+  grep_q "${CONTENT_RE}" "${_cf}" && fail "secret material in ${_cl}"
+  grep_q "${ENV_RE}" "${_cf}" -i && fail "secret material in ${_cl}"
+  return 0
+}
+
+# Trees before pathspecs: `git grep -e <pattern> <tree>` not `git grep -- <sha>`.
+git_grep_q() {
+  _gd=$1
+  _pat=$2
+  _rev=$3
+  _gq_i=${4:-}
+  _rc=0
+  if [ "${_gq_i}" = -i ]; then
+    git --git-dir="${_gd}" grep -I -i -E -q -e "${_pat}" "${_rev}" || _rc=$?
+  else
+    git --git-dir="${_gd}" grep -I -E -q -e "${_pat}" "${_rev}" || _rc=$?
+  fi
+  case "${_rc}" in
+    0) return 0 ;;
+    1) return 1 ;;
+    *) fail "git grep failed in ${_gd} ${_rev} (exit ${_rc})" ;;
+  esac
 }
 
 WORK=$(mktemp -d) || fail "mktemp failed"
@@ -111,34 +163,52 @@ fi
 
 [ "${SCANNED}" -gt 0 ] || fail "no payload or git tree to scan"
 
+scan_worktree_path() {
+  _f=$1
+  is_secret_name "${_f}" && fail "secret file name: ${_f}"
+  # Dangling non-secret names (ISO systemd .wants) are not a leak.
+  if [ -L "${_f}" ] && [ ! -e "${_f}" ]; then
+    return 0
+  fi
+  [ -r "${_f}" ] || fail "unreadable: ${_f}"
+  [ -f "${_f}" ] || return 0
+  scan_secret_content "${_f}" "${_f}"
+}
+
 sort -u "${TREES}" >"${WORK}/trees.u"
 while IFS= read -r _tree; do
   [ -n "${_tree}" ] || continue
-  find "${_tree}" -type f ! -path '*/.git/*' -print >"${LIST}" 2>/dev/null || true
+  _rc=0
+  find "${_tree}" \( -type f -o -type l \) ! -path '*/.git/*' -print \
+    >"${LIST}" 2>"${WORK}/find.err" || _rc=$?
+  if [ "${_rc}" -ne 0 ] || [ -s "${WORK}/find.err" ]; then
+    fail "find failed under ${_tree}: $(tr '\n' ' ' <"${WORK}/find.err")"
+  fi
   while IFS= read -r _f; do
     [ -n "${_f}" ] || continue
-    [ -f "${_f}" ] || continue
-    is_secret_name "${_f}" && fail "secret file name: ${_f}"
-    grep -I -E -q -- "${CONTENT_RE}" "${_f}" 2>/dev/null \
-      && fail "secret material in ${_f}"
+    scan_worktree_path "${_f}"
   done <"${LIST}"
 done <"${WORK}/trees.u"
 
 sort -u "${GITS}" >"${WORK}/gits.u"
 while IFS= read -r _g; do
   [ -n "${_g}" ] || continue
-  [ -d "${_g}" ] || continue
-  git --git-dir="${_g}" log --all --name-only --pretty=format: 2>/dev/null \
-    >"${LIST}" || true
+  [ -d "${_g}" ] || fail "git dir missing: ${_g}"
+  git --git-dir="${_g}" log --all --name-only --pretty=format: \
+    >"${LIST}" 2>"${WORK}/git.err" || fail "git log failed in ${_g}: $(tr '\n' ' ' <"${WORK}/git.err")"
   while IFS= read -r _p; do
     [ -n "${_p}" ] || continue
     is_secret_name "${_p}" && fail "secret file name in git ${_g}: ${_p}"
   done <"${LIST}"
-  git --git-dir="${_g}" rev-list --all 2>/dev/null >"${WORK}/revs" || true
-  [ -s "${WORK}/revs" ] || continue
-  _hit=$(xargs -r git --git-dir="${_g}" grep -I -E -l -e "${CONTENT_RE}" -- \
-    <"${WORK}/revs" 2>/dev/null | head -n 1 || true)
-  [ -z "${_hit}" ] || fail "secret material in git ${_g} ${_hit}"
+  git --git-dir="${_g}" rev-list --all >"${WORK}/revs" 2>"${WORK}/git.err" \
+    || fail "git rev-list failed in ${_g}: $(tr '\n' ' ' <"${WORK}/git.err")"
+  while IFS= read -r _rev; do
+    [ -n "${_rev}" ] || continue
+    git_grep_q "${_g}" "${CONTENT_RE}" "${_rev}" \
+      && fail "secret material in git ${_g} ${_rev}"
+    git_grep_q "${_g}" "${ENV_RE}" "${_rev}" -i \
+      && fail "secret material in git ${_g} ${_rev}"
+  done <"${WORK}/revs"
 done <"${WORK}/gits.u"
 
 exit 0
