@@ -116,7 +116,7 @@ Canonical table remains [docs/implementation.md](implementation.md) “Locked de
 | --- | --- |
 | Pinned Arch bootstrap tarball URL + sha256 | **P1, first hour** |
 | Exact live OS token path | **P4.2 locked:** `/srv/aios/state/provider/os.token` |
-| When a pattern earns a `SKILL.md` | P4 |
+| When a pattern earns a `SKILL.md` | **P4.3 locked:** two successful verbatim moments of the class, or the human asks. |
 | Operator username: asked vs derived | P5 |
 | How summon names the surface | P7 |
 | L-15 write set vs `~/src` | P8.2 |
@@ -854,7 +854,7 @@ Checker does not enact. A bad checker commit is refused by not merging to `main`
 | Question | Answer in this design |
 | --- | --- |
 | Live OS token path | **Locked (P4.2).** `/srv/aios/state/provider/os.token` (mode `0600`, uid `aios-agent`, directory `0700`, gitignored `/provider/`). `/srv/aios/state` is on work-slice `InaccessiblePaths`. Not `/etc/aios/` (etckeeper). Not `/home`. Not in git. Not in the transcript. Work token is a different file (L-16). |
-| When a pattern earns a `SKILL.md` | **Close when P4.3 starts.** Options: [Open Questions](#open-questions). |
+| When a pattern earns a `SKILL.md` | **Locked (P4.3).** Two successful verbatim moments of that class in `/srv/aios/memory`, or the human asks on the definition surface. Promotion is a privileged proposal in `/srv/aios/skills`, reviewed by the checker for overlap and envelope contradiction. The proposing model does not curate the tree (HI-11). Nested `AGENTS.md` outranks a general skill in that tree. |
 | Proposal schema field for wiki/man citations | Locked by spine: empty citations → reject pacman/systemd/btrfs/boot classes. |
 
 #### Work packages
@@ -1878,7 +1878,7 @@ flowchart LR
 
 ## Open Questions
 
-Only questions the spec still leaves open. Version string, work-runtime unit type, and the live OS token path are **Resolved** below. For remaining items: phase that must close it, and options. Lock in `docs/implementation.md` before code that depends on the answer.
+Only questions the spec still leaves open. Version string, work-runtime unit type, the live OS token path, and the SKILL.md rule are **Resolved** below. For remaining items: phase that must close it, and options. Lock in `docs/implementation.md` before code that depends on the answer.
 
 ### Pinned Arch bootstrap tarball URL + sha256 — P1, first hour
 
@@ -1898,9 +1898,9 @@ Procedure: download once, `sha256sum`, record URL + hash in `payload/build.sh` a
 
 **Lock:** `/srv/aios/state/provider/os.token`. Mode `0600`, uid `aios-agent`, directory `0700`. Gitignored as `/provider/` in the `state` tree (not a git object). `/srv/aios/state` is already on work-slice `InaccessiblePaths` (L-06/L-16). Not `/home`. Not in the transcript. `/etc/aios/` is the root-owned accept stamp and is tracked by etckeeper, so it is not the token path. The work-runtime token is a different file (P8.10).
 
-### When a pattern earns a `SKILL.md` — P4
+### When a pattern earns a `SKILL.md` — P4 — **Resolved** (P4.3)
 
-**Options:** after N successful verbatim episodes of the same class; only when the human asks; only when the checker would otherwise see duplicated citation blobs. Promotion is a git change in `/srv/aios/skills`, reviewed for overlap ([memory.md](memory.md)). Do not let the model curate the skill tree (HI-11).
+**Lock:** A class of work earns a `SKILL.md` after **two** successful verbatim moments of that class in `/srv/aios/memory`, or when the human asks on the definition surface. Promotion is a privileged proposal (intent + oracles) in `/srv/aios/skills`, reviewed by the checker for overlap and envelope contradiction. The proposing model does not curate, discard, or rewrite the skill tree (HI-11). Nested project `AGENTS.md` outranks a general skill inside that tree. Direct human instruction outranks both, except hard invariants (HI-07). Duplicated citation blobs of the same class are a checker signal that the two-moment bar is met, not a third path the model uses to invent skills.
 
 ### Operator username: asked vs derived — P5
 

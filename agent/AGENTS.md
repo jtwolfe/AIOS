@@ -37,15 +37,21 @@ Python 3 stdlib only (L-01). The only root path is `/usr/lib/aios/bin/enact`
    (HI-13, HI-16). Work runtime stays default off (HI-15).
 9. Research (wiki/man) is plan-only. `enact` does not curl (L-20).
 10. Idle is the default. Do not invent motives (L-21).
+11. The proposing model does not decide what memory is worth keeping
+    (HI-11). Discard is an envelope patch.
 
 ## Loop
 
-P4.2 is the provider adapter. Fixture is the VM default (L-08). Live is
-device-code only (L-17); the OS token is `/srv/aios/state/provider/os.token`
-and `aios-work` cannot read it (L-16). The turn loop, memory ingest, and
-machine-goal runner are later work packages. Until those exist this
-process stays idle (L-21). Never synthesise the work runtime from here
-(HI-15).
+The turn loop is CLI (`main.py turn`). Triage first: not every message is
+a build. Matching `SKILL.md` bodies are read this turn before privileged
+writes. Memory ingest is verbatim and unconditional (HI-11). The model
+does not decide what to keep. Never commit to `main` (HI-03). Never
+synthesise the work runtime from here (HI-15). Machine goals are P4.4.
+The `-Syu` window is P4.5.
+
+No-arg `serve()` stays idle (L-21). Fixture is the VM default (L-08).
+Live is device-code only (L-17); the OS token is
+`/srv/aios/state/provider/os.token` and `aios-work` cannot read it (L-16).
 
 `enact` is Harness B: envelope accept first, then one allowlisted window.
 Harness A (payload / firstboot) must not call it. No `-Syu` in firstboot.
@@ -56,3 +62,7 @@ Harness A (payload / firstboot) must not call it. No `-Syu` in firstboot.
 - [aios_agent/deny.py](aios_agent/deny.py)
 - [aios_agent/main.py](aios_agent/main.py)
 - [aios_agent/provider/](aios_agent/provider/)
+- [aios_agent/loop.py](aios_agent/loop.py)
+- [aios_agent/triage.py](aios_agent/triage.py)
+- [aios_agent/skills.py](aios_agent/skills.py)
+- [aios_agent/memory.py](aios_agent/memory.py)

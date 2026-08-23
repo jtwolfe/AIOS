@@ -431,6 +431,43 @@ fail.
 The checker has no provider and must not import `aios_agent.provider`.
 `grep -n provider checker/` stays empty.
 
+### Skill crystallization (P4.3 lock)
+
+A class of work earns a `SKILL.md` after **two** successful verbatim
+moments of that class in `/srv/aios/memory`, or when the human asks on
+the definition surface. Promotion is a privileged proposal (intent +
+oracles) whose diff lives in `/srv/aios/skills`, reviewed by the
+checker for overlap and envelope contradiction. The proposing model
+does not curate, discard, or rewrite the skill tree (HI-11). Nested
+project `AGENTS.md` outranks a general skill inside that tree. Direct
+human instruction outranks both, except hard invariants (HI-07).
+
+Skills are on-demand: the matching `SKILL.md` body and `references/`
+are read this turn before privileged writes. No match → the plan says
+so; do not invent policy.
+
+### Turn loop (P4.3)
+
+```
+talk → update conditions → plan (docs) → accept → enact once → verify → remember or pause
+```
+
+Triage first: not every message is a build. Empty pings stay idle
+(L-21). Questions are answered. Destructive work and instruction-vs-HI
+are raised (HI-07), not swallowed.
+
+Memory ingest is verbatim and unconditional on every completed turn
+(HI-11). The model does not choose what to keep. Discard is an
+envelope patch.
+
+`enact` does not run during plan (L-20). No proposer merge to `main`
+(HI-03). Work-runtime is not synthesised here (HI-15). Machine goals
+are P4.4. The `-Syu` window is P4.5. Wiki/man citation reject is P4.6.
+
+The unit with no arguments still idles (L-21). Turns are CLI:
+`python3 …/main.py turn [--accept] [TEXT]` with the fixture provider
+from P4.2 (`AIOS_PROVIDER` / `AIOS_FIXTURE`).
+
 ---
 
 ## HI → oracle map
@@ -755,9 +792,14 @@ is complete even with no work runtime. Harness B, not Harness A.
 
 **Must close.** Live OS token path: **locked** at
 `/srv/aios/state/provider/os.token` (mode `0600`, uid `aios-agent`, not
-in git; `aios-work` cannot read it). Skill crystallization rule (when a
-pattern earns a `SKILL.md`). Proposal schema field for wiki/man citations
-on pacman/systemd/btrfs/boot changes (empty → reject those classes).
+in git; `aios-work` cannot read it). Skill crystallization rule:
+**locked (P4.3)** — a class of work earns a `SKILL.md` after two
+successful verbatim moments of that class in `/srv/aios/memory`, or when
+the human asks on the definition surface; promotion is a privileged
+proposal in `/srv/aios/skills` reviewed by the checker; the proposing
+model does not curate the tree (HI-11). Proposal schema field for
+wiki/man citations on pacman/systemd/btrfs/boot changes (empty → reject
+those classes).
 
 
 **Deliverables**

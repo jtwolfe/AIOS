@@ -609,6 +609,14 @@ copy_payload_into_target() {
     || die "agent provider/fixture.py missing on target"
   [ -f "${TARGET}/srv/aios/agent/aios_agent/provider/live.py" ] \
     || die "agent provider/live.py missing on target"
+  [ -f "${TARGET}/srv/aios/agent/aios_agent/loop.py" ] \
+    || die "agent loop.py missing on target"
+  [ -f "${TARGET}/srv/aios/agent/aios_agent/triage.py" ] \
+    || die "agent triage.py missing on target"
+  [ -f "${TARGET}/srv/aios/agent/aios_agent/skills.py" ] \
+    || die "agent skills.py missing on target"
+  [ -f "${TARGET}/srv/aios/agent/aios_agent/memory.py" ] \
+    || die "agent memory.py missing on target"
 }
 
 # pacstrap bind-mounts /run onto /mnt/run; teardown can drop nested L-07 mounts.

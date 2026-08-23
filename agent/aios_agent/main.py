@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""aios-agent driver: idle proposer (L-21). Fixture/live via CLI (P4.2)."""
+"""aios-agent driver: idle proposer (L-21). Turns via CLI (P4.3)."""
 
 import sys
 import time
@@ -29,8 +29,8 @@ def cmd_deny(argv):
 
 
 def serve():
-    # L-21: available, not always proposing. Do not parse inputs here;
-    # one malformed document must not exit the unit. Provider is CLI-only.
+    # L-21: available, not always proposing. Turns are CLI (`turn`).
+    # Do not parse inputs here; one malformed document must not exit the unit.
     while True:
         time.sleep(POLL_S)
 
@@ -81,9 +81,16 @@ def cmd_provider(argv):
     return _provider_fail("unknown provider action")
 
 
+def cmd_turn(argv):
+    # Lazy import: the idle unit must not load a fixture or walk skills.
+    from loop import cmd_turn as _turn
+
+    return _turn(argv)
+
+
 def _usage():
     sys.stderr.write(
-        "usage: main.py [deny KIND [ARGS] | provider path | provider fixture complete FILE [TEXT] | provider live login]\n"
+        "usage: main.py [deny KIND [ARGS] | provider path | provider fixture complete FILE [TEXT] | provider live login | turn [--accept] [TEXT]]\n"
     )
     return 2
 
@@ -100,6 +107,8 @@ def main(argv=None):
         return cmd_deny(argv[1:])
     if argv[0] == "provider":
         return cmd_provider(argv[1:])
+    if argv[0] == "turn":
+        return cmd_turn(argv[1:])
     return _usage()
 
 
