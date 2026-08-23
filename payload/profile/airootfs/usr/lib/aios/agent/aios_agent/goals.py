@@ -198,6 +198,24 @@ def save_state(doc, path=None):
     return _write_json(_goals_path(path), doc)
 
 
+def _safe_int(value):
+    # bool is an int subclass; "nope" must not become 0 via int().
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
+
+
+def _count(value):
+    n = _safe_int(value)
+    return 0 if n is None else n
+
+
+def _corrupt(path, reason):
+    doc = _paused_doc(reason)
+    save_state(doc, path)
+    return doc, True
+
+
 def load_state(path=None):
     """Missing file is idle. Unknown/corrupt restores paused (L-21)."""
     path = _goals_path(path)
@@ -207,52 +225,47 @@ def load_state(path=None):
         with open(path, "r", encoding="utf-8") as fh:
             raw = fh.read()
     except OSError:
-        doc = _paused_doc("unreadable goals file restores paused (L-21)")
-        save_state(doc, path)
-        return doc, True
+        return _corrupt(path, "unreadable goals file restores paused (L-21)")
     if not raw.strip():
-        doc = _paused_doc("empty goals file restores paused (L-21)")
-        save_state(doc, path)
-        return doc, True
+        return _corrupt(path, "empty goals file restores paused (L-21)")
     try:
         parsed = json.loads(raw)
     except ValueError:
-        doc = _paused_doc("corrupt goals file restores paused (L-21)")
-        save_state(doc, path)
-        return doc, True
+        return _corrupt(path, "corrupt goals file restores paused (L-21)")
     if not isinstance(parsed, dict):
-        doc = _paused_doc("corrupt goals file restores paused (L-21)")
-        save_state(doc, path)
-        return doc, True
+        return _corrupt(path, "corrupt goals file restores paused (L-21)")
     # Unknown keys that look like self-driving are unknown state (L-21).
     if parsed.get("self_driving") or parsed.get("auto_propose"):
-        doc = _paused_doc("unknown goal state restores paused (L-21)")
-        save_state(doc, path)
-        return doc, True
+        return _corrupt(path, "unknown goal state restores paused (L-21)")
     status = parsed.get("status")
     if status not in KNOWN_STATUS:
-        doc = _paused_doc("unknown goal status restores paused (L-21)")
-        save_state(doc, path)
-        return doc, True
+        return _corrupt(path, "unknown goal status restores paused (L-21)")
     declared = parsed.get("declared")
     if declared is None:
         declared = []
     if not isinstance(declared, list):
-        doc = _paused_doc("corrupt declared goals restore paused (L-21)")
-        save_state(doc, path)
-        return doc, True
+        return _corrupt(path, "corrupt declared goals restore paused (L-21)")
     for name in declared:
         if name not in KNOWN_GOALS:
-            doc = _paused_doc(
-                "unknown goal %s restores paused (L-21)" % name
+            return _corrupt(
+                path, "unknown goal %s restores paused (L-21)" % name
             )
-            save_state(doc, path)
-            return doc, True
     parsed["declared"] = declared
+    if "gap_count" in parsed and _safe_int(parsed.get("gap_count")) is None:
+        return _corrupt(path, "corrupt gap_count restores paused (L-21)")
+    if "rounds" in parsed and _safe_int(parsed.get("rounds")) is None:
+        return _corrupt(path, "corrupt rounds restores paused (L-21)")
     parsed.setdefault("last_gap", None)
     parsed.setdefault("gap_count", 0)
     parsed.setdefault("rounds", 0)
-    parsed.setdefault("proposal", None)
+    if "proposal" not in parsed or parsed.get("proposal") is None:
+        parsed["proposal"] = None
+    elif not isinstance(parsed.get("proposal"), dict):
+        return _corrupt(path, "corrupt proposal restores paused (L-21)")
+    else:
+        oracles = parsed["proposal"].get("oracles")
+        if oracles is not None and not isinstance(oracles, list):
+            return _corrupt(path, "corrupt oracles restore paused (L-21)")
     return parsed, False
 
 
@@ -299,6 +312,14 @@ def _clause_id(event):
     return ""
 
 
+def _is_fake_oracle(text):
+    # HI-08/HI-10: true is not an oracle, including /usr/bin/true on Arch.
+    name = text.strip().lower()
+    if not name:
+        return True
+    return name.rsplit("/", 1)[-1] == "true"
+
+
 def _clean_oracles(raw):
     if not isinstance(raw, list):
         return []
@@ -306,10 +327,7 @@ def _clean_oracles(raw):
     for item in raw:
         text = item if isinstance(item, str) else str(item or "")
         text = text.strip()
-        if not text:
-            continue
-        # HI-08/HI-10: `true` is not an oracle.
-        if text == "true" or text == "/bin/true":
+        if not text or _is_fake_oracle(text):
             continue
         out.append(text)
     return out
@@ -325,17 +343,19 @@ def _named_oracles(event):
 
 
 def _oracles_for(event, state):
-    # Stall path keeps the original set. Do not rewrite to pass (L-21).
-    existing = []
-    if state:
-        prop = state.get("proposal") or {}
+    # Stall/resume keeps the original set. Do not rewrite to pass (L-21).
+    prop = (state or {}).get("proposal")
+    if isinstance(prop, dict) and prop.get("oracles") is not None:
         existing = _clean_oracles(prop.get("oracles"))
-    if existing:
-        return existing
-    supplied = _clean_oracles(event.get("oracles"))
+        if existing:
+            return existing
+        # Stored set was empty or true-class. Do not invent a replacement.
+        return []
+    supplied = _clean_oracles((event or {}).get("oracles"))
     if supplied:
         return supplied
-    return _named_oracles(event)
+    # Supplied true-class is treated as empty, then named (HI-10 if none).
+    return _named_oracles(event or {})
 
 
 def _fingerprint(event, state):
@@ -386,18 +406,72 @@ def _normalize_event(raw):
     return event
 
 
-def _hi14_payload(event, clause):
-    unit = event.get("unit") or event.get("executable") or "aios-agent.service"
-    journal = event.get("journal") or event.get("journal_slice") or ""
-    commit = event.get("commit") or event.get("state_commit") or ""
-    snapper = event.get("snapper")
-    if snapper is None:
-        snapper = event.get("snapper_id")
-    if snapper is None:
-        snapper = 0
+def _first_present(blob, *keys):
+    if not isinstance(blob, dict):
+        return None
+    for key in keys:
+        val = blob.get(key)
+        if val is None or val == "" or val == 0 or val == "0":
+            continue
+        return val
+    return None
+
+
+def _handoff_fields(event, state=None):
+    blobs = []
+    if isinstance(event, dict):
+        blobs.append(event)
+        intent = event.get("intent")
+        if isinstance(intent, dict):
+            blobs.append(intent)
+        handoff = event.get("handoff")
+        if isinstance(handoff, dict):
+            blobs.append(handoff)
+    if isinstance(state, dict):
+        if isinstance(state.get("handoff"), dict):
+            blobs.append(state["handoff"])
+        prop = state.get("proposal")
+        if isinstance(prop, dict):
+            blobs.append(prop)
+            if isinstance(prop.get("intent"), dict):
+                blobs.append(prop["intent"])
+            if isinstance(prop.get("handoff"), dict):
+                blobs.append(prop["handoff"])
+    unit = journal = commit = snapper = clause = None
+    for blob in blobs:
+        if unit is None:
+            unit = _first_present(blob, "unit", "executable")
+        if journal is None:
+            journal = _first_present(blob, "journal", "journal_slice")
+        if commit is None:
+            commit = _first_present(blob, "commit", "state_commit")
+        if snapper is None:
+            snapper = _first_present(blob, "snapper", "snapper_id")
+        if clause is None:
+            clause = _first_present(blob, "clause", "hi")
     return {
         "unit": unit,
-        "executable": event.get("executable") or unit,
+        "journal": journal,
+        "commit": commit,
+        "snapper": snapper,
+        "clause": clause,
+    }
+
+
+def _hi14_complete(fields, clause_fallback):
+    # Do not invent snapper 0 / empty journal (HI-14). Missing → no file.
+    unit = fields.get("unit")
+    journal = fields.get("journal")
+    commit = fields.get("commit")
+    snapper = fields.get("snapper")
+    clause = fields.get("clause") or clause_fallback
+    if not unit or not journal or not commit or snapper is None:
+        return None
+    if not clause:
+        return None
+    return {
+        "unit": unit,
+        "executable": unit,
         "journal": journal,
         "journal_slice": journal,
         "commit": commit,
@@ -510,6 +584,73 @@ def _run_from_state(
     )
 
 
+def _stall(state, path, event, notify_dir, memory_root, reason, hi="L-21"):
+    payload = _hi14_complete(_handoff_fields(event, state), hi)
+    notify = _write_notify(payload, notify_dir) if payload else None
+    state["status"] = "paused"
+    state["reason"] = reason
+    state["hi"] = hi
+    state["notify"] = notify
+    state["rollback"] = dict(ROLLBACK)
+    save_state(state, path)
+    return _run_from_state(
+        state,
+        True,
+        reason,
+        hi,
+        notify=notify,
+        rollback=state["rollback"],
+        memory_root=memory_root,
+    )
+
+
+def _bump_fingerprint(state, fp):
+    last = state.get("last_gap")
+    if last == fp:
+        count = _count(state.get("gap_count")) + 1
+    else:
+        count = 1
+    state["last_gap"] = fp
+    state["gap_count"] = count
+    state["rounds"] = _count(state.get("rounds")) + 1
+    return count, state["rounds"]
+
+
+def _resume_plan(state, path, memory_root):
+    # Restart resumes that plan. Empty/true-class oracles are HI-10, not a new plan.
+    prop = state.get("proposal")
+    if not isinstance(prop, dict):
+        reason = "corrupt proposal restores paused (L-21)"
+        state["status"] = "paused"
+        state["proposal"] = None
+        state["reason"] = reason
+        state["hi"] = "L-21"
+        save_state(state, path)
+        return _run_from_state(
+            state, True, reason, "L-21", memory_root=memory_root
+        )
+    oracles = _clean_oracles(prop.get("oracles"))
+    if not oracles:
+        reason = "no oracle set, no enactment (HI-10)"
+        state["status"] = "paused"
+        state["proposal"] = None
+        state["reason"] = reason
+        state["hi"] = "HI-10"
+        save_state(state, path)
+        return _run_from_state(
+            state, True, reason, "HI-10", memory_root=memory_root
+        )
+    prop["oracles"] = oracles
+    state["proposal"] = prop
+    return _run_from_state(
+        state,
+        False,
+        "resume %s (L-21)" % (state.get("status") or "waiting-accept"),
+        state.get("hi") or "L-21",
+        memory_root=memory_root,
+    )
+
+
 def tick(
     events=None,
     path=None,
@@ -519,6 +660,36 @@ def tick(
 ):
     """One machine-goal step. Empty events invent nothing (L-21)."""
     path = _goals_path(path)
+    try:
+        return _tick(
+            events, path, notify_dir, memory_root, brake_path
+        )
+    except (TypeError, ValueError, AttributeError, KeyError):
+        # L-21: leftover malformed state must pause, not traceback.
+        doc = _paused_doc("corrupt goal state restores paused (L-21)")
+        try:
+            save_state(doc, path)
+        except OSError:
+            pass
+        return GoalRun(
+            "paused",
+            True,
+            None,
+            None,
+            None,
+            doc["reason"],
+            hi="L-21",
+            invented=False,
+        )
+
+
+def _tick(
+    events=None,
+    path=None,
+    notify_dir=None,
+    memory_root=None,
+    brake_path=None,
+):
     state, corrupt = load_state(path)
     events = events or []
     if not isinstance(events, list):
@@ -597,22 +768,9 @@ def tick(
             reason = "infra error pauses (L-21): %s" % (
                 event.get("reason") or event.get("kind") or "infra"
             )
-            payload = _hi14_payload(event, "L-21")
-            notify = _write_notify(payload, notify_dir)
-            state["status"] = "paused"
-            state["reason"] = reason
-            state["hi"] = "L-21"
-            state["notify"] = notify
-            state["rollback"] = dict(ROLLBACK)
-            save_state(state, path)
-            run = _run_from_state(
-                state,
-                True,
-                reason,
-                "L-21",
-                notify=notify,
-                rollback=state["rollback"],
-                memory_root=memory_root,
+            state["proposal"] = None
+            run = _stall(
+                state, path, event, notify_dir, memory_root, reason
             )
             run.proposal = None
             return run
@@ -620,39 +778,17 @@ def tick(
     for event in normalized:
         if event.get("kind") == "gap" or event.get("gap"):
             fp = _fingerprint(event, state)
-            last = state.get("last_gap")
-            if last == fp:
-                count = int(state.get("gap_count") or 0) + 1
-            else:
-                count = 1
-            rounds = int(state.get("rounds") or 0) + 1
-            state["last_gap"] = fp
-            state["gap_count"] = count
-            state["rounds"] = rounds
+            count, rounds = _bump_fingerprint(state, fp)
             # Keep original oracles. Ignore a replacement set on this event.
             oracles = _oracles_for(event, state)
-            if state.get("proposal") and isinstance(state.get("proposal"), dict):
+            if isinstance(state.get("proposal"), dict):
                 state["proposal"]["oracles"] = oracles
             if count >= SAME_GAP or rounds >= MAX_ROUNDS:
                 reason = "same-gap twice pauses (L-21); no third attempt"
                 if rounds >= MAX_ROUNDS and count < SAME_GAP:
                     reason = "round cap pauses (L-21)"
-                payload = _hi14_payload(event, "L-21")
-                notify = _write_notify(payload, notify_dir)
-                state["status"] = "paused"
-                state["reason"] = reason
-                state["hi"] = "L-21"
-                state["notify"] = notify
-                state["rollback"] = dict(ROLLBACK)
-                save_state(state, path)
-                return _run_from_state(
-                    state,
-                    True,
-                    reason,
-                    "L-21",
-                    notify=notify,
-                    rollback=state["rollback"],
-                    memory_root=memory_root,
+                return _stall(
+                    state, path, event, notify_dir, memory_root, reason
                 )
             state["reason"] = "oracle gap recorded (L-21); one retry remains"
             state["hi"] = "L-21"
@@ -671,15 +807,11 @@ def tick(
         state["declared"] = declared
 
     if not normalized:
-        if state.get("status") == "waiting-accept" and state.get("proposal"):
+        if state.get("status") in ("waiting-accept", "verify") and state.get(
+            "proposal"
+        ):
             # Restart resumes the plan. It does not invent a new one (L-21).
-            return _run_from_state(
-                state,
-                False,
-                "resume waiting-accept (L-21)",
-                state.get("hi") or "L-21",
-                memory_root=memory_root,
-            )
+            return _resume_plan(state, path, memory_root)
         if "sysupgrade" in declared:
             event = {"kind": "sysupgrade"}
             return _plan_event(
@@ -724,26 +856,13 @@ def tick(
 
 
 def _plan_event(event, state, path, notify_dir, memory_root):
-    rounds = int(state.get("rounds") or 0)
-    if rounds >= MAX_ROUNDS:
-        reason = "round cap pauses (L-21)"
-        payload = _hi14_payload(event, "L-21")
-        notify = _write_notify(payload, notify_dir)
-        state["status"] = "paused"
-        state["reason"] = reason
-        state["hi"] = "L-21"
-        state["notify"] = notify
-        state["rollback"] = dict(ROLLBACK)
-        save_state(state, path)
-        return _run_from_state(
-            state,
-            True,
-            reason,
-            "L-21",
-            notify=notify,
-            rollback=state["rollback"],
-            memory_root=memory_root,
-        )
+    fp = _fingerprint(event, state)
+    count, rounds = _bump_fingerprint(state, fp)
+    if count >= SAME_GAP or rounds >= MAX_ROUNDS:
+        reason = "same-gap twice pauses (L-21); no third attempt"
+        if rounds >= MAX_ROUNDS and count < SAME_GAP:
+            reason = "round cap pauses (L-21)"
+        return _stall(state, path, event, notify_dir, memory_root, reason)
     oracles = _oracles_for(event, state)
     if not oracles:
         # No oracle set, no enactment (HI-10). Do not invent one to pass.
@@ -764,9 +883,12 @@ def _plan_event(event, state, path, notify_dir, memory_root):
     }.get(event.get("kind"), "L-21")
     asked = _asked_for(event)
     plan = _proposal(event, oracles, asked, clause)
+    fields = _handoff_fields(event, state)
+    if _hi14_complete(fields, clause):
+        state["handoff"] = fields
+        plan["handoff"] = fields
     state["status"] = "waiting-accept"
     state["proposal"] = plan
-    state["rounds"] = rounds + 1
     state["reason"] = asked
     state["hi"] = "L-21"
     state["notify"] = None

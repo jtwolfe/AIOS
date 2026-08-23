@@ -113,6 +113,37 @@ _out=$(goals) || true
 printf '%s\n' "${_out}" | grep -q '"status": "paused"' \
   || fail "unknown declared goal must restore paused: ${_out}"
 
+printf '%s\n' '{"status":"idle","declared":["sysupgrade"],"rounds":"nope"}' > "${TMP}/goals.json"
+_out=$(goals 2>"${TMP}/err") || true
+printf '%s\n' "${_out}" | grep -q '"status": "paused"' \
+  || fail "corrupt rounds must restore paused: ${_out}"
+printf '%s\n' "${_out}" | grep -q Traceback \
+  && fail "corrupt rounds traceback: ${_out}" || true
+if grep -q Traceback "${TMP}/err"; then
+  fail "corrupt rounds traceback on stderr"
+fi
+python3 - "${TMP}/goals.json" <<'PY' || fail "corrupt rounds file not rewritten paused"
+import json, sys
+doc = json.load(open(sys.argv[1], encoding="utf-8"))
+assert doc.get("status") == "paused", doc
+PY
+
+printf '%s\n' '{"status":"waiting-accept","last_gap":"fp1","gap_count":"x","proposal":{"oracles":["policy/packages-drift.sh"]}}' > "${TMP}/goals.json"
+_out=$(goals gap fp1 2>"${TMP}/err") || true
+printf '%s\n' "${_out}" | grep -q '"status": "paused"' \
+  || fail "corrupt gap_count must restore paused: ${_out}"
+if grep -q Traceback "${TMP}/err"; then
+  fail "corrupt gap_count traceback on stderr"
+fi
+
+printf '%s\n' '{"status":"idle","declared":[],"proposal":["not-a-dict"]}' > "${TMP}/goals.json"
+_out=$(goals '{"kind":"unit-failed","unit":"x.service"}' 2>"${TMP}/err") || true
+printf '%s\n' "${_out}" | grep -q '"status": "paused"' \
+  || fail "corrupt proposal must restore paused: ${_out}"
+if grep -q Traceback "${TMP}/err"; then
+  fail "corrupt proposal traceback on stderr"
+fi
+
 rm -f "${TMP}/goals.json"
 _out=$(goals '{"kind":"unit-failed","unit":"aios-checker.service","journal":"slice","commit":"abc","snapper_id":1,"clause":"HI-14"}') || true
 printf '%s\n' "${_out}" | grep -q '"status": "waiting-accept"' \
@@ -167,17 +198,17 @@ for name in os.listdir(root):
     if not os.path.isfile(path):
         continue
     doc = json.load(open(path, encoding="utf-8"))
-    for key in ("unit", "journal", "commit", "snapper", "clause"):
-        if key not in doc and key + "_id" not in doc and key + "_slice" not in doc:
-            # snapper_id / journal_slice aliases are also written
-            pass
-    if "unit" in doc and ("journal" in doc or "journal_slice" in doc) \
-            and ("commit" in doc or "state_commit" in doc) \
-            and ("snapper" in doc or "snapper_id" in doc) \
-            and "clause" in doc:
+    journal = doc.get("journal") or doc.get("journal_slice")
+    commit = doc.get("commit") or doc.get("state_commit")
+    snapper = doc.get("snapper")
+    if snapper is None:
+        snapper = doc.get("snapper_id")
+    unit = doc.get("unit") or doc.get("executable")
+    clause = doc.get("clause")
+    if unit and journal and commit and snapper not in (None, 0, "0", "") and clause:
         found += 1
 if found < 1:
-    raise SystemExit("no HI-14 payload")
+    raise SystemExit("no complete HI-14 payload")
 PY
 
 _third=$(goals gap oracle-gap-1) || true
@@ -207,6 +238,14 @@ printf '%s\n' "${_out}" | grep -q 'L-21' \
   || fail "infra must quote L-21: ${_out}"
 printf '%s\n' "${_out}" | grep -q '"proposal": null' \
   || fail "infra must not invent a proposal: ${_out}"
+printf '%s\n' "${_out}" | grep -q '"notify": null' \
+  || fail "infra without handoff must not write a placeholder notify: ${_out}"
+python3 - "${TMP}/goals.json" <<'PY' || fail "infra left proposal on disk"
+import json, sys
+doc = json.load(open(sys.argv[1], encoding="utf-8"))
+assert doc.get("proposal") is None, doc
+assert doc.get("status") == "paused", doc
+PY
 
 rm -f "${TMP}/goals.json"
 _out=$(goals '{"kind":"work-runtime"}') || true
@@ -284,6 +323,66 @@ oracles = (doc.get("proposal") or {}).get("oracles") or []
 assert oracles == ["policy/packages-drift.sh"], oracles
 assert "true" not in oracles
 PY
+
+rm -f "${TMP}/goals.json"
+_out=$(goals '{"kind":"unit-failed","unit":"x.service","oracles":["/usr/bin/true"]}') || true
+printf '%s\n' "${_out}" | grep -q '/usr/bin/true' \
+  && fail "/usr/bin/true is not an oracle: ${_out}" || true
+printf '%s\n' "${_out}" | grep -q 'policy/hi-14-failure-handoff.sh' \
+  || fail "/usr/bin/true must fall through to named oracles: ${_out}"
+printf '%s\n' "${_out}" | grep -q '"status": "waiting-accept"' \
+  || fail "/usr/bin/true must not block named repair: ${_out}"
+rm -f "${TMP}/goals.json"
+_out=$(goals '{"kind":"unit-failed","unit":"x.service","oracles":["True"]}') || true
+printf '%s\n' "${_out}" | grep -q '"True"' \
+  && fail "True is not an oracle: ${_out}" || true
+printf '%s\n' "${_out}" | grep -q 'policy/hi-14-failure-handoff.sh' \
+  || fail "True must fall through to named oracles: ${_out}"
+
+rm -f "${TMP}/goals.json"
+printf '%s\n' '{"status":"waiting-accept","proposal":{"oracles":[]}}' > "${TMP}/goals.json"
+_out=$(goals) || true
+printf '%s\n' "${_out}" | grep -q 'HI-10' \
+  || fail "resume empty oracles is HI-10: ${_out}"
+printf '%s\n' "${_out}" | grep -q '"paused": true' \
+  || fail "resume empty oracles must pause: ${_out}"
+printf '%s\n' "${_out}" | grep -q '"proposal": null' \
+  || fail "resume empty oracles must clear proposal: ${_out}"
+
+printf '%s\n' '{"status":"waiting-accept","proposal":{"oracles":["true"]}}' > "${TMP}/goals.json"
+_out=$(goals) || true
+printf '%s\n' "${_out}" | grep -q 'HI-10' \
+  || fail "resume true-oracle is HI-10: ${_out}"
+printf '%s\n' "${_out}" | grep -q '"paused": true' \
+  || fail "resume true-oracle must pause: ${_out}"
+
+printf '%s\n' '{"status":"verify","proposal":{"oracles":["policy/packages-drift.sh"]}}' > "${TMP}/goals.json"
+_out=$(goals) || true
+printf '%s\n' "${_out}" | grep -q '"status": "idle"' \
+  && fail "verify must not idle-and-wipe: ${_out}" || true
+printf '%s\n' "${_out}" | grep -q 'policy/packages-drift.sh' \
+  || fail "verify must keep oracles: ${_out}"
+python3 - "${TMP}/goals.json" <<'PY' || fail "verify wiped oracles on disk"
+import json, sys
+doc = json.load(open(sys.argv[1], encoding="utf-8"))
+oracles = (doc.get("proposal") or {}).get("oracles") or []
+assert "policy/packages-drift.sh" in oracles, doc
+assert doc.get("status") != "idle", doc
+PY
+
+rm -f "${TMP}/goals.json"
+_evt='{"kind":"unit-failed","unit":"flap.service","journal":"j","commit":"c","snapper_id":3,"clause":"HI-14"}'
+_out=$(goals "${_evt}") || true
+printf '%s\n' "${_out}" | grep -q '"status": "waiting-accept"' \
+  || fail "first unit-failed plans: ${_out}"
+_out=$(goals "${_evt}") || true
+printf '%s\n' "${_out}" | grep -q '"paused": true' \
+  || fail "second identical unit-failed must pause: ${_out}"
+_out=$(goals "${_evt}") || true
+printf '%s\n' "${_out}" | grep -q '"paused": true' \
+  || fail "third identical unit-failed stays paused: ${_out}"
+printf '%s\n' "${_out}" | grep -q '"status": "paused"' \
+  || fail "third identical unit-failed status paused: ${_out}"
 
 python3 - "${ROOT}/agent/aios_agent" "${MAIN}" <<'PY' || fail "constants / idle serve"
 import sys
