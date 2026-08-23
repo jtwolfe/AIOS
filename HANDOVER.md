@@ -202,7 +202,7 @@ must-close, then lock it in `docs/implementation.md` before code.
 | --- | --- |
 | Pinned Arch bootstrap tarball URL + sha256 | **P1, first hour** |
 | Version string location (`os-release` or equivalent) | P1 |
-| Exact live OS token path (mode, not readable by `aios-work`) | P4 |
+| Exact live OS token path (mode, not readable by `aios-work`) | **P4.2 locked:** `/srv/aios/state/provider/os.token` |
 | When a pattern earns a `SKILL.md` | P4 |
 | Operator username: asked vs derived from purpose | P5 |
 | How summon names the surface (`aios` vs `aios work`) | P7 |

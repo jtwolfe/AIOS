@@ -121,7 +121,7 @@ is a docs patch on this file, not a silent drift in code.
 | L-13 | Operator login | Bootstrap creates one non-root human login. After accept, `tty1` autologin is that user. No sudo to enact. They may run `/usr/lib/aios/bin/aios` (summon, status, brake). Service uids stay `nologin`. Root is recovery only. |
 | L-14 | Two surfaces | OS definition surface and work definition surface are different sessions. Summon names which. A work turn does not receive privileged tools. An OS turn does not run in `aios-work.slice`. One chat with both rights is a fail. |
 | L-15 | Workspace write set | Before any work unit is enabled, this plan and the envelope name the directories a work process may write. Slice `ReadWritePaths` equals that set plus tmp. Operator home outside the set is the approval-gated bridge. Privileged trees stay `InaccessiblePaths`. Shipping P8 while the slice only writes `/srv/aios/src/work-runtime` *and* claiming user work in `~/src` is a fail. |
-| L-16 | Work provider | The work runtime has its own provider config and secret path. The work uid cannot read the privileged agent's token. Fixture is default in the VM. Live is L-17 on a separate token file. |
+| L-16 | Work provider | The work runtime has its own provider config and secret path. The privileged OS token is `/srv/aios/state/provider/os.token` (mode `0600`, uid `aios-agent`, directory `0700`, not in git). The work uid cannot read it: `/srv/aios/state` is on work-slice `InaccessiblePaths`, and the file is owner-only. Fixture is default in the VM. Live is L-17 on a separate token file (P8.10), never this path. |
 | L-17 | Live Grok login | Same browser OAuth as Grok Build (`grok login --device-auth`): TTY prints a verification URL and user code; the human opens that URL on a **phone or other PC**, completes sign-in at `auth.x.ai` / grok.com, the box polls until confirmed. Token file mode `0600`, not in git, not in the transcript. The AIOS box does not open a local browser (no DE in v1). Refused if the envelope vetoed remotes. First live login is after envelope accept. Fixture covers the matrix. OS token and work token are different files (L-16). |
 | L-18 | Views | One named view catalog for installer, OS, work, and bots. TUI is v1. GUI is a later restyle of the **same** view ids and actions (visual similarity, identical functionality). Every action has a keyboard path. Mouse and clickable URLs (Grok Build TUI) when the terminal supports them. Serial/QEMU fixtures are keyboard-complete. |
 | L-19 | Boot seatbelts | `linux` **and** `linux-lts` always explicit. `kernel-modules-hook`. `snap-pac` pre/post. systemd-boot entries: current linux, linux-lts, previous ESP generation. ESP/UKI copy in the **same** `enact` window as snapper post. A snapper id without a matching boot image fails `boot-seatbelt.sh` (HI-06). TUI `snapper` rollback uses the previous generation, not a live USB. Partial upgrades fail `no-partial-upgrade.sh`. |
@@ -242,6 +242,7 @@ under `/srv/aios/git/`. Seeds stay at `/srv/aios/seeds/`.
 | `/srv/aios/state/bootstrap-in-progress/` | Installer recovery snapshot. |
 | `/srv/aios/state/brake` | Emergency brake flag. |
 | `/srv/aios/state/packages.txt` | `pacman -Qqe` pin. |
+| `/srv/aios/state/provider/os.token` | Live OS Grok token (L-16, P4.2). Mode `0600`, uid `aios-agent`. Not in git. Not `/home`. Not `/etc/aios` (etckeeper). Work token is a different file. |
 | `/srv/aios/seeds/` | Payload-materialised seed git objects (HI-17). |
 | `/srv/aios/src/work-runtime/` | Optional synthesis target. |
 | `/srv/aios/git/*.git` | Bare privileged repos, checker-owned. |
@@ -410,12 +411,25 @@ Skipping `work_runtime` is not a yes. Default `false`.
 The proposer talks to a model through `agent/aios_agent/provider`.
 
 - **fixture** — scripted turns under `tests/vm/fixtures/`. Default in
-  the VM harness. No network. No browser.
+  the VM harness (`AIOS_PROVIDER` unset or `fixture`; `AIOS_FIXTURE`
+  names the JSON). No network. No browser.
 - **live** — Grok device-code OAuth (L-17). TTY prints URL + user code;
   human finishes on another device; token file `0600`. Never a pasted
-  key in chat. Never required for a green mechanical test.
+  key in chat. Never `XAI_API_KEY`. Never required for a green
+  mechanical test.
+
+**Live OS token path (P4.2 lock).** `/srv/aios/state/provider/os.token`.
+Mode `0600`, owner `aios-agent:aios-agent`, directory `0700`. Gitignored
+as `/provider/` in the `state` tree — not a git object. Not `/home`.
+Not in the transcript. `/etc/aios/` is the root-owned accept-stamp
+directory and is tracked by etckeeper, so it is not the token path.
+`/srv/aios/state` is already on work-slice `InaccessiblePaths` (L-06),
+so `aios-work` cannot read the file (L-16, HI-13, HI-16). The
+work-runtime token is a different file (P8.10); sharing this path is a
+fail.
 
 The checker has no provider and must not import `aios_agent.provider`.
+`grep -n provider checker/` stays empty.
 
 ---
 
@@ -739,10 +753,11 @@ is complete even with no work runtime. Harness B, not Harness A.
 
 **Depends.** P3.
 
-**Must close.** Live key path (outside git, mode that `aios-work` cannot
-read). Skill crystallization rule (when a pattern earns a `SKILL.md`).
-Proposal schema field for wiki/man citations on pacman/systemd/btrfs/boot
-changes (empty → reject those classes).
+**Must close.** Live OS token path: **locked** at
+`/srv/aios/state/provider/os.token` (mode `0600`, uid `aios-agent`, not
+in git; `aios-work` cannot read it). Skill crystallization rule (when a
+pattern earns a `SKILL.md`). Proposal schema field for wiki/man citations
+on pacman/systemd/btrfs/boot changes (empty → reject those classes).
 
 
 **Deliverables**

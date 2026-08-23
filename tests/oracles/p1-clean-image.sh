@@ -44,6 +44,9 @@ need_file "${ENACT}"
 need_file "${AIROOTFS}/usr/lib/aios/checker/aios_checker/schema.py"
 need_file "${AIROOTFS}/usr/lib/aios/agent/aios_agent/main.py"
 need_file "${AIROOTFS}/usr/lib/aios/agent/aios_agent/deny.py"
+need_file "${AIROOTFS}/usr/lib/aios/agent/aios_agent/provider/base.py"
+need_file "${AIROOTFS}/usr/lib/aios/agent/aios_agent/provider/fixture.py"
+need_file "${AIROOTFS}/usr/lib/aios/agent/aios_agent/provider/live.py"
 SUDOERS="${AIROOTFS}/etc/sudoers.d/aios-checker-snapper"
 AGENT_SUDOERS="${AIROOTFS}/etc/sudoers.d/aios-agent-enact"
 need_file "${SUDOERS}"
@@ -221,6 +224,18 @@ fi
 if ! "${SCRIPT_DIR}/p4-enact-deny.sh"; then
   fail "p4-enact-deny"
 fi
+
+if ! "${SCRIPT_DIR}/p4-provider.sh"; then
+  fail "p4-provider"
+fi
+
+_prov=$(grep -R -n -- 'provider' "${ROOT}/checker" 2>/dev/null | head -n 1 || true)
+[ -z "${_prov}" ] || fail "checker names provider (HI-02, L-08): ${_prov}"
+grep -q '/srv/aios/state/provider/os.token' \
+  "${AIROOTFS}/usr/lib/aios/agent/aios_agent/provider/base.py" \
+  || fail "ISO agent missing P4.2 OS token lock"
+grep -q '/provider/' "${FIRSTBOOT}" \
+  || fail "firstboot must gitignore state /provider/ (L-16)"
 
 if [ "${failed}" -ne 0 ]; then
   printf 'error: P1.5 clean-image oracle failed (%s check(s))\n' "${failed}" >&2

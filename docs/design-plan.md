@@ -115,7 +115,7 @@ Canonical table remains [docs/implementation.md](implementation.md) “Locked de
 | Question | Close in |
 | --- | --- |
 | Pinned Arch bootstrap tarball URL + sha256 | **P1, first hour** |
-| Exact live OS token path | P4 |
+| Exact live OS token path | **P4.2 locked:** `/srv/aios/state/provider/os.token` |
 | When a pattern earns a `SKILL.md` | P4 |
 | Operator username: asked vs derived | P5 |
 | How summon names the surface | P7 |
@@ -853,7 +853,7 @@ Checker does not enact. A bad checker commit is refused by not merging to `main`
 
 | Question | Answer in this design |
 | --- | --- |
-| Live OS token path | **Close when P4.2 starts.** Options: [Open Questions](#open-questions). Mode such that `aios-work` cannot read it (L-16). Not in git. |
+| Live OS token path | **Locked (P4.2).** `/srv/aios/state/provider/os.token` (mode `0600`, uid `aios-agent`, directory `0700`, gitignored `/provider/`). `/srv/aios/state` is on work-slice `InaccessiblePaths`. Not `/etc/aios/` (etckeeper). Not `/home`. Not in git. Not in the transcript. Work token is a different file (L-16). |
 | When a pattern earns a `SKILL.md` | **Close when P4.3 starts.** Options: [Open Questions](#open-questions). |
 | Proposal schema field for wiki/man citations | Locked by spine: empty citations → reject pacman/systemd/btrfs/boot classes. |
 
@@ -1742,7 +1742,7 @@ Also in that directory: `envelope.draft.md`, `snapper_pre`, `step`. Recovery is 
 
 ### Secrets
 
-Token files: mode `0600`, not in git, not in the transcript. OS and work paths are different (L-16). Exact OS path is a P4 must-close. `secrets-scan.sh` fails if a token hits a repo.
+Token files: mode `0600`, not in git, not in the transcript. OS path is `/srv/aios/state/provider/os.token` (P4.2). Work path is a different file (L-16, P8.10). `secrets-scan.sh` fails if a token hits a repo.
 
 ### Brake
 
@@ -1878,7 +1878,7 @@ flowchart LR
 
 ## Open Questions
 
-Only questions the spec still leaves open. Version string and work-runtime unit type are **Resolved** below. For remaining items: phase that must close it, and options. Lock in `docs/implementation.md` before code that depends on the answer.
+Only questions the spec still leaves open. Version string, work-runtime unit type, and the live OS token path are **Resolved** below. For remaining items: phase that must close it, and options. Lock in `docs/implementation.md` before code that depends on the answer.
 
 ### Pinned Arch bootstrap tarball URL + sha256 — P1, first hour
 
@@ -1894,9 +1894,9 @@ Procedure: download once, `sha256sum`, record URL + hash in `payload/build.sh` a
 
 **Lock (L-22):** `/etc/os-release` and `/usr/lib/os-release`. Fields `NAME`, `VERSION`, `VERSION_ID`. firstboot writes them. P1 and P11 oracles grep them. Do not add `/etc/aios/version`.
 
-### Exact live OS token path — P4
+### Exact live OS token path — P4 — **Resolved** (P4.2)
 
-**Options:** a file under `/srv/aios/state/` with mode `0600` uid `aios-agent` (not in git); a file under `/etc/aios/` similarly restricted. Must be on `InaccessiblePaths` for the work slice (L-06/L-16). Must not be readable by `aios-work`. Not `/home`. Not in the transcript.
+**Lock:** `/srv/aios/state/provider/os.token`. Mode `0600`, uid `aios-agent`, directory `0700`. Gitignored as `/provider/` in the `state` tree (not a git object). `/srv/aios/state` is already on work-slice `InaccessiblePaths` (L-06/L-16). Not `/home`. Not in the transcript. `/etc/aios/` is the root-owned accept stamp and is tracked by etckeeper, so it is not the token path. The work-runtime token is a different file (P8.10).
 
 ### When a pattern earns a `SKILL.md` — P4
 

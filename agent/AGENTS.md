@@ -40,9 +40,12 @@ Python 3 stdlib only (L-01). The only root path is `/usr/lib/aios/bin/enact`
 
 ## Loop
 
-P4.1 is the unit, the deny-list, and `enact`. The provider, turn loop,
-memory ingest, and machine-goal runner are later work packages. Until
-those exist this process stays idle.
+P4.2 is the provider adapter. Fixture is the VM default (L-08). Live is
+device-code only (L-17); the OS token is `/srv/aios/state/provider/os.token`
+and `aios-work` cannot read it (L-16). The turn loop, memory ingest, and
+machine-goal runner are later work packages. Until those exist this
+process stays idle (L-21). Never synthesise the work runtime from here
+(HI-15).
 
 `enact` is Harness B: envelope accept first, then one allowlisted window.
 Harness A (payload / firstboot) must not call it. No `-Syu` in firstboot.
@@ -52,3 +55,4 @@ Harness A (payload / firstboot) must not call it. No `-Syu` in firstboot.
 - [README.md](README.md)
 - [aios_agent/deny.py](aios_agent/deny.py)
 - [aios_agent/main.py](aios_agent/main.py)
+- [aios_agent/provider/](aios_agent/provider/)

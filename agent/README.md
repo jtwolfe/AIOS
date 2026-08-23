@@ -13,8 +13,13 @@ live ISO. firstboot copies it; it is not enabled during Harness A.
 agent-writable JSON) keeps it from starting before accept even if enabled
 by mistake. Envelope accept (P5) writes that stamp and starts the unit.
 
-No provider or model client in this tree yet (P4.2). No turn loop (P4.3).
-No machine-goal runner (P4.4). No `-Syu` window (P4.5).
+Provider adapters are `aios_agent/provider` (P4.2). Fixture is the
+default; live is Grok device-code (L-17). The live OS token is
+`/srv/aios/state/provider/os.token` (mode `0600`, uid `aios-agent`, not
+in git). `aios-work` cannot read it (L-16, HI-13, HI-16). The checker
+does not import this tree (HI-02). No turn loop (P4.3). No machine-goal
+runner (P4.4). No `-Syu` window (P4.5). The unit with no arguments still
+idles (L-21).
 
 ## Deny-list
 
@@ -32,10 +37,16 @@ No machine-goal runner (P4.4). No `-Syu` window (P4.5).
 python3 /srv/aios/agent/aios_agent/main.py
 python3 /srv/aios/agent/aios_agent/main.py deny merge-main
 python3 /srv/aios/agent/aios_agent/main.py deny unit disable aios-checker.service
+python3 /srv/aios/agent/aios_agent/main.py provider path
+python3 /srv/aios/agent/aios_agent/main.py provider fixture complete FILE [TEXT]
+python3 /srv/aios/agent/aios_agent/main.py provider live login
 ```
 
 With no arguments the service idles. It does not propose. It does not
 parse intents or proposals (a malformed document must not exit the unit).
+VM tests set `AIOS_PROVIDER=fixture` and `AIOS_FIXTURE`. Live login
+prints a verification URL and user code on stderr; the token never
+appears in the transcript.
 
 ## enact
 

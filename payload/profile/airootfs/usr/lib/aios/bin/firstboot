@@ -603,6 +603,12 @@ copy_payload_into_target() {
     || die "agent main.py missing on target"
   [ -f "${TARGET}/srv/aios/agent/aios_agent/deny.py" ] \
     || die "agent deny.py missing on target"
+  [ -f "${TARGET}/srv/aios/agent/aios_agent/provider/base.py" ] \
+    || die "agent provider/base.py missing on target"
+  [ -f "${TARGET}/srv/aios/agent/aios_agent/provider/fixture.py" ] \
+    || die "agent provider/fixture.py missing on target"
+  [ -f "${TARGET}/srv/aios/agent/aios_agent/provider/live.py" ] \
+    || die "agent provider/live.py missing on target"
 }
 
 # pacstrap bind-mounts /run onto /mnt/run; teardown can drop nested L-07 mounts.
@@ -1008,8 +1014,22 @@ init_one_git() {
       || die "write ${_wt}/README.md failed"
   fi
   if [ ! -f "${_host_wt}/.gitignore" ]; then
-    printf '# Local git is the source of truth (HI-01).\n' > "${_host_wt}/.gitignore" \
-      || die "write ${_wt}/.gitignore failed"
+    if [ "${_name}" = state ]; then
+      # L-16: the live OS token must never become a git object.
+      printf '%s\n' \
+        '# Local git is the source of truth (HI-01).' \
+        '# L-16: live OS token is operator-local, never a git object.' \
+        '/provider/' \
+        > "${_host_wt}/.gitignore" \
+        || die "write ${_wt}/.gitignore failed"
+    else
+      printf '# Local git is the source of truth (HI-01).\n' > "${_host_wt}/.gitignore" \
+        || die "write ${_wt}/.gitignore failed"
+    fi
+  fi
+  if [ "${_name}" = state ]; then
+    grep -qx '/provider/' "${_host_wt}/.gitignore" \
+      || die "state .gitignore must ignore /provider/ (L-16)"
   fi
   if [ "${_name}" = envelope ]; then
     [ -f "${_host_wt}/hard-invariants.md" ] \

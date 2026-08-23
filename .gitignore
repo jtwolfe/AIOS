@@ -16,6 +16,9 @@ Thumbs.db
 minisign.key
 *.minisign.key
 *.minisig
+# L-16: live OS token is operator-local, never a git object.
+**/os.token
+**/.os.token.*
 
 # Tooling
 node_modules/
