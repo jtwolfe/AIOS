@@ -50,3 +50,6 @@ checker-owned bare repo.
 - [README.md](README.md)
 - [aios_checker/schema.py](aios_checker/schema.py)
 - [aios_checker/merge.py](aios_checker/merge.py)
+- [hooks/update](hooks/update)
+- [hooks/pre-receive](hooks/pre-receive)
+- [hooks/reference-transaction](hooks/reference-transaction)

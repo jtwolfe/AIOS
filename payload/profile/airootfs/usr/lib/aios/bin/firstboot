@@ -560,6 +560,11 @@ copy_payload_into_target() {
     || die "aios-checker.service missing on target"
   [ -f "${TARGET}/srv/aios/checker/aios_checker/schema.py" ] \
     || die "checker schema.py missing on target"
+  [ -f "${TARGET}/srv/aios/checker/hooks/update" ] \
+    && [ -f "${TARGET}/srv/aios/checker/hooks/pre-receive" ] \
+    && [ -f "${TARGET}/srv/aios/checker/hooks/reference-transaction" ] \
+    && [ -f "${TARGET}/srv/aios/checker/hooks/common.sh" ] \
+    || die "checker hook templates missing on target"
 }
 
 # pacstrap bind-mounts /run onto /mnt/run; teardown can drop nested L-07 mounts.
@@ -870,17 +875,22 @@ EOF
   [ -f "${TARGET}/srv/aios/AGENTS.md" ] || die "/srv/aios/AGENTS.md missing"
 }
 
-install_hook_stubs() {
+# L-03 / HI-03: copy checker-owned templates after the first main push.
+install_privileged_hooks() {
   _hookdir="${TARGET}/srv/aios/git/${1}.git/hooks"
+  _src="${TARGET}/srv/aios/checker/hooks"
   mkdir -p "${_hookdir}" || die "mkdir ${_hookdir} failed"
+  [ -d "${_src}" ] || die "checker hook templates missing"
+  [ -f "${_src}/common.sh" ] || die "checker hook common.sh missing"
+  cp -a "${_src}/common.sh" "${_hookdir}/common.sh" || die "copy hook common.sh failed"
+  chmod 0644 "${_hookdir}/common.sh" || die "chmod ${_hookdir}/common.sh failed"
   for _h in update pre-receive reference-transaction; do
-    cat > "${_hookdir}/${_h}" <<'EOF' || die "write git hook failed"
-#!/bin/sh
-# L-03 hook path (HI-02, HI-03).
-exit 0
-EOF
+    [ -f "${_src}/${_h}" ] || die "checker hook template ${_h} missing"
+    cp -a "${_src}/${_h}" "${_hookdir}/${_h}" || die "copy hook ${_h} failed"
     chmod 0755 "${_hookdir}/${_h}" || die "chmod ${_hookdir}/${_h} failed"
   done
+  grep -q 'proposer cannot update main (HI-03)' "${_hookdir}/common.sh" \
+    || die "${_hookdir} hooks are stubs"
 }
 
 # L-03 / HI-01: checker-owned bare git; working copy at /srv/aios/<name> with origin push.
@@ -950,11 +960,14 @@ init_one_git() {
     || die "git remote add ${_name} failed"
   arch-chroot "${TARGET}" /usr/bin/git -C "${_wt}" push -u origin main \
     || die "git push ${_name} main failed"
-  install_hook_stubs "${_name}"
+  install_privileged_hooks "${_name}"
   [ -x "${_host_bare}/hooks/update" ] \
     && [ -x "${_host_bare}/hooks/pre-receive" ] \
     && [ -x "${_host_bare}/hooks/reference-transaction" ] \
+    && [ -f "${_host_bare}/hooks/common.sh" ] \
     || die "${_bare} hook paths missing"
+  grep -q 'proposer cannot update main (HI-03)' "${_host_bare}/hooks/common.sh" \
+    || die "${_bare} hooks are stubs"
   arch-chroot "${TARGET}" /usr/bin/git -C "${_bare}" rev-parse main >/dev/null \
     || die "${_bare} has no main"
 }

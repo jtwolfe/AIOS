@@ -1,0 +1,29 @@
+#!/bin/sh
+# All ref updates, including merge.py update-ref of main (HI-03, L-03).
+set -eu
+
+HOOK_HOME=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd) \
+  || { printf '%s\n' "cannot resolve hook dir (HI-03)" >&2; exit 1; }
+[ -f "${HOOK_HOME}/common.sh" ] \
+  || { printf '%s\n' "hook common.sh missing (HI-03)" >&2; exit 1; }
+# shellcheck disable=SC1091
+. "${HOOK_HOME}/common.sh"
+
+[ "$#" -ge 1 ] || deny "reference-transaction requires a state (HI-03)"
+case "$1" in
+  committed|aborted)
+    exit 0
+    ;;
+  prepared)
+    ;;
+  *)
+    deny "unknown reference-transaction state (HI-03)"
+    ;;
+esac
+
+while read -r old new ref extra || [ -n "${old:-}" ]; do
+  [ -n "${old:-}" ] || continue
+  [ -n "${new:-}" ] && [ -n "${ref:-}" ] || deny "malformed ref update (HI-03)"
+  check_ref_update "${old}" "${new}" "${ref}"
+done
+exit 0

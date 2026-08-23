@@ -40,6 +40,14 @@ live ISO.
 Only uid `aios-checker` may fast-forward or squash-merge to `main`.
 `merge` updates `refs/heads/main` on `/srv/aios/git/<name>.git`.
 
+## Hooks
+
+`hooks/{update,pre-receive,reference-transaction}` (plus `common.sh`) are
+installed on every privileged bare repo at firstboot (L-03). They deny
+`aios-agent` on `refs/heads/main`, deny force-push of published refs
+(HI-03), and restrict the agent to `refs/heads/agent/*`. Only uid
+`aios-checker` may fast-forward `main`.
+
 ## Driver
 
 ```

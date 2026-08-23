@@ -1,0 +1,14 @@
+#!/bin/sh
+# receive-pack per-ref gate (HI-03, L-03).
+set -eu
+
+HOOK_HOME=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd) \
+  || { printf '%s\n' "cannot resolve hook dir (HI-03)" >&2; exit 1; }
+[ -f "${HOOK_HOME}/common.sh" ] \
+  || { printf '%s\n' "hook common.sh missing (HI-03)" >&2; exit 1; }
+# shellcheck disable=SC1091
+. "${HOOK_HOME}/common.sh"
+
+[ "$#" -eq 3 ] || deny "update hook requires ref old new (HI-03)"
+check_ref_update "$2" "$3" "$1"
+exit 0
