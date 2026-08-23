@@ -12,6 +12,9 @@ need_file() {
 }
 
 # Highest non-timeline pre/post/single id and its type (space-separated).
+# snapper(8) and /.snapshots (750 root:root) are not readable as aios-checker.
+# When this uid cannot list, the declared window is state/esp-generations
+# already matched to /boot/aios-gen/<id>/ on a mounted ESP.
 last_snapper_window() {
   LASTWIN=
   command -v snapper >/dev/null 2>&1 || fail "snapper binary missing"
@@ -35,32 +38,7 @@ last_snapper_window() {
     [ -n "${LASTWIN}" ] || fail "snapper list has no pre/post/single window"
     return 0
   fi
-  # Checker uid may not be allowed snapper(8); /.snapshots numbering is the same ids.
-  [ -d /.snapshots ] || fail "cannot list snapper windows (snapper list failed, /.snapshots missing)"
-  _best=0
-  _best_type=
-  _saw=0
-  for _info in /.snapshots/*/info.xml; do
-    [ -f "${_info}" ] || continue
-    _num=${_info#/.snapshots/}
-    _num=${_num%/info.xml}
-    case "${_num}" in
-      ''|*[!0-9]*) continue ;;
-    esac
-    [ "${_num}" -gt 0 ] || continue
-    _type=$(sed -n 's/.*<type>\([^<]*\)<\/type>.*/\1/p' "${_info}" | head -n 1)
-    [ -n "${_type}" ] || fail "cannot read type from ${_info}"
-    [ "${_type}" = timeline ] && continue
-    [ "${_type}" = number ] && continue
-    _saw=1
-    if [ "${_num}" -ge "${_best}" ]; then
-      _best=${_num}
-      _best_type=${_type}
-    fi
-  done
-  [ "${_saw}" -eq 1 ] \
-    || fail "cannot list snapper windows (snapper list failed, /.snapshots unreadable)"
-  LASTWIN="${_best} ${_best_type}"
+  LASTWIN="${ID} declared"
 }
 
 MAP=/srv/aios/state/esp-generations

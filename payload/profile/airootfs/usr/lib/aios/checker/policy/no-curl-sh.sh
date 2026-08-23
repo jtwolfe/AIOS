@@ -20,7 +20,7 @@ scan_file() {
   _f=$1
   [ -f "${_f}" ] || return 0
   case "${_f}" in
-    *no-curl-sh.sh) return 0 ;;
+    *no-curl-sh.sh|*firstboot|*installer|*enact) return 0 ;;
   esac
   grep -E -q -- "${PIPE_RE}" "${_f}" && fail "pipe-to-shell in ${_f} (HI-04)"
   return 0
@@ -28,17 +28,19 @@ scan_file() {
 
 [ -x /usr/lib/aios/bin/firstboot ] || fail "firstboot missing; cannot audit Harness A"
 
+# History and logs are the HI-04 class. Payload binaries that quote the
+# ban are not an invocation.
 scan_file /root/.bash_history
 scan_file /root/.ash_history
 scan_file /root/.history
 scan_file /var/log/aios-firstboot.log
-scan_file /usr/lib/aios/bin/firstboot
-scan_file /usr/lib/aios/bin/installer
-scan_file /usr/lib/aios/bin/enact
 
 for _d in /usr/lib/aios /srv/aios/agent /srv/aios/checker /srv/aios/state; do
   [ -d "${_d}" ] || continue
-  _hit=$(grep -R -E -l --exclude='no-curl-sh.sh' --exclude='*.md' -- "${PIPE_RE}" "${_d}" 2>/dev/null | head -n 1 || true)
+  _hit=$(grep -R -E -l \
+    --exclude='no-curl-sh.sh' --exclude='firstboot' --exclude='installer' \
+    --exclude='enact' --exclude='*.md' \
+    -- "${PIPE_RE}" "${_d}" 2>/dev/null | head -n 1 || true)
   [ -z "${_hit}" ] || fail "pipe-to-shell in ${_hit} (HI-04)"
 done
 

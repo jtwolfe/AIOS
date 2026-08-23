@@ -26,7 +26,7 @@ d56893180f0f7238dee1888a0bdf61a983cee1b091bf02518bd992845575acc2  payload/profil
 40836c45bdf2074d93ce7285d150976dbe9a4f6b8f890bc86ed3a1692f4f3896  payload/profile/airootfs/usr/lib/aios/checker/aios_checker/main.py
 120c0916ca24bd50303c38ecabe58a354da3c257a25047ccd6a6e8c64b5bdf7a  payload/profile/airootfs/usr/lib/aios/checker/aios_checker/merge.py
 c65405858117af1559f83e1e22e69147d2547135595b7a392bd5dd2f03470b49  payload/profile/airootfs/usr/lib/aios/checker/aios_checker/schema.py
-aef53b7b2b5f1118ec56f8ed322c56eab8af2ef6004ede9ddc9ca341fb38e7f2  payload/profile/airootfs/usr/lib/aios/checker/policy/boot-seatbelt.sh
+cc82f844f3d2ff970af62e9b086c6121f8d288b108bfa4a20ab1abc33e216d8e  payload/profile/airootfs/usr/lib/aios/checker/policy/boot-seatbelt.sh
 3ba2640bd4aadbd2c1c5baa3adfd0b3ef2d62596c9a9d61d9aac2787a3908002  payload/profile/airootfs/usr/lib/aios/checker/policy/etckeeper-enabled.sh
 dff895d4bd222959656f871bd64ab6be8cfa0d2936a7200fd3319069e5601ee8  payload/profile/airootfs/usr/lib/aios/checker/policy/hi-01-git-source.sh
 222a8271893ae354531febfc0a026a0e4cbdb2e3e2b8fd213a870a1e961bb971  payload/profile/airootfs/usr/lib/aios/checker/policy/hi-02-split.sh
@@ -45,14 +45,14 @@ cff863f5917a8ef85e7e38a7d09cf91de4849f5398a5ac4d2848bb8a3b28ab8c  payload/profil
 ed6563af85ec92c2fe0931673a017eb7c27375fa9a911bc909d058562a9f1922  payload/profile/airootfs/usr/lib/aios/checker/policy/hi-15-work-default-off.sh
 8b54df906a038d7a161150448ff2385ac5b4032d1f7af8d4a24d3e93c69542dc  payload/profile/airootfs/usr/lib/aios/checker/policy/hi-16-os-privilege.sh
 019040fa8c7c82642997faa688b7455a9391c9280069049627997f4c3e9ebb8d  payload/profile/airootfs/usr/lib/aios/checker/policy/hi-17-seeds-local.sh
-66034c572e0b0759cf40c38d266c6e25e037469868599f75bd6baea5518cb53e  payload/profile/airootfs/usr/lib/aios/checker/policy/no-curl-sh.sh
+0ad6bbd270e6c8b4ddccbc456c1c85ae1244e42a3381943f65c2e455b5c7239f  payload/profile/airootfs/usr/lib/aios/checker/policy/no-curl-sh.sh
 8fda36c38ac13fd0a51419d97580e970a0c433691ea9e47163c87ab0579b0831  payload/profile/airootfs/usr/lib/aios/checker/policy/no-partial-upgrade.sh
 ef06e6305365d44648da2b320fc9760554d782f551a4d57b2b64c3172eff4e02  payload/profile/airootfs/usr/lib/aios/checker/policy/packages-drift.sh
 1b7f9940104f11a4a90b0404fd4ecb6f00b1d8cf99c23a0f71e7536060c67c1d  payload/profile/airootfs/usr/lib/aios/checker/policy/snapper-enabled.sh
 e3722a4f988a5d8942d8b42809da612965fc0d871f0623867a3d0cae5c9472ce  payload/profile/airootfs/usr/lib/aios/checker/policy/work-slice.sh
 546d914b824dadfa8726db967bddc6c07c4c241012a3275f84300d28f25abbf9  payload/profile/airootfs/usr/lib/aios/envelope/hard-invariants.md
 546d914b824dadfa8726db967bddc6c07c4c241012a3275f84300d28f25abbf9  payload/profile/airootfs/usr/lib/aios/hard-invariants.md
-888983bbadca7dd7205500bd90184748dc362e20ac2c11e8c08ae865c94b06d9  payload/profile/airootfs/usr/lib/aios/hashes.txt
+051289b60a06936bd9069dbe3145bce32d3d6b37aaf2ff77c65b99fc0aa738af  payload/profile/airootfs/usr/lib/aios/hashes.txt
 9016e60116d7d4cb81db8e67a6e1cee82bfe021433b7febb36d176fa5fa3bdcb  payload/profile/airootfs/usr/lib/aios/minisign.pub
 33ec044a92385c806b950ab40674f1a5b374a388da79eb7a93d324ad753fa095  payload/profile/airootfs/usr/lib/aios/pacstrap.x86_64
 1dfab8088c3562fa1238017fb8a0a67af26846cca6b76a0dc7546d6290153da5  payload/profile/airootfs/usr/lib/sysusers.d/aios.conf
@@ -65,7 +65,7 @@ d56893180f0f7238dee1888a0bdf61a983cee1b091bf02518bd992845575acc2  checker/README
 40836c45bdf2074d93ce7285d150976dbe9a4f6b8f890bc86ed3a1692f4f3896  checker/aios_checker/main.py
 120c0916ca24bd50303c38ecabe58a354da3c257a25047ccd6a6e8c64b5bdf7a  checker/aios_checker/merge.py
 c65405858117af1559f83e1e22e69147d2547135595b7a392bd5dd2f03470b49  checker/aios_checker/schema.py
-aef53b7b2b5f1118ec56f8ed322c56eab8af2ef6004ede9ddc9ca341fb38e7f2  checker/policy/boot-seatbelt.sh
+cc82f844f3d2ff970af62e9b086c6121f8d288b108bfa4a20ab1abc33e216d8e  checker/policy/boot-seatbelt.sh
 3ba2640bd4aadbd2c1c5baa3adfd0b3ef2d62596c9a9d61d9aac2787a3908002  checker/policy/etckeeper-enabled.sh
 dff895d4bd222959656f871bd64ab6be8cfa0d2936a7200fd3319069e5601ee8  checker/policy/hi-01-git-source.sh
 222a8271893ae354531febfc0a026a0e4cbdb2e3e2b8fd213a870a1e961bb971  checker/policy/hi-02-split.sh
@@ -84,7 +84,7 @@ cff863f5917a8ef85e7e38a7d09cf91de4849f5398a5ac4d2848bb8a3b28ab8c  checker/policy
 ed6563af85ec92c2fe0931673a017eb7c27375fa9a911bc909d058562a9f1922  checker/policy/hi-15-work-default-off.sh
 8b54df906a038d7a161150448ff2385ac5b4032d1f7af8d4a24d3e93c69542dc  checker/policy/hi-16-os-privilege.sh
 019040fa8c7c82642997faa688b7455a9391c9280069049627997f4c3e9ebb8d  checker/policy/hi-17-seeds-local.sh
-66034c572e0b0759cf40c38d266c6e25e037469868599f75bd6baea5518cb53e  checker/policy/no-curl-sh.sh
+0ad6bbd270e6c8b4ddccbc456c1c85ae1244e42a3381943f65c2e455b5c7239f  checker/policy/no-curl-sh.sh
 8fda36c38ac13fd0a51419d97580e970a0c433691ea9e47163c87ab0579b0831  checker/policy/no-partial-upgrade.sh
 ef06e6305365d44648da2b320fc9760554d782f551a4d57b2b64c3172eff4e02  checker/policy/packages-drift.sh
 1b7f9940104f11a4a90b0404fd4ecb6f00b1d8cf99c23a0f71e7536060c67c1d  checker/policy/snapper-enabled.sh
