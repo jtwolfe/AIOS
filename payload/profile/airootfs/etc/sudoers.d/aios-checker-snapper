@@ -1,0 +1,3 @@
+# HI-06: aios-checker may list snapper window ids. Not a general root shell.
+Defaults:aios-checker !requiretty
+aios-checker ALL=(root) NOPASSWD: /usr/bin/snapper --no-dbus -c root list

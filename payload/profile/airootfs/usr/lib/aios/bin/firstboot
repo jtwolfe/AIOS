@@ -542,6 +542,9 @@ copy_payload_into_target() {
     "${TARGET}/etc/systemd/system/aios-installer.service"
   copy_if_present /etc/systemd/system/aios-checker.service \
     "${TARGET}/etc/systemd/system/aios-checker.service"
+  mkdir -p "${TARGET}/etc/sudoers.d" || die "mkdir /etc/sudoers.d failed"
+  copy_if_present /etc/sudoers.d/aios-checker-snapper \
+    "${TARGET}/etc/sudoers.d/aios-checker-snapper"
   copy_if_present "${AIOS_LIB}/hard-invariants.md" \
     "${TARGET}/srv/aios/envelope/hard-invariants.md"
   copy_if_present "${AIOS_LIB}/envelope/hard-invariants.md" \
@@ -558,6 +561,15 @@ copy_payload_into_target() {
     || die "aios-installer.service missing on target"
   [ -f "${TARGET}/etc/systemd/system/aios-checker.service" ] \
     || die "aios-checker.service missing on target"
+  [ -f "${TARGET}/etc/sudoers.d/aios-checker-snapper" ] \
+    || die "aios-checker snapper sudoers missing on target"
+  chmod 0440 "${TARGET}/etc/sudoers.d/aios-checker-snapper" \
+    || die "chmod sudoers.d/aios-checker-snapper failed"
+  grep -q 'NOPASSWD: /usr/bin/snapper --no-dbus -c root list' \
+    "${TARGET}/etc/sudoers.d/aios-checker-snapper" \
+    || die "sudoers must allow only snapper list"
+  grep -q 'NOPASSWD: ALL' "${TARGET}/etc/sudoers.d/aios-checker-snapper" \
+    && die "sudoers must not grant ALL"
   [ -f "${TARGET}/srv/aios/checker/aios_checker/schema.py" ] \
     || die "checker schema.py missing on target"
   [ -f "${TARGET}/srv/aios/checker/hooks/update" ] \

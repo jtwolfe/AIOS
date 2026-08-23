@@ -38,6 +38,13 @@ need_file "${INSTALLER}"
 CHECKER_UNIT="${AIROOTFS}/etc/systemd/system/aios-checker.service"
 need_file "${CHECKER_UNIT}"
 need_file "${AIROOTFS}/usr/lib/aios/checker/aios_checker/schema.py"
+SUDOERS="${AIROOTFS}/etc/sudoers.d/aios-checker-snapper"
+need_file "${SUDOERS}"
+need_line "${SUDOERS}" \
+  "aios-checker ALL=(root) NOPASSWD: /usr/bin/snapper --no-dbus -c root list"
+if grep -q 'NOPASSWD: ALL' "${SUDOERS}" 2>/dev/null; then
+  fail "sudoers must not grant ALL"
+fi
 need_line "${CHECKER_UNIT}" "User=aios-checker"
 need_line "${CHECKER_UNIT}" "Group=aios-checker"
 need_line "${CHECKER_UNIT}" \

@@ -220,6 +220,7 @@ check_hashes() {
     'payload/profile/airootfs/usr/lib/tmpfiles.d/aios.conf$' \
     'payload/profile/airootfs/etc/systemd/system/aios-installer.service$' \
     'payload/profile/airootfs/etc/systemd/system/aios-checker.service$' \
+    'payload/profile/airootfs/etc/sudoers.d/aios-checker-snapper$' \
     'payload/profile/airootfs/usr/lib/aios/hard-invariants.md$' \
     'payload/profile/airootfs/usr/lib/aios/minisign.pub$' \
     'payload/profile/airootfs/usr/lib/aios/hashes.txt$' \
@@ -384,6 +385,15 @@ check_firstboot_payload() {
     || die "ISO checker != checker/"
   grep -q 'aios-checker.service' "${iso}/usr/lib/aios/bin/firstboot" \
     || die "firstboot must copy aios-checker.service"
+  [[ -f "${iso}/etc/sudoers.d/aios-checker-snapper" ]] \
+    || die "missing aios-checker snapper sudoers"
+  grep -q 'NOPASSWD: /usr/bin/snapper --no-dbus -c root list' \
+    "${iso}/etc/sudoers.d/aios-checker-snapper" \
+    || die "sudoers must allow only snapper list"
+  grep -q 'NOPASSWD: ALL' "${iso}/etc/sudoers.d/aios-checker-snapper" \
+    && die "sudoers must not grant ALL"
+  grep -q 'aios-checker-snapper' "${iso}/usr/lib/aios/bin/firstboot" \
+    || die "firstboot must copy aios-checker snapper sudoers"
   [[ ! -e "${iso}/etc/systemd/system/aios-firstboot.service" ]] \
     || die "aios-firstboot.service is not a named unit (HI-12)"
   grep -q 'login-program /usr/lib/aios/bin/firstboot' \
@@ -442,6 +452,8 @@ check_firstboot_payload() {
   grep -Eq '  minisign\.pub$' "${iso_hashes}" || die "ISO hashes.txt must pin minisign.pub"
   grep -Eq 'aios-installer\.service$' "${iso_hashes}" || die "ISO hashes.txt must pin installer unit"
   grep -Eq 'aios-checker\.service$' "${iso_hashes}" || die "ISO hashes.txt must pin checker unit"
+  grep -Fq 'sudoers.d/aios-checker-snapper' "${iso_hashes}" \
+    || die "ISO hashes.txt must pin aios-checker snapper sudoers"
   grep -Eq 'sysusers\.d/aios\.conf$' "${iso_hashes}" || die "ISO hashes.txt must pin sysusers"
   grep -Eq 'tmpfiles\.d/aios\.conf$' "${iso_hashes}" || die "ISO hashes.txt must pin tmpfiles"
   grep -Fq 'getty@tty1.service.d/autologin.conf' "${iso_hashes}" \
