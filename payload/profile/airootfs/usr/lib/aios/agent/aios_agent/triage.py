@@ -29,9 +29,15 @@ _CONFLICT = (
     ),
 )
 
-# Why/how/what *about* a veto is not an instruction. Trailing "?" is not.
-_ABOUT = re.compile(
+# How/what about install/pacman is not a build (Issue 3). Trailing "?" is not.
+_ABOUT_PRIV = re.compile(
     r"(?i)^(why|how|what|when|where|who|which|is |are |does )"
+)
+
+# Talk about the veto, not how to perform it (HI-07).
+_ABOUT_RULE_START = re.compile(r"(?i)^(why|is |are |does )")
+_RULE_TALK = re.compile(
+    r"(?i)\b(forbidden|allowed|allow|prohibit|illegal|veto|disallow)\b"
 )
 
 # Imperative accept, not a how-to.
@@ -65,10 +71,20 @@ def _is_question(text):
 
 
 def _about_rule(text):
-    # "can you merge…?" is an instruction; "why is merge forbidden?" is not.
+    # "why is merge forbidden?" is not an instruction.
+    # "how do I merge this to main?" is (HI-07): detect the vetoed act.
     if _PLEASE.search(text):
         return False
-    return bool(_ABOUT.match(text))
+    if not _ABOUT_RULE_START.match(text):
+        return False
+    return bool(_RULE_TALK.search(text))
+
+
+def _about_privileged(text):
+    # "how do I install neovim?" is a question, not a build.
+    if _PLEASE.search(text):
+        return False
+    return bool(_ABOUT_PRIV.match(text))
 
 
 def _conflict_hi(text):
@@ -95,7 +111,7 @@ def classify(text):
             hi=hi,
         )
 
-    if _PRIVILEGED.search(stripped) and not _about_rule(stripped):
+    if _PRIVILEGED.search(stripped) and not _about_privileged(stripped):
         return TriageResult("privileged", asked, "privileged change")
 
     if _is_question(stripped):
