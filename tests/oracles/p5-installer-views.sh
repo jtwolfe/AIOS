@@ -193,6 +193,18 @@ printf '%s\n' "${_ch}" | grep -q 'mode: installer' \
 printf '%s\n' "${_ch}" | grep -q 'actions: view brake send mode' \
   || fail "chrome actions missing: ${_ch}"
 
+_colon=$(drive ':' '::' 'view chrome' 'quit') || true
+printf '%s\n' "${_colon}" | grep -q 'list index' \
+  && fail "colon must be a blank command: ${_colon}" || true
+printf '%s\n' "${_colon}" | grep -q 'error:' \
+  && fail "colon must not print error: ${_colon}" || true
+printf '%s\n' "${_colon}" | grep -q 'view: chrome' \
+  || fail "command after colon must still run: ${_colon}"
+
+if grep -n 'sleep(3600)' "${MAIN}" >/dev/null; then
+  fail "TTY path must not sleep(3600) on EOF (L-09)"
+fi
+
 TMP=$(mktemp -d)
 trap 'rm -rf "${TMP}"' EXIT
 _br=$(
@@ -204,6 +216,113 @@ EOF
 [ -f "${TMP}/brake" ] || fail "brake must write AIOS_BRAKE"
 printf '%s\n' "${_br}" | grep -q 'brake: on' \
   || fail "brake flag missing: ${_br}"
+
+printf x > "${TMP}/brake_notdir"
+_br_fail=$(
+  AIOS_BRAKE="${TMP}/brake_notdir/nested" python3 -u "${MAIN}" <<'EOF'
+brake
+view envelope
+accept
+quit
+EOF
+) || true
+[ ! -e "${TMP}/brake_notdir/nested" ] || fail "failed brake must not create a file"
+printf '%s\n' "${_br_fail}" | grep -q 'brake: on' \
+  && fail "brake must not claim on when the file is missing: ${_br_fail}" || true
+printf '%s\n' "${_br_fail}" | grep -q 'brake failed' \
+  || fail "failed brake must report OSError: ${_br_fail}"
+printf '%s\n' "${_br_fail}" | grep -q 'envelope-decision: accepted' \
+  || fail "failed brake must not freeze writes: ${_br_fail}"
+
+python3 - "${MAIN}" <<'PY' || fail "PTY Ctrl+D/Ctrl+C must keep the TUI up (L-09)"
+import os
+import pty
+import select
+import signal
+import sys
+import time
+
+main = sys.argv[1]
+
+
+def drain(fd, deadline, needle=None):
+    buf = b""
+    while time.monotonic() < deadline:
+        remain = min(0.2, max(0.0, deadline - time.monotonic()))
+        ready, _, _ = select.select([fd], [], [], remain)
+        if not ready:
+            if needle is not None and needle in buf:
+                break
+            continue
+        try:
+            chunk = os.read(fd, 8192)
+        except OSError:
+            break
+        if not chunk:
+            break
+        buf += chunk
+        if needle is not None and needle in buf:
+            extra, _, _ = select.select([fd], [], [], 0.05)
+            if extra:
+                try:
+                    buf += os.read(fd, 8192)
+                except OSError:
+                    pass
+            break
+    return buf
+
+
+def still_running(pid):
+    wpid, status = os.waitpid(pid, os.WNOHANG)
+    if wpid == 0:
+        return True, None
+    return False, status
+
+
+pid, master = pty.fork()
+if pid == 0:
+    os.execv(sys.executable, [sys.executable, "-u", main])
+    os._exit(127)
+
+buf = b""
+try:
+    buf += drain(master, time.monotonic() + 3, b"view: questions")
+    os.write(master, b"\x04")
+    time.sleep(0.15)
+    os.write(master, b"view chrome\n")
+    buf += drain(master, time.monotonic() + 3, b"view: chrome")
+    alive, status = still_running(pid)
+    if not alive:
+        raise SystemExit("child died after Ctrl+D status=%s" % status)
+    os.write(master, b"\x03")
+    time.sleep(0.15)
+    os.write(master, b"view envelope\n")
+    buf += drain(master, time.monotonic() + 3, b"view: envelope")
+    alive, status = still_running(pid)
+    if not alive:
+        raise SystemExit("child died after Ctrl+C status=%s" % status)
+finally:
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except OSError:
+        pass
+    try:
+        os.waitpid(pid, 0)
+    except OSError:
+        pass
+    try:
+        os.close(master)
+    except OSError:
+        pass
+
+text = buf.decode("utf-8", "replace")
+if "Traceback" in text:
+    raise SystemExit("traceback on TTY: %s" % text)
+if "view: chrome" not in text:
+    raise SystemExit("Ctrl+D then view did not render: %s" % text)
+if "view: envelope" not in text:
+    raise SystemExit("Ctrl+C then view did not render: %s" % text)
+PY
 
 (cd "${ROOT}" && grep -E '^[0-9a-f]{64} ' "${HASHES}" | sha256sum -c --strict - >/dev/null) \
   || fail "sha256sum -c payload/hashes.txt --strict"

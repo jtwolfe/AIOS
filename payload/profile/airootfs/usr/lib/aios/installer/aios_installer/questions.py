@@ -1,6 +1,5 @@
 """Installer questions. Skip is not a yes (HI-15)."""
 
-# L-18 `questions`: purpose, work-runtime opt-in, operator login, vetoes.
 IDS = (
     "purpose",
     "work-runtime",
@@ -19,7 +18,6 @@ PROMPTS = {
     "remotes": "May this machine speak to remotes?",
 }
 
-# Yes/no items: only an explicit yes is yes. Skip leaves false.
 YES_NO = frozenset(("work-runtime", "remotes"))
 
 

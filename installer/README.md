@@ -15,6 +15,7 @@ Python tree is `/usr/lib/aios/installer`.
 python3 installer/aios_installer/main.py
 ```
 
-Piped stdin is a fixture. A TTY EOF idles so the unit does not drop the
-console into getty (L-09). Brake writes `/srv/aios/state/brake` (or
-`AIOS_BRAKE`) and keeps this process up (L-12).
+Piped stdin is a fixture. On a TTY, Ctrl+D and Ctrl+C keep the console;
+the unit does not exit into getty (L-09). Brake writes
+`/srv/aios/state/brake` (or `AIOS_BRAKE`) and keeps this process up
+(L-12). The brake flag is on only if that file exists.

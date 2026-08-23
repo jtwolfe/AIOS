@@ -1,4 +1,4 @@
-"""Envelope draft from answers. First compiler is P5.2."""
+"""Envelope draft from answers (L-18)."""
 
 import os
 

@@ -21,7 +21,6 @@ VIEWS = (
 
 MODE = "installer"
 BRAKE_PATH = "/srv/aios/state/brake"
-IDLE_S = 3600
 
 ACTIONS = {
     "chrome": ("view", "brake", "send", "mode"),
@@ -48,6 +47,42 @@ def _line(out, text=""):
 
 def _brake_path():
     return os.environ.get("AIOS_BRAKE") or BRAKE_PATH
+
+
+def _fresh_stdin(current):
+    # L-09: TextIOWrapper latches EOF after Ctrl+D; a new wrapper on the
+    # same tty keeps readline blocking. Do not sleep the console away.
+    opened = None
+    try:
+        fd = current.fileno()
+    except (AttributeError, OSError, ValueError):
+        fd = None
+    if fd is not None:
+        try:
+            opened = open(
+                os.dup(fd),
+                "r",
+                encoding="utf-8",
+                errors="replace",
+                closefd=True,
+            )
+        except OSError:
+            opened = None
+    if opened is None:
+        for path in ("/dev/tty", "/dev/console"):
+            try:
+                opened = open(path, "r", encoding="utf-8", errors="replace")
+                break
+            except OSError:
+                continue
+    if opened is None:
+        return current
+    if current is not opened and current is not sys.stdin:
+        try:
+            current.close()
+        except OSError:
+            pass
+    return opened
 
 
 class Session:
@@ -155,9 +190,7 @@ class Session:
         self.note_text = ""
 
     def brake(self):
-        # L-12: stop the proposer, freeze privileged writes; installer stays.
-        self.braked = True
-        self.writes_frozen = True
+        # L-12: freeze privileged writes only when the brake file exists; TUI stays.
         path = _brake_path()
         try:
             parent = os.path.dirname(path)
@@ -165,8 +198,18 @@ class Session:
                 os.makedirs(parent, exist_ok=True)
             with open(path, "w", encoding="utf-8") as fh:
                 fh.write("braked\n")
-        except OSError:
-            pass
+        except OSError as exc:
+            self.braked = False
+            self.writes_frozen = False
+            self.note_text = "brake failed: %s (L-12)" % exc
+            return
+        if not os.path.isfile(path):
+            self.braked = False
+            self.writes_frozen = False
+            self.note_text = "brake failed: missing %s (L-12)" % path
+            return
+        self.braked = True
+        self.writes_frozen = True
         self.note_text = "brake on (L-12); writes frozen; TUI stays"
 
     def send(self, text):
@@ -262,6 +305,8 @@ class Session:
             return None
         if line.startswith(":"):
             line = line[1:].strip()
+        if not line:
+            return None
         parts = line.split(None, 1)
         cmd = parts[0].lower()
         arg = parts[1] if len(parts) > 1 else ""
@@ -346,44 +391,52 @@ def serve(stdin=None, stdout=None):
         _line(stdout, "views: %s" % " ".join(VIEWS))
         sess.render(stdout)
     except BrokenPipeError:
-        return 0
+        if sess.piped:
+            return 0
+    except KeyboardInterrupt:
+        if sess.piped:
+            return 0
     while True:
         try:
-            raw = stdin.readline()
+            try:
+                raw = stdin.readline()
+            except KeyboardInterrupt:
+                if sess.piped:
+                    return 0
+                continue
+            if raw == "":
+                if sess.piped:
+                    return 0
+                nxt = _fresh_stdin(stdin)
+                if nxt is stdin:
+                    time.sleep(0.05)
+                else:
+                    stdin = nxt
+                continue
+            result = sess.handle(raw)
+            if result == "quit":
+                if sess.piped:
+                    return 0
+                sess.note_text = "installer stays up until accept (L-09)"
+            sess.render(stdout)
         except KeyboardInterrupt:
             if sess.piped:
                 return 0
             continue
-        except Exception as exc:
-            try:
-                _line(stdout, "error: %s" % exc)
-            except BrokenPipeError:
-                return 0
-            if sess.piped:
-                return 0
-            time.sleep(1)
-            continue
-        if raw == "":
-            if sess.piped:
-                return 0
-            # L-09: idle on the console; do not exit into getty.
-            time.sleep(IDLE_S)
-            continue
-        try:
-            result = sess.handle(raw)
-        except Exception as exc:
-            try:
-                _line(stdout, "error: %s" % exc)
-                sess.render(stdout)
-            except BrokenPipeError:
-                return 0
-            continue
-        if result == "quit":
-            return 0
-        try:
-            sess.render(stdout)
         except BrokenPipeError:
-            return 0
+            if sess.piped:
+                return 0
+            continue
+        except Exception as exc:
+            try:
+                _line(stdout, "error: %s" % exc)
+            except (BrokenPipeError, KeyboardInterrupt):
+                if sess.piped:
+                    return 0
+                continue
+            if sess.piped:
+                return 0
+            continue
 
 
 def main(argv=None):

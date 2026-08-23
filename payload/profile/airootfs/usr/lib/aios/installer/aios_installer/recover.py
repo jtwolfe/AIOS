@@ -1,4 +1,4 @@
-"""Recovery view (L-18). Durable snapshot files are P5.3."""
+"""Recovery view (L-18)."""
 
 from questions import format_answers
 
@@ -20,7 +20,7 @@ def render(last_step, answers, snapper_id, decision):
         "envelope-decision: %s" % (decision or "(none)"),
         "accepted-answers:",
         format_answers(answers),
-        "resume: re-present last step (durable snapshot is P5.3)",
+        "resume: re-present last step",
     ]
     return "\n".join(lines)
 
