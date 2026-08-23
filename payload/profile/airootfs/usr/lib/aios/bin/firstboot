@@ -527,6 +527,7 @@ materialise_seeds() {
 
 copy_payload_into_target() {
   mkdir -p "${TARGET}/usr/lib/aios/bin" \
+    "${TARGET}/usr/lib/aios/installer" \
     "${TARGET}/usr/lib/sysusers.d" \
     "${TARGET}/usr/lib/tmpfiles.d" \
     "${TARGET}/etc/systemd/system" \
@@ -563,9 +564,15 @@ copy_payload_into_target() {
     || die "payload agent source missing"
   cp -a "${AIOS_LIB}/agent/." "${TARGET}/srv/aios/agent/" \
     || die "copy agent source failed"
+  [ -d "${AIOS_LIB}/installer/aios_installer" ] \
+    || die "payload installer source missing"
+  cp -a "${AIOS_LIB}/installer/." "${TARGET}/usr/lib/aios/installer/" \
+    || die "copy installer source failed"
   materialise_seeds
   [ -x "${TARGET}/usr/lib/aios/bin/installer" ] \
     || die "installer missing on target"
+  [ -f "${TARGET}/usr/lib/aios/installer/aios_installer/main.py" ] \
+    || die "installer main.py missing on target"
   [ -x "${TARGET}/usr/lib/aios/bin/enact" ] \
     || die "enact missing on target"
   [ -f "${TARGET}/etc/systemd/system/aios-installer.service" ] \

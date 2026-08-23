@@ -52,6 +52,10 @@ need_file "${AIROOTFS}/usr/lib/aios/agent/aios_agent/triage.py"
 need_file "${AIROOTFS}/usr/lib/aios/agent/aios_agent/skills.py"
 need_file "${AIROOTFS}/usr/lib/aios/agent/aios_agent/memory.py"
 need_file "${AIROOTFS}/usr/lib/aios/agent/aios_agent/goals.py"
+need_file "${AIROOTFS}/usr/lib/aios/installer/aios_installer/main.py"
+need_file "${AIROOTFS}/usr/lib/aios/installer/aios_installer/questions.py"
+need_file "${AIROOTFS}/usr/lib/aios/installer/aios_installer/compiler.py"
+need_file "${AIROOTFS}/usr/lib/aios/installer/aios_installer/recover.py"
 SUDOERS="${AIROOTFS}/etc/sudoers.d/aios-checker-snapper"
 AGENT_SUDOERS="${AIROOTFS}/etc/sudoers.d/aios-agent-enact"
 need_file "${SUDOERS}"
@@ -193,6 +197,13 @@ fi
 if grep -q -- '-Syu' "${FIRSTBOOT}" "${INSTALLER}" 2>/dev/null; then
   fail "firstboot/installer contains -Syu (L-20)"
 fi
+if grep -R -q -- '-Syu' "${AIROOTFS}/usr/lib/aios/installer" 2>/dev/null; then
+  fail "installer TUI contains -Syu (L-20)"
+fi
+grep -q 'aios_installer/main.py' "${FIRSTBOOT}" \
+  || fail "firstboot must copy installer Python tree"
+grep -q 'exec /usr/bin/python3' "${INSTALLER}" \
+  || fail "bin/installer must exec python3 TUI"
 
 # secrets-scan style: no private keys, minisign secret, or .env under payload/.
 env_files=$(find "${PAYLOAD}" -type f \
@@ -256,6 +267,10 @@ fi
 
 if ! "${SCRIPT_DIR}/p4-goals.sh"; then
   fail "p4-goals"
+fi
+
+if ! "${SCRIPT_DIR}/p5-installer-views.sh"; then
+  fail "p5-installer-views"
 fi
 
 _prov=$(grep -R -n -- 'provider' "${ROOT}/checker" 2>/dev/null | head -n 1 || true)

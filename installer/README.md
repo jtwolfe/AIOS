@@ -1,0 +1,20 @@
+# installer
+
+TTY TUI in installer mode (P5.1, L-09, L-18). systemd unit
+`aios-installer.service` owns `/dev/console` on the installed disk until
+envelope accept. It is not enabled on the live ISO.
+
+Views: `chrome`, `conversation`, `questions`, `envelope`, `accept`,
+`recovery`. Conversation is one view. Keyboard-complete so a serial
+fixture can finish the path. Skip is not a yes (HI-15).
+
+On the machine the wrapper is `/usr/lib/aios/bin/installer` and the
+Python tree is `/usr/lib/aios/installer`.
+
+```
+python3 installer/aios_installer/main.py
+```
+
+Piped stdin is a fixture. A TTY EOF idles so the unit does not drop the
+console into getty (L-09). Brake writes `/srv/aios/state/brake` (or
+`AIOS_BRAKE`) and keeps this process up (L-12).

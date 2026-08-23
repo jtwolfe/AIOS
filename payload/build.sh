@@ -245,6 +245,8 @@ check_hashes() {
       payload/profile/airootfs/usr/lib/aios/checker \
       agent \
       payload/profile/airootfs/usr/lib/aios/agent \
+      installer \
+      payload/profile/airootfs/usr/lib/aios/installer \
       -type f ! -path '*/__pycache__/*' ! -name '*.pyc' | sort)
   while read -r path; do
     [[ -z "${path}" ]] && continue
@@ -464,6 +466,9 @@ check_firstboot_payload() {
     "${iso}/usr/lib/aios/bin/installer"; then
     die "firstboot/installer must not contain -Syu"
   fi
+  if grep -R -q -- '-Syu' "${iso}/usr/lib/aios/installer" 2>/dev/null; then
+    die "installer TUI must not contain -Syu"
+  fi
 
   local iso_hashes="${iso}/usr/lib/aios/hashes.txt"
   local iso_pub="${iso}/usr/lib/aios/minisign.pub"
@@ -519,7 +524,7 @@ check_firstboot_payload() {
     [[ -z "${rel}" ]] && continue
     grep -Eq "^[0-9a-f]{64}  ${rel}$" "${iso_hashes}" \
       || die "ISO hashes.txt must pin ${rel}"
-  done < <(cd "${iso}/usr/lib/aios" && find checker agent -type f ! -path '*/__pycache__/*' ! -name '*.pyc' | sort)
+  done < <(cd "${iso}/usr/lib/aios" && find checker agent installer -type f ! -path '*/__pycache__/*' ! -name '*.pyc' | sort)
   while IFS= read -r line || [[ -n "${line}" ]]; do
     [[ -z "${line}" || "${line}" == \#* ]] && continue
     hash=${line%% *}
