@@ -63,16 +63,29 @@ need_line "${AGENT_UNIT}" "User=aios-agent"
 need_line "${AGENT_UNIT}" "Group=aios-agent"
 need_line "${AGENT_UNIT}" \
   "ExecStart=/usr/bin/python3 /srv/aios/agent/aios_agent/main.py"
+need_line "${AGENT_UNIT}" \
+  "ConditionPathExists=/srv/aios/agent/aios_agent/main.py"
+need_line "${AGENT_UNIT}" \
+  "ConditionPathExists=/etc/aios/envelope-accepted"
+need_line "${AGENT_UNIT}" \
+  "ConditionPathExists=!/srv/aios/state/brake"
 grep -q 'cannot merge to main (HI-03)' "${AIROOTFS}/usr/lib/aios/agent/aios_agent/deny.py" \
   || fail "agent deny-list missing HI-03 merge-to-main"
 grep -q 'HI-06' "${AIROOTFS}/usr/lib/aios/agent/aios_agent/deny.py" \
   || fail "agent deny-list missing HI-06 seatbelts"
+grep -q 'etckeeper.timer' "${AIROOTFS}/usr/lib/aios/agent/aios_agent/deny.py" \
+  || fail "agent deny-list missing etckeeper"
 grep -q 'partial pacman is not allowlisted' "${ENACT}" \
   || fail "enact allowlist missing partial-pacman refusal"
-grep -q 'refuse to' "${ENACT}" \
-  || fail "enact allowlist missing HI-06 unit refusal"
-grep -qi 'does not curl' "${ENACT}" \
-  || fail "enact must refuse curl (HI-04, L-20)"
+grep -q 'syu window is not this phase (P4.5)' "${ENACT}" \
+  || fail "enact cmd_syu must die closed (P4.5)"
+grep -Fq 'syu|snapper-pre|snapper-post|bootctl|unit' "${ENACT}" \
+  || fail "enact allowlist verbs missing"
+grep -q 'ACCEPT_STAMP=/etc/aios/envelope-accepted' "${ENACT}" \
+  || fail "enact must gate on root-owned accept stamp (L-20)"
+if grep -q wheel "${AIROOTFS}/usr/lib/sysusers.d/aios.conf" 2>/dev/null; then
+  fail "sysusers must not put aios uids in wheel"
+fi
 [ -d "${AIROOTFS}/etc/systemd/system" ] || fail "missing airootfs systemd/system"
 
 # No DE / display-manager names in the live ISO list or the installed set.
@@ -141,6 +154,10 @@ grep -q 'aios-agent.service' "${FIRSTBOOT}" \
   || fail "firstboot must copy aios-agent.service"
 grep -q 'aios-agent-enact' "${FIRSTBOOT}" \
   || fail "firstboot must copy aios-agent enact sudoers"
+grep -q 'mkdir -p "${TARGET}/etc/aios"' "${FIRSTBOOT}" \
+  || fail "firstboot must create root-owned /etc/aios"
+grep -q 'envelope-accepted must not exist before accept' "${FIRSTBOOT}" \
+  || fail "firstboot must not mint envelope-accepted (L-20)"
 
 # No aios-firstboot.service (HI-12: autologin execs the binary).
 firstboot_unit=$(find "${PAYLOAD}" -name 'aios-firstboot.service' -print 2>/dev/null || true)
@@ -199,6 +216,10 @@ phone_hits=$(find "${PAYLOAD}" -type f ! -name '*.png' ! -name '*.jpg' ! -name '
 if [ -n "${phone_hits}" ]; then
   fail "phone-like PII in payload/"
   printf '%s\n' "${phone_hits}" >&2
+fi
+
+if ! "${SCRIPT_DIR}/p4-enact-deny.sh"; then
+  fail "p4-enact-deny"
 fi
 
 if [ "${failed}" -ne 0 ]; then

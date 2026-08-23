@@ -686,7 +686,13 @@ EOF
   copy_payload_into_target
   systemd-sysusers --root="${TARGET}"
   systemd-tmpfiles --root="${TARGET}" --create \
-    --prefix=/srv/aios --prefix=/run/aios || true
+    --prefix=/srv/aios --prefix=/run/aios --prefix=/etc/aios || true
+  mkdir -p "${TARGET}/etc/aios" || die "mkdir /etc/aios failed"
+  chmod 0755 "${TARGET}/etc/aios" || die "chmod /etc/aios failed"
+  chown root:root "${TARGET}/etc/aios" || die "chown /etc/aios failed"
+  # L-20: Harness A must not mint the accept stamp (P5 writes it as root).
+  [ ! -e "${TARGET}/etc/aios/envelope-accepted" ] \
+    || die "envelope-accepted must not exist before accept (L-20)"
 
   systemctl --root="${TARGET}" enable aios-installer.service \
     || die "failed to enable aios-installer.service in the chroot"

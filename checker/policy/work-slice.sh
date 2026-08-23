@@ -60,6 +60,9 @@ printf '%s\n' "${_groups}" | grep -Eq '(^|[[:space:]])wheel($|[[:space:]])' \
   && fail "aios-work is in wheel"
 printf '%s\n' "${_groups}" | grep -Eq '(^|[[:space:]])aios-checker($|[[:space:]])' \
   && fail "aios-work shares aios-checker group (L-02)"
+_agroups=$(id -nG aios-agent 2>/dev/null || true)
+printf '%s\n' "${_agroups}" | grep -Eq '(^|[[:space:]])wheel($|[[:space:]])' \
+  && fail "aios-agent is in wheel"
 
 denied_to_work /srv/aios/envelope
 denied_to_work /srv/aios/state

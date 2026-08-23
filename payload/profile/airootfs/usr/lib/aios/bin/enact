@@ -6,7 +6,8 @@ PATH="/usr/bin:/usr/sbin:/bin:/sbin"
 export PATH
 
 BRAKE=/srv/aios/state/brake
-ANSWERS=/srv/aios/state/bootstrap-in-progress/answers.json
+# Root-owned; not in an aios-agent worktree (L-20). P5 writes this at accept.
+ACCEPT_STAMP=/etc/aios/envelope-accepted
 
 die() {
   printf 'error: %s\n' "$*" >&2
@@ -26,12 +27,27 @@ require_not_frozen() {
   [ ! -e "${BRAKE}" ] || die "enact frozen (L-12)"
 }
 
-require_harness_b() {
-  if [ -f "${ANSWERS}" ] \
-    && grep -Eq '"accepted"[[:space:]]*:[[:space:]]*true' "${ANSWERS}"; then
-    return 0
-  fi
-  die "enact refuses until envelope accept (L-20)"
+require_accept_stamp() {
+  [ -f "${ACCEPT_STAMP}" ] || die "enact refuses until envelope accept (L-20)"
+  _uid=$(stat -c '%u' "${ACCEPT_STAMP}")
+  [ "${_uid}" = 0 ] || die "accept stamp is not root-owned (L-20)"
+  _mod=$(stat -c '%a' "${ACCEPT_STAMP}")
+  _g=$(printf '%s' "${_mod}" | awk '{print substr($0,length($0)-1,1)}')
+  _o=$(printf '%s' "${_mod}" | awk '{print substr($0,length($0),1)}')
+  case "${_g}" in
+    2|3|6|7) die "accept stamp is group-writable (L-20)" ;;
+  esac
+  case "${_o}" in
+    2|3|6|7) die "accept stamp is other-writable (L-20)" ;;
+  esac
+}
+
+normalize_unit() {
+  _u=$1
+  case "${_u}" in
+    */*) _u=${_u##*/} ;;
+  esac
+  printf '%s\n' "${_u}"
 }
 
 is_aios_unit() {
@@ -48,8 +64,40 @@ is_aios_unit() {
 is_seatbelt_unit() {
   case "$1" in
     aios-checker.service|snapper-timeline.timer|snapper-cleanup.timer) return 0 ;;
+    etckeeper.timer|etckeeper.service) return 0 ;;
   esac
   return 1
+}
+
+is_user_unit() {
+  case "$1" in
+    aios-work-runtime.service|aios-work-runtime-bots.service) return 0 ;;
+  esac
+  return 1
+}
+
+validate_unit() {
+  [ "$#" -eq 2 ] || die "unit takes ACTION UNIT only"
+  _act=$1
+  _unit=$(normalize_unit "$2")
+  case "${_act}" in
+    disable|mask|stop|restart|try-restart|reload|reload-or-restart|kill)
+      if is_seatbelt_unit "${_unit}"; then
+        die "refuse to ${_act} ${_unit} (HI-06)"
+      fi
+      if [ "${_unit}" = aios-agent.service ]; then
+        die "refuse to ${_act} aios-agent.service (L-12 human brake only)"
+      fi
+      ;;
+  esac
+  if is_user_unit "${_unit}"; then
+    die "${_unit} is a user unit (L-23)"
+  fi
+  case "${_act}" in
+    enable|disable|start|stop|mask|unmask|is-enabled|is-active) ;;
+    *) die "unit action not allowlisted: ${_act}" ;;
+  esac
+  is_aios_unit "${_unit}" || die "unit is not an aios-* unit: ${_unit}"
 }
 
 cmd_syu() {
@@ -70,37 +118,15 @@ cmd_bootctl() {
 }
 
 cmd_unit() {
-  [ "$#" -eq 2 ] || die "unit takes ACTION UNIT only"
+  validate_unit "$@"
   _act=$1
-  _unit=$2
-  case "${_act}" in
-    enable|disable|start|stop|mask|unmask|is-enabled|is-active) ;;
-    *) die "unit action not allowlisted: ${_act}" ;;
-  esac
-  case "${_act}" in
-    disable|mask|stop)
-      if is_seatbelt_unit "${_unit}"; then
-        die "refuse to ${_act} ${_unit} (HI-06)"
-      fi
-      if [ "${_unit}" = aios-agent.service ]; then
-        die "refuse to ${_act} aios-agent.service (L-12 human brake only)"
-      fi
-      ;;
-  esac
-  case "${_unit}" in
-    aios-work-runtime.service|aios-work-runtime-bots.service)
-      die "${_unit} is a user unit (L-23)"
-      ;;
-  esac
-  is_aios_unit "${_unit}" || die "unit is not an aios-* unit: ${_unit}"
+  _unit=$(normalize_unit "$2")
   exec /usr/bin/systemctl --no-ask-password "${_act}" "${_unit}"
 }
 
 main() {
-  require_root
-  require_not_frozen
   [ "$#" -ge 1 ] || usage
-  # Raw pacman argv is never allowlisted (L-04). Partial -S is a brick (HI-06).
+  # Allowlist/deny before root so the oracle can argv-parse without privilege.
   case "$1" in
     -S*|pacman)
       die "partial pacman is not allowlisted (L-04); use enact syu"
@@ -110,9 +136,14 @@ main() {
       die "not allowlisted: $1"
       ;;
   esac
-  require_harness_b
   _cmd=$1
   shift
+  if [ "${_cmd}" = unit ]; then
+    validate_unit "$@"
+  fi
+  require_root
+  require_not_frozen
+  require_accept_stamp
   case "${_cmd}" in
     syu) cmd_syu "$@" ;;
     snapper-pre) cmd_snapper_pre "$@" ;;

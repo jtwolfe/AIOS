@@ -20,7 +20,7 @@ scan_file() {
   _f=$1
   [ -f "${_f}" ] || return 0
   case "${_f}" in
-    *no-curl-sh.sh|*firstboot|*installer|*enact) return 0 ;;
+    *no-curl-sh.sh|*firstboot|*installer) return 0 ;;
   esac
   grep -E -q -- "${PIPE_RE}" "${_f}" && fail "pipe-to-shell in ${_f} (HI-04)"
   return 0
@@ -39,7 +39,7 @@ for _d in /usr/lib/aios /srv/aios/agent /srv/aios/checker /srv/aios/state; do
   [ -d "${_d}" ] || continue
   _hit=$(grep -R -E -l \
     --exclude='no-curl-sh.sh' --exclude='firstboot' --exclude='installer' \
-    --exclude='enact' --exclude='*.md' \
+    --exclude='*.md' \
     -- "${PIPE_RE}" "${_d}" 2>/dev/null | head -n 1 || true)
   [ -z "${_hit}" ] || fail "pipe-to-shell in ${_hit} (HI-04)"
 done

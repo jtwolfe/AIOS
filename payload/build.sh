@@ -393,6 +393,15 @@ check_firstboot_payload() {
   grep -q '^ExecStart=/usr/bin/python3 /srv/aios/agent/aios_agent/main.py$' \
     "${iso}/etc/systemd/system/aios-agent.service" \
     || die "aios-agent.service ExecStart must be the agent driver"
+  grep -qx 'ConditionPathExists=/srv/aios/agent/aios_agent/main.py' \
+    "${iso}/etc/systemd/system/aios-agent.service" \
+    || die "aios-agent.service must ConditionPathExists the agent driver"
+  grep -qx 'ConditionPathExists=/etc/aios/envelope-accepted' \
+    "${iso}/etc/systemd/system/aios-agent.service" \
+    || die "aios-agent.service must ConditionPathExists the accept stamp (L-20)"
+  grep -qx 'ConditionPathExists=!/srv/aios/state/brake' \
+    "${iso}/etc/systemd/system/aios-agent.service" \
+    || die "aios-agent.service must ConditionPathExists the brake (L-12)"
   [[ -f "${iso}/usr/lib/aios/checker/aios_checker/schema.py" ]] || die "missing checker schema.py"
   [[ -d "${REPO_ROOT}/checker" ]] || die "missing checker/"
   diff -qr "${REPO_ROOT}/checker" "${iso}/usr/lib/aios/checker" \
@@ -425,6 +434,9 @@ check_firstboot_payload() {
     && die "sudoers must not grant ALL"
   grep -q 'aios-agent-enact' "${iso}/usr/lib/aios/bin/firstboot" \
     || die "firstboot must copy aios-agent enact sudoers"
+  grep -q 'envelope-accepted must not exist before accept' \
+    "${iso}/usr/lib/aios/bin/firstboot" \
+    || die "firstboot must not mint envelope-accepted (L-20)"
   [[ ! -e "${iso}/etc/systemd/system/aios-firstboot.service" ]] \
     || die "aios-firstboot.service is not a named unit (HI-12)"
   grep -q 'login-program /usr/lib/aios/bin/firstboot' \

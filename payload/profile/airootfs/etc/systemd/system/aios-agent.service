@@ -3,6 +3,8 @@ Description=AIOS privileged proposer
 After=local-fs.target
 # Live ISO has no /srv/aios/agent worktree; do not start there.
 ConditionPathExists=/srv/aios/agent/aios_agent/main.py
+# L-20: installer writes this root-owned stamp at accept. Not agent-writable JSON.
+ConditionPathExists=/etc/aios/envelope-accepted
 # L-12: brake freezes the proposer until the human clears it.
 ConditionPathExists=!/srv/aios/state/brake
 

@@ -9,7 +9,9 @@ On the machine the live tree is `/srv/aios/agent`. Bare git is
 
 The unit is shipped for the installed system. It is not enabled on the
 live ISO. firstboot copies it; it is not enabled during Harness A.
-Envelope accept (P5) starts it.
+`ConditionPathExists=/etc/aios/envelope-accepted` (root-owned stamp, not
+agent-writable JSON) keeps it from starting before accept even if enabled
+by mistake. Envelope accept (P5) writes that stamp and starts the unit.
 
 No provider or model client in this tree yet (P4.2). No turn loop (P4.3).
 No machine-goal runner (P4.4). No `-Syu` window (P4.5).
@@ -21,8 +23,8 @@ No machine-goal runner (P4.4). No `-Syu` window (P4.5).
 - merge to `main` / force-push of published refs (HI-03)
 - `curl | sh` and `/usr` mutation outside pacman (HI-04)
 - partial `pacman -S` (L-04, HI-06)
-- disable / mask / stop of the checker, snapper timers, or this unit
-  (HI-06, L-12)
+- disable / mask / stop / restart / kill of the checker, snapper
+  timers, etckeeper, or this unit (HI-06, L-12)
 
 ## Driver
 
