@@ -29,10 +29,13 @@ _CONFLICT = (
     ),
 )
 
-# A question about a veto is not an instruction to violate it.
-_REQUEST = re.compile(
-    r"(?i)\b(please|go ahead|do it|install|disable|mask|enable work|synthesi)"
+# Why/how/what *about* a veto is not an instruction. Trailing "?" is not.
+_ABOUT = re.compile(
+    r"(?i)^(why|how|what|when|where|who|which|is |are |does )"
 )
+
+# Imperative accept, not a how-to.
+_PLEASE = re.compile(r"(?i)\b(please|go ahead|do it)\b")
 
 _PRIVILEGED = re.compile(
     r"(?i)(\bpacman\b|\b-syu\b|\benact\b|\bbootctl\b|\bmkinitcpio\b|"
@@ -61,6 +64,13 @@ def _is_question(text):
     return bool(_QUESTION_START.match(stripped))
 
 
+def _about_rule(text):
+    # "can you merge…?" is an instruction; "why is merge forbidden?" is not.
+    if _PLEASE.search(text):
+        return False
+    return bool(_ABOUT.match(text))
+
+
 def _conflict_hi(text):
     for pattern, hi in _CONFLICT:
         if pattern.search(text):
@@ -77,23 +87,16 @@ def classify(text):
         )
 
     hi = _conflict_hi(stripped)
-    if hi:
-        # A why/how about the rule is not an instruction (HI-07).
-        if not (_is_question(stripped) and not _REQUEST.search(stripped)):
-            return TriageResult(
-                "conflict",
-                asked,
-                "instruction vs %s" % hi,
-                hi=hi,
-            )
+    if hi and not _about_rule(stripped):
+        return TriageResult(
+            "conflict",
+            asked,
+            "instruction vs %s" % hi,
+            hi=hi,
+        )
 
-    if _PRIVILEGED.search(stripped):
-        if not (
-            _is_question(stripped)
-            and not _REQUEST.search(stripped)
-            and not re.search(r"(?i)\b(install|enact|systemctl|pacman\s+-)", stripped)
-        ):
-            return TriageResult("privileged", asked, "privileged change")
+    if _PRIVILEGED.search(stripped) and not _about_rule(stripped):
+        return TriageResult("privileged", asked, "privileged change")
 
     if _is_question(stripped):
         return TriageResult("question", asked, "not a build")

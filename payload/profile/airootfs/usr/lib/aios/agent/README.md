@@ -40,14 +40,16 @@ python3 /srv/aios/agent/aios_agent/main.py deny unit disable aios-checker.servic
 python3 /srv/aios/agent/aios_agent/main.py provider path
 python3 /srv/aios/agent/aios_agent/main.py provider fixture complete FILE [TEXT]
 python3 /srv/aios/agent/aios_agent/main.py provider live login
-python3 /srv/aios/agent/aios_agent/main.py turn [--accept] [TEXT]
+python3 /srv/aios/agent/aios_agent/main.py turn [--accept ID] [TEXT]
 ```
 
 With no arguments the service idles. It does not propose. It does not
 parse intents or proposals (a malformed document must not exit the unit).
-Turns are `turn` on the CLI. VM tests set `AIOS_PROVIDER=fixture` and
+Turns are `turn` on the CLI. `turn TEXT` plans; `turn --accept ID` enacts
+that stored plan once (L-20). VM tests set `AIOS_PROVIDER=fixture` and
 `AIOS_FIXTURE`. Optional `AIOS_MEMORY` / `AIOS_SKILLS` / `AIOS_ENACT`
-point at fixtures. Live login prints a verification URL and user code on
+point at fixtures. Memory ingest commits on `agent/<date>-memory-<id>`,
+never on `main` (HI-03, HI-11). Live login prints a verification URL and user code on
 stderr; the token never appears in the transcript. Run `provider live
 login` as `aios-agent` (the unit). Do not `sudo` it; P7.6 TUI must not
 sudo this CLI. If invoked as root, the adapter `chown`s the token to

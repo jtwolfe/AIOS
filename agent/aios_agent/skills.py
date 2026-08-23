@@ -136,6 +136,9 @@ def count_successful(root, class_name):
             continue
         if doc.get("class") != class_name:
             continue
+        # Gated P4.5 / waiting-accept are not successful moments (HI-11).
+        if doc.get("enact") != "once":
+            continue
         if doc.get("outcome") in ("verify", "verified"):
             n += 1
     return n

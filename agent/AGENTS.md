@@ -44,10 +44,12 @@ Python 3 stdlib only (L-01). The only root path is `/usr/lib/aios/bin/enact`
 
 The turn loop is CLI (`main.py turn`). Triage first: not every message is
 a build. Matching `SKILL.md` bodies are read this turn before privileged
-writes. Memory ingest is verbatim and unconditional (HI-11). The model
-does not decide what to keep. Never commit to `main` (HI-03). Never
-synthesise the work runtime from here (HI-15). Machine goals are P4.4.
-The `-Syu` window is P4.5.
+writes. Memory ingest is verbatim and unconditional (HI-11): worktree
+plus a commit on `agent/<date>-memory-<id>`. The model does not decide
+what to keep. Never commit to `main` (HI-03). Accept a stored plan id,
+not a plan generated in the same invocation (L-20). Never synthesise the
+work runtime from here (HI-15). Machine goals are P4.4. The `-Syu`
+window is P4.5.
 
 No-arg `serve()` stays idle (L-21). Fixture is the VM default (L-08).
 Live is device-code only (L-17); the OS token is

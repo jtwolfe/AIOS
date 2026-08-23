@@ -5,7 +5,7 @@ import os
 import subprocess
 import sys
 
-from memory import ingest, raise_conflict
+from memory import ingest, load_record, mark_outcome, raise_conflict
 from skills import match as match_skills
 from triage import classify
 
@@ -68,6 +68,13 @@ class Turn:
             "memory": self.memory_paths,
             "stages": self.stages,
         }
+
+
+class _Named:
+    def __init__(self, name):
+        self.name = name
+        self.body = ""
+        self.references = []
 
 
 def _oracles_from_reply(reply):
@@ -139,41 +146,182 @@ def _complete(provider, asked, skills, triage):
     return provider.complete(_messages(asked, skills, triage))
 
 
-def _remember(asked, triage, skills, plan, accept, enacted, evidence, outcome, paused, reply, hi, memory_root):
+def _remember(
+    asked,
+    triage,
+    skills,
+    plan,
+    accept,
+    enacted,
+    evidence,
+    outcome,
+    paused,
+    reply,
+    hi,
+    memory_root,
+    extra=None,
+):
     names = [skill.name for skill in skills] or ["none"]
     class_name = names[0] if names and names[0] != "none" else triage.kind
-    return ingest(
-        {
-            "asked": asked,
-            "operator": asked,
-            "human": asked,
-            "triage": triage.kind,
-            "hi": hi,
-            "skills": names,
-            "class": class_name,
-            "plan": plan,
-            "accept": accept,
-            "enact": enacted,
-            "evidence": evidence,
-            "outcome": outcome,
-            "paused": paused,
-            "reply": reply,
-            "source": "human",
-        },
-        root=memory_root,
+    rec = {
+        "asked": asked,
+        "operator": asked,
+        "human": asked,
+        "triage": triage.kind,
+        "hi": hi,
+        "skills": names,
+        "class": class_name,
+        "plan": plan,
+        "accept": accept,
+        "enact": enacted,
+        "evidence": evidence,
+        "outcome": outcome,
+        "paused": paused,
+        "reply": reply,
+        "source": "human",
+    }
+    if extra:
+        rec.update(extra)
+    return ingest(rec, root=memory_root)
+
+
+def _skills_from_rec(rec):
+    names = rec.get("skills") or []
+    out = []
+    for name in names:
+        if name and name != "none":
+            out.append(_Named(name))
+    return out
+
+
+def accept_plan(ident, memory_root=None, skills_root=None, enact_bin=None, provider=None):
+    # Accept that stored plan (L-20). Do not generate a new one this invocation.
+    rec = load_record(ident, root=memory_root)
+    paused = False
+    enacted = "skipped"
+    evidence = {"ran": []}
+    reply = ""
+    hi = None
+    if not rec or rec.get("outcome") != "waiting-accept":
+        asked = (rec or {}).get("asked") or ident
+        triage = classify(asked) if asked else classify("")
+        loaded = _skills_from_rec(rec or {})
+        plan = (rec or {}).get("plan")
+        outcome = "no-plan"
+        paused = True
+        paths = _remember(
+            asked,
+            triage,
+            loaded,
+            plan,
+            False,
+            enacted,
+            evidence,
+            outcome,
+            paused,
+            "no stored plan to accept",
+            hi,
+            memory_root,
+            extra={"plan_id": ident},
+        )
+        return Turn(
+            asked, triage, loaded, plan, False, enacted, evidence, outcome, paused, reply, paths, hi=hi
+        )
+
+    asked = rec.get("asked") or ""
+    plan = rec.get("plan") if isinstance(rec.get("plan"), dict) else {}
+    oracles = plan.get("oracles") or []
+    triage = classify(asked)
+    loaded = _skills_from_rec(rec)
+    if not loaded:
+        loaded = match_skills(asked, root=skills_root)
+    reply = rec.get("reply") or ""
+    hi = rec.get("hi")
+
+    if not oracles:
+        enacted = "refused-hi-10"
+        paused = True
+        outcome = "pause"
+        reply = (reply + "\n" if reply else "") + "no oracle set, no enactment (HI-10)"
+        paths = _remember(
+            asked,
+            triage,
+            loaded,
+            plan,
+            True,
+            enacted,
+            evidence,
+            outcome,
+            paused,
+            reply,
+            hi,
+            memory_root,
+            extra={"plan_id": rec.get("id") or ident},
+        )
+        return Turn(
+            asked, triage, loaded, plan, True, enacted, evidence, outcome, paused, reply, paths, hi=hi
+        )
+
+    enacted, ran, err = _enact_once(enact_bin)
+    evidence = {"ran": ran}
+    if err:
+        paused = True
+        outcome = "pause"
+        reply = (reply + "\n" if reply else "") + err
+    elif enacted == "once":
+        # Checker is a different process (HI-02). This uid does not merge (HI-03).
+        outcome = "verify"
+        mark_outcome(rec.get("id") or ident, "accepted", root=memory_root)
+    elif enacted == "gated-p45":
+        # Not a successful moment. Must not count toward SKILL.md (HI-11).
+        outcome = "gated-p45"
+        paused = True
+    else:
+        outcome = enacted
+        paused = True
+
+    paths = _remember(
+        asked,
+        triage,
+        loaded,
+        plan,
+        True,
+        enacted,
+        evidence,
+        outcome,
+        paused,
+        reply,
+        hi,
+        memory_root,
+        extra={"plan_id": rec.get("id") or ident},
+    )
+    return Turn(
+        asked, triage, loaded, plan, True, enacted, evidence, outcome, paused, reply, paths, hi=hi
     )
 
 
 def run_turn(
     asked,
     accept=False,
+    accept_id=None,
     provider=None,
     memory_root=None,
     skills_root=None,
     enact_bin=None,
 ):
+    ident = (accept_id if accept_id is not None else "") 
+    ident = ident if isinstance(ident, str) else str(ident)
+    ident = ident.strip()
+    if accept or ident:
+        return accept_plan(
+            ident or (asked if isinstance(asked, str) else str(asked or "")).strip(),
+            memory_root=memory_root,
+            skills_root=skills_root,
+            enact_bin=enact_bin,
+            provider=provider,
+        )
+
     asked = asked if isinstance(asked, str) else str(asked or "")
-    accept = bool(accept)
     paused = False
     reply = ""
     plan = None
@@ -228,7 +376,7 @@ def run_turn(
                 triage,
                 loaded,
                 plan,
-                accept,
+                False,
                 enacted,
                 evidence,
                 outcome,
@@ -242,7 +390,7 @@ def run_turn(
                 triage,
                 loaded,
                 plan,
-                accept,
+                False,
                 enacted,
                 evidence,
                 outcome,
@@ -262,7 +410,7 @@ def run_turn(
             asked, triage, loaded, plan, False, enacted, evidence, outcome, paused, reply, paths, hi=hi
         )
 
-    # Privileged: plan (docs) is the only write until accept (L-20).
+    # Privileged: plan (docs) is the only write this invocation (L-20).
     oracles = _oracles_from_reply(reply)
     plan = {
         "intent": {"source": "human", "asked": asked},
@@ -271,55 +419,22 @@ def run_turn(
         "enact": "not-while-planning",
         "citations": [],
     }
-    if not accept:
-        outcome = "waiting-accept"
-        paths = _remember(
-            asked, triage, loaded, plan, False, enacted, evidence, outcome, paused, reply, hi, memory_root
-        )
-        return Turn(
-            asked, triage, loaded, plan, False, enacted, evidence, outcome, paused, reply, paths, hi=hi
-        )
-
-    if not oracles:
-        enacted = "refused-hi-10"
-        paused = True
-        outcome = "pause"
-        reply = (reply + "\n" if reply else "") + "no oracle set, no enactment (HI-10)"
-        paths = _remember(
-            asked, triage, loaded, plan, True, enacted, evidence, outcome, paused, reply, hi, memory_root
-        )
-        return Turn(
-            asked, triage, loaded, plan, True, enacted, evidence, outcome, paused, reply, paths, hi=hi
-        )
-
-    enacted, ran, err = _enact_once(enact_bin)
-    evidence = {"ran": ran}
-    if err:
-        paused = True
-        outcome = "pause"
-        reply = (reply + "\n" if reply else "") + err
-    elif enacted == "once":
-        # Checker is a different process (HI-02). This uid does not merge (HI-03).
-        outcome = "verify"
-    else:
-        outcome = "verify"
-
+    outcome = "waiting-accept"
     paths = _remember(
-        asked, triage, loaded, plan, True, enacted, evidence, outcome, paused, reply, hi, memory_root
+        asked, triage, loaded, plan, False, enacted, evidence, outcome, paused, reply, hi, memory_root
     )
     return Turn(
-        asked, triage, loaded, plan, True, enacted, evidence, outcome, paused, reply, paths, hi=hi
+        asked, triage, loaded, plan, False, enacted, evidence, outcome, paused, reply, paths, hi=hi
     )
 
 
 def cmd_turn(argv):
-    accept = False
     args = list(argv)
     if args and args[0] == "--accept":
-        accept = True
-        args = args[1:]
-    text = " ".join(args)
-    turn = run_turn(text, accept=accept)
+        ident = " ".join(args[1:]).strip()
+        turn = run_turn("", accept=True, accept_id=ident)
+    else:
+        turn = run_turn(" ".join(args))
     sys.stdout.write(json.dumps(turn.as_dict(), indent=2, sort_keys=True))
     sys.stdout.write("\n")
     sys.stdout.flush()

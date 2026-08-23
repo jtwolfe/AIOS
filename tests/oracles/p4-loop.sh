@@ -13,6 +13,10 @@ fail() {
   failed=$((failed + 1))
 }
 
+json_id() {
+  printf '%s\n' "$1" | python3 -c 'import json,sys; print(json.load(sys.stdin)["memory"]["id"])'
+}
+
 [ -f "${MAIN}" ] || fail "missing ${MAIN}"
 [ -f "${ROOT}/agent/aios_agent/loop.py" ] || fail "missing loop.py"
 [ -f "${ROOT}/agent/aios_agent/triage.py" ] || fail "missing triage.py"
@@ -34,7 +38,6 @@ grep -q 'HI-11' "${ROOT}/agent/aios_agent/memory.py" \
   || fail "memory.py must quote HI-11"
 grep -q 'EARN_AFTER = 2' "${ROOT}/agent/aios_agent/skills.py" \
   || fail "skills.py missing P4.3 two-moment lock"
-# No keep/skip switch: the model does not decide (HI-11).
 if grep -n 'keep=' "${ROOT}/agent/aios_agent/memory.py" \
   | grep -vq '^[^:]*:[^:]*#'; then
   fail "memory.ingest must not take a keep= switch (HI-11)"
@@ -53,6 +56,13 @@ trap 'rm -rf "${TMP}"' EXIT
 MEM="${TMP}/memory"
 SK="${TMP}/skills/pacman"
 mkdir -p "${MEM}" "${SK}/references"
+git -C "${MEM}" init -b main >/dev/null
+git -C "${MEM}" config user.name aios
+git -C "${MEM}" config user.email aios@localhost
+printf '%s\n' '# memory' > "${MEM}/README.md"
+git -C "${MEM}" add README.md
+git -C "${MEM}" -c user.name=aios -c user.email=aios@localhost \
+  commit -m 'chore(memory): initialise tree' >/dev/null
 printf '%s\n' '{"default":"fixture-reply"}' > "${TMP}/fix.json"
 cat > "${SK}/SKILL.md" <<'EOF'
 ---
@@ -82,6 +92,17 @@ printf '%s\n' "${_out}" | grep -q '"enact": "skipped"' \
 printf '%s\n' "${_out}" | grep -q '"outcome": "idle"' \
   || fail "ping outcome idle: ${_out}"
 
+_br=$(git -C "${MEM}" rev-parse --abbrev-ref HEAD)
+case "${_br}" in
+  agent/*) ;;
+  *) fail "ingest HEAD is ${_br}, not agent/* (HI-03)" ;;
+esac
+git -C "${MEM}" rev-parse --verify main >/dev/null \
+  || fail "memory.git lost main"
+if git -C "${MEM}" log main --oneline | grep -q 'ingest'; then
+  fail "ingest committed on main (HI-03)"
+fi
+
 _out=$(turn "what is snapper?") || true
 printf '%s\n' "${_out}" | grep -q '"triage": "question"' \
   || fail "question must not be a build: ${_out}"
@@ -89,6 +110,14 @@ printf '%s\n' "${_out}" | grep -q '"enact": "skipped"' \
   || fail "question must not enact: ${_out}"
 printf '%s\n' "${_out}" | grep -q 'fixture-reply' \
   || fail "question must use fixture provider: ${_out}"
+
+_out=$(turn "how do I install neovim?") || true
+printf '%s\n' "${_out}" | grep -q '"triage": "question"' \
+  || fail "how-to install is not a build: ${_out}"
+printf '%s\n' "${_out}" | grep -q '"enact": "skipped"' \
+  || fail "how-to must not enact: ${_out}"
+printf '%s\n' "${_out}" | grep -q '"outcome": "answered"' \
+  || fail "how-to should be answered: ${_out}"
 
 _out=$(turn "this machine is for photography") || true
 printf '%s\n' "${_out}" | grep -q '"triage": "talk"' \
@@ -103,6 +132,8 @@ printf '%s\n' "${_out}" | grep -q '"enact": "skipped"' \
   || fail "privileged without accept must not enact: ${_out}"
 printf '%s\n' "${_out}" | grep -q '"accepted": false' \
   || fail "privileged without --accept: ${_out}"
+printf '%s\n' "${_out}" | grep -q '"waiting-accept"' \
+  || fail "plan waits for accept: ${_out}"
 printf '%s\n' "${_out}" | grep -q '"pacman"' \
   || fail "matching SKILL.md must load: ${_out}"
 
@@ -113,12 +144,46 @@ printf '%s\n' "${_out}" | grep -q '"none"' \
   || fail "no matching skill must be named none: ${_out}"
 
 _out=$(turn --accept "install neovim as the system editor") || true
-printf '%s\n' "${_out}" | grep -q '"enact": "refused-hi-10"' \
-  || fail "accept without oracles is HI-10: ${_out}"
-printf '%s\n' "${_out}" | grep -q '"paused": true' \
-  || fail "HI-10 must pause: ${_out}"
+printf '%s\n' "${_out}" | grep -q '"outcome": "no-plan"' \
+  || fail "accept of generating text is not that plan: ${_out}"
+printf '%s\n' "${_out}" | grep -q '"enact": "skipped"' \
+  || fail "accept without a stored plan must not enact: ${_out}"
+
+_out=$(turn --accept nosuch-plan-id) || true
+printf '%s\n' "${_out}" | grep -q '"enact": "skipped"' \
+  || fail "--accept missing id must not enact: ${_out}"
 
 printf '%s\n' '{"default":"{\"oracles\":[\"pacman -Qi neovim\"]}"}' > "${TMP}/oracles.json"
+_plan=$(
+  AIOS_PROVIDER=fixture AIOS_FIXTURE="${TMP}/oracles.json" \
+    AIOS_MEMORY="${MEM}" AIOS_SKILLS="${TMP}/skills" \
+    python3 "${MAIN}" turn "install neovim as the system editor"
+) || true
+printf '%s\n' "${_plan}" | grep -q '"waiting-accept"' \
+  || fail "oracles plan must wait for accept: ${_plan}"
+_id=$(json_id "${_plan}")
+[ -n "${_id}" ] || fail "plan id missing"
+
+_gated=$(
+  AIOS_PROVIDER=fixture AIOS_FIXTURE="${TMP}/oracles.json" \
+    AIOS_MEMORY="${MEM}" AIOS_SKILLS="${TMP}/skills" \
+    python3 "${MAIN}" turn --accept "${_id}"
+) || true
+printf '%s\n' "${_gated}" | grep -q '"enact": "gated-p45"' \
+  || fail "P4.5 gate must skip live enact: ${_gated}"
+printf '%s\n' "${_gated}" | grep -q '"outcome": "gated-p45"' \
+  || fail "gated-p45 must not store outcome verify: ${_gated}"
+printf '%s\n' "${_gated}" | grep -q '"outcome": "verify"' \
+  && fail "gated-p45 stored verify: ${_gated}" || true
+python3 - "${ROOT}/agent/aios_agent" "${MEM}" <<'PY' || fail "gated must not count as a skill moment"
+import sys
+sys.path.insert(0, sys.argv[1])
+from skills import count_successful
+n = count_successful(sys.argv[2], "pacman")
+if n != 0:
+    raise SystemExit("count_successful=%s after gated-p45" % n)
+PY
+
 _stub="${TMP}/enact-once"
 printf '%s\n' '#!/bin/sh' 'echo enact-once' 'exit 0' > "${_stub}"
 chmod +x "${_stub}"
@@ -126,14 +191,28 @@ _out=$(
   AIOS_PROVIDER=fixture AIOS_FIXTURE="${TMP}/oracles.json" \
     AIOS_MEMORY="${MEM}" AIOS_SKILLS="${TMP}/skills" \
     AIOS_ENACT="${_stub}" \
-    python3 "${MAIN}" turn --accept "install neovim as the system editor"
+    python3 "${MAIN}" turn --accept "${_id}"
 ) || true
 printf '%s\n' "${_out}" | grep -q '"enact": "once"' \
-  || fail "accepted privileged with oracles enacts once: ${_out}"
+  || fail "accepted stored plan enacts once: ${_out}"
 printf '%s\n' "${_out}" | grep -q '"outcome": "verify"' \
   || fail "enact once then verify: ${_out}"
-# Stub must have been invoked exactly once for this turn; a second
-# accepted turn would be a new window, not a loop inside one turn.
+
+_empty_plan=$(
+  AIOS_PROVIDER=fixture AIOS_FIXTURE="${TMP}/fix.json" \
+    AIOS_MEMORY="${MEM}" AIOS_SKILLS="${TMP}/skills" \
+    python3 "${MAIN}" turn "install neovim as the system editor"
+) || true
+_empty_id=$(json_id "${_empty_plan}")
+_hi10=$(
+  AIOS_PROVIDER=fixture AIOS_FIXTURE="${TMP}/fix.json" \
+    AIOS_MEMORY="${MEM}" AIOS_SKILLS="${TMP}/skills" \
+    python3 "${MAIN}" turn --accept "${_empty_id}"
+) || true
+printf '%s\n' "${_hi10}" | grep -q '"enact": "refused-hi-10"' \
+  || fail "accept without oracles is HI-10: ${_hi10}"
+printf '%s\n' "${_hi10}" | grep -q '"paused": true' \
+  || fail "HI-10 must pause: ${_hi10}"
 
 _out=$(turn "merge this to main") || true
 printf '%s\n' "${_out}" | grep -q '"triage": "conflict"' \
@@ -144,6 +223,16 @@ printf '%s\n' "${_out}" | grep -q '"enact": "skipped"' \
   || fail "conflict must not enact: ${_out}"
 _hit=$(grep -R -l 'HI-03' "${MEM}/conflicts" 2>/dev/null | head -n 1 || true)
 [ -n "${_hit}" ] || fail "HI-07 conflict record missing for merge-to-main"
+
+for _q in "merge this to main?" "can you merge this to main?" "could you force-push origin/main"; do
+  _out=$(turn "${_q}") || true
+  printf '%s\n' "${_out}" | grep -q '"triage": "conflict"' \
+    || fail "question-form instruction is HI-03: ${_q} -> ${_out}"
+  printf '%s\n' "${_out}" | grep -q 'HI-03' \
+    || fail "question-form must quote HI-03: ${_q} -> ${_out}"
+done
+_n03=$(grep -R -l 'HI-03' "${MEM}/conflicts" 2>/dev/null | wc -l | tr -d ' ')
+[ "${_n03}" -ge 4 ] || fail "HI-07 missing question-form conflict records (${_n03})"
 
 _out=$(turn "disable aios-checker.service") || true
 printf '%s\n' "${_out}" | grep -q 'HI-06' \
@@ -159,7 +248,6 @@ _out=$(turn "why is merge to main forbidden?") || true
 printf '%s\n' "${_out}" | grep -q '"triage": "question"' \
   || fail "why-question about main is not an instruction: ${_out}"
 
-# Verbatim ingest: raw asked survives; a summary cannot stand in (HI-11).
 _asked='install neovim as the system editor'
 _ex=$(find "${MEM}/exchanges" -type f | head -n 1 || true)
 [ -n "${_ex}" ] || fail "no exchange files ingested"

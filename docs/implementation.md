@@ -458,14 +458,18 @@ are raised (HI-07), not swallowed.
 
 Memory ingest is verbatim and unconditional on every completed turn
 (HI-11). The model does not choose what to keep. Discard is an
-envelope patch.
+envelope patch. Ingest writes the worktree and commits on
+`agent/<yyyy-mm-dd>-memory-<id>` (push that ref if origin exists). The
+proposer does not merge to `main` (HI-03).
 
-`enact` does not run during plan (L-20). No proposer merge to `main`
-(HI-03). Work-runtime is not synthesised here (HI-15). Machine goals
-are P4.4. The `-Syu` window is P4.5. Wiki/man citation reject is P4.6.
+`enact` does not run during plan (L-20). Accept is `turn --accept ID`
+of a stored `waiting-accept` plan, not a plan generated in the same
+invocation. Work-runtime is not synthesised here (HI-15). Machine goals
+are P4.4. The `-Syu` window is P4.5 (`gated-p45` is not a successful
+moment for the SKILL.md bar). Wiki/man citation reject is P4.6.
 
 The unit with no arguments still idles (L-21). Turns are CLI:
-`python3 …/main.py turn [--accept] [TEXT]` with the fixture provider
+`python3 …/main.py turn [--accept ID] [TEXT]` with the fixture provider
 from P4.2 (`AIOS_PROVIDER` / `AIOS_FIXTURE`).
 
 ---

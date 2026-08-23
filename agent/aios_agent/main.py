@@ -90,7 +90,7 @@ def cmd_turn(argv):
 
 def _usage():
     sys.stderr.write(
-        "usage: main.py [deny KIND [ARGS] | provider path | provider fixture complete FILE [TEXT] | provider live login | turn [--accept] [TEXT]]\n"
+        "usage: main.py [deny KIND [ARGS] | provider path | provider fixture complete FILE [TEXT] | provider live login | turn [--accept ID] [TEXT]]\n"
     )
     return 2
 
