@@ -396,7 +396,7 @@ check_firstboot_payload() {
   local iso_hashes="${iso}/usr/lib/aios/hashes.txt"
   local iso_pub="${iso}/usr/lib/aios/minisign.pub"
   local docs_hi="${REPO_ROOT}/docs/envelope/hard-invariants.md"
-  local line hash path f
+  local line hash path f rel
   [[ -f "${iso_hashes}" ]] || die "missing ISO hashes.txt"
   [[ -f "${iso_pub}" ]] || die "missing ISO minisign.pub"
   cmp -s "${PUBKEY}" "${iso_pub}" || die "ISO minisign.pub != payload/minisign.pub"
@@ -420,7 +420,6 @@ check_firstboot_payload() {
   grep -Eq '  bin/firstboot$' "${iso_hashes}" || die "ISO hashes.txt must pin firstboot"
   grep -Eq '  bin/installer$' "${iso_hashes}" || die "ISO hashes.txt must pin installer"
   grep -Eq '  bin/enact$' "${iso_hashes}" || die "ISO hashes.txt must pin enact"
-  grep -Eq '  (envelope/)?hard-invariants\.md$' "${iso_hashes}" || die "ISO hashes.txt must pin HI"
   grep -Eq '  minisign\.pub$' "${iso_hashes}" || die "ISO hashes.txt must pin minisign.pub"
   grep -Eq 'aios-installer\.service$' "${iso_hashes}" || die "ISO hashes.txt must pin installer unit"
   grep -Eq 'sysusers\.d/aios\.conf$' "${iso_hashes}" || die "ISO hashes.txt must pin sysusers"
@@ -429,6 +428,15 @@ check_firstboot_payload() {
     || die "ISO hashes.txt must pin getty@tty1 drop-in"
   grep -Fq 'serial-getty@ttyS0.service.d/autologin.conf' "${iso_hashes}" \
     || die "ISO hashes.txt must pin serial-getty drop-in"
+  for rel in hard-invariants.md envelope/hard-invariants.md; do
+    grep -Eq "^[0-9a-f]{64}  ${rel}$" "${iso_hashes}" \
+      || die "ISO hashes.txt must pin ${rel}"
+  done
+  while IFS= read -r rel; do
+    [[ -z "${rel}" ]] && continue
+    grep -Eq "^[0-9a-f]{64}  /${rel}$" "${iso_hashes}" \
+      || die "ISO hashes.txt must pin /${rel}"
+  done < <(cd "${iso}" && find srv/aios/seeds -type f | sort)
   while IFS= read -r line || [[ -n "${line}" ]]; do
     [[ -z "${line}" || "${line}" == \#* ]] && continue
     hash=${line%% *}
