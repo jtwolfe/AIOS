@@ -24,7 +24,13 @@ mkdir -p "${RUN_DIR}"
 touch "${LIVE_LOG}"
 
 this_tty() {
-  tty 2>/dev/null || true
+  _t=$(tty 2>/dev/null || true)
+  if [ -n "${_t}" ]; then
+    printf '%s\n' "${_t}"
+    return 0
+  fi
+  _t=$(readlink /proc/self/fd/0 2>/dev/null || true)
+  printf '%s\n' "${_t}"
 }
 
 # Mirror progress to the other live getty so QEMU -serial stdio and a VT both see it.
@@ -123,30 +129,34 @@ is_operator_instance() {
   if console_serial; then
     case "${_t}" in
       /dev/ttyS0|/dev/console) return 0 ;;
-      '') return 0 ;;
       *) return 1 ;;
     esac
   fi
   case "${_t}" in
-    /dev/ttyS0)
-      [ -c /dev/tty1 ] && return 1
-      return 0
-      ;;
+    /dev/ttyS0) return 1 ;;
   esac
   return 0
 }
 
-acquire_lock() {
-  exec 9>"${RUN_DIR}/firstboot.lock"
-  if is_operator_instance; then
-    if flock -n 9; then
-      return 0
-    fi
+# Non-operator getty: never take the exclusive lock (that blocked the installer).
+spectate() {
+  printf '%s\n' "firstboot is on the operator console; this TTY follows the log."
+  touch "${LIVE_LOG}"
+  if command -v tail >/dev/null 2>&1; then
+    tail -n +1 -f "${LIVE_LOG}" || true
   fi
-  printf '%s\n' "firstboot running on the operator console; this TTY waits"
-  flock 9
-  printf '%s\n' "firstboot finished on the operator console"
-  sleep 86400
+  while true; do
+    sleep 86400
+  done
+}
+
+acquire_lock() {
+  if is_operator_instance; then
+    exec 9>"${RUN_DIR}/firstboot.lock"
+    flock 9 || die "could not lock firstboot"
+    return 0
+  fi
+  spectate
   exit 0
 }
 
