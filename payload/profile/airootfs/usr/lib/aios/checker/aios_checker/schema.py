@@ -282,3 +282,77 @@ def load_proposal(path):
     except ValueError as exc:
         raise ProposalSchemaError("proposal is not JSON: %s" % exc) from exc
     return validate_proposal(raw)
+
+
+# Work → OS agent record (L-05, HI-13). Not a proposal; do not smash with
+# INTENT_SOURCES / validate_proposal (proposal intent.source=work-intent).
+WORK_INTENT_SOURCES = ("work-runtime", "work-runtime-bots")
+WORK_INTENT_REQUIRED = ("id", "source", "asked")
+WORK_INTENT_ALLOWED = WORK_INTENT_REQUIRED + (
+    "clause",
+    "suggested_oracles",
+    "paths",
+)
+
+
+class WorkIntentSchemaError(Exception):
+    """Work-intent record is not one JSON object of the L-05 shape."""
+
+
+def validate_work_intent(obj):
+    """Return a normalised work-intent dict, or raise WorkIntentSchemaError."""
+    try:
+        data = _need_dict(obj, "work-intent")
+        extra = set(data) - set(WORK_INTENT_ALLOWED)
+        if extra:
+            raise WorkIntentSchemaError(
+                "unknown field %s (HI-13)" % ", ".join(sorted(extra))
+            )
+        missing = [k for k in WORK_INTENT_REQUIRED if k not in data]
+        if missing:
+            raise WorkIntentSchemaError("missing field %s" % ", ".join(missing))
+        ident = _uuid4(data["id"])
+        source = _need_str(data["source"], "source")
+        if source not in WORK_INTENT_SOURCES:
+            raise WorkIntentSchemaError(
+                "source must be work-runtime or work-runtime-bots (HI-13)"
+            )
+        asked = _need_str(data["asked"], "asked")
+        clause = data.get("clause", None)
+        if clause is not None:
+            clause = _need_str(clause, "clause")
+        if "suggested_oracles" in data:
+            oracles = _need_str_list(data["suggested_oracles"], "suggested_oracles")
+        else:
+            oracles = []
+        if "paths" in data:
+            paths = _need_str_list(data["paths"], "paths")
+        else:
+            paths = []
+        return {
+            "id": ident,
+            "source": source,
+            "asked": asked,
+            "clause": clause,
+            "suggested_oracles": oracles,
+            "paths": paths,
+        }
+    except ProposalSchemaError as exc:
+        raise WorkIntentSchemaError(str(exc)) from exc
+
+
+def load_work_intent(path):
+    try:
+        with open(path, encoding="utf-8") as fh:
+            raw = json.load(fh)
+    except OSError as exc:
+        raise WorkIntentSchemaError("cannot read work-intent: %s" % exc) from exc
+    except UnicodeDecodeError as exc:
+        raise WorkIntentSchemaError("work-intent is not UTF-8: %s" % exc) from exc
+    except json.JSONDecodeError as exc:
+        raise WorkIntentSchemaError("work-intent is not JSON: %s" % exc) from exc
+    except RecursionError as exc:
+        raise WorkIntentSchemaError("work-intent JSON too deeply nested") from exc
+    except ValueError as exc:
+        raise WorkIntentSchemaError("work-intent is not JSON: %s" % exc) from exc
+    return validate_work_intent(raw)

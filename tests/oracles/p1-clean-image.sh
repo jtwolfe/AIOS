@@ -52,6 +52,9 @@ need_file "${AIROOTFS}/usr/lib/aios/agent/aios_agent/triage.py"
 need_file "${AIROOTFS}/usr/lib/aios/agent/aios_agent/skills.py"
 need_file "${AIROOTFS}/usr/lib/aios/agent/aios_agent/memory.py"
 need_file "${AIROOTFS}/usr/lib/aios/agent/aios_agent/goals.py"
+need_file "${AIROOTFS}/usr/lib/aios/agent/aios_agent/intent_consume.py"
+need_file "${AIROOTFS}/usr/lib/aios/intent/schema.json"
+need_file "${AIROOTFS}/etc/systemd/system/aios-intent.socket"
 need_file "${AIROOTFS}/usr/lib/aios/installer/aios_installer/main.py"
 need_file "${AIROOTFS}/usr/lib/aios/installer/aios_installer/questions.py"
 need_file "${AIROOTFS}/usr/lib/aios/installer/aios_installer/compiler.py"
@@ -82,6 +85,7 @@ need_line "${AGENT_UNIT}" \
   "ConditionPathExists=/etc/aios/envelope-accepted"
 need_line "${AGENT_UNIT}" \
   "ConditionPathExists=!/srv/aios/state/brake"
+need_line "${AGENT_UNIT}" "Sockets=aios-intent.socket"
 grep -q 'cannot merge to main (HI-03)' "${AIROOTFS}/usr/lib/aios/agent/aios_agent/deny.py" \
   || fail "agent deny-list missing HI-03 merge-to-main"
 grep -q 'HI-06' "${AIROOTFS}/usr/lib/aios/agent/aios_agent/deny.py" \
@@ -286,6 +290,10 @@ fi
 
 if ! "${SCRIPT_DIR}/p5-operator-login.sh"; then
   fail "p5-operator-login"
+fi
+
+if ! "${SCRIPT_DIR}/p6-intent-sock.sh"; then
+  fail "p6-intent-sock"
 fi
 
 if ! "${SCRIPT_DIR}/p9-vm-harness.sh"; then

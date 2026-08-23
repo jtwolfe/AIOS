@@ -1,0 +1,11 @@
+# aios-intent.socket
+[Unit]
+Description=AIOS work-intent socket
+[Socket]
+ListenStream=/run/aios/intent.sock
+SocketUser=aios-agent
+SocketGroup=aios-work
+SocketMode=0660
+Accept=no
+[Install]
+WantedBy=sockets.target

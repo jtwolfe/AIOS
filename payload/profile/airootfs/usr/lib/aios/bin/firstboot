@@ -528,6 +528,7 @@ materialise_seeds() {
 copy_payload_into_target() {
   mkdir -p "${TARGET}/usr/lib/aios/bin" \
     "${TARGET}/usr/lib/aios/installer" \
+    "${TARGET}/usr/lib/aios/intent" \
     "${TARGET}/usr/lib/sysusers.d" \
     "${TARGET}/usr/lib/tmpfiles.d" \
     "${TARGET}/etc/systemd/system" \
@@ -546,6 +547,12 @@ copy_payload_into_target() {
     "${TARGET}/etc/systemd/system/aios-checker.service"
   copy_if_present /etc/systemd/system/aios-agent.service \
     "${TARGET}/etc/systemd/system/aios-agent.service"
+  copy_if_present /etc/systemd/system/aios-intent.socket \
+    "${TARGET}/etc/systemd/system/aios-intent.socket"
+  copy_if_present "${AIOS_LIB}/intent/schema.json" \
+    "${TARGET}/usr/lib/aios/intent/schema.json"
+  copy_if_present "${AIOS_LIB}/intent/README.md" \
+    "${TARGET}/usr/lib/aios/intent/README.md"
   mkdir -p "${TARGET}/etc/sudoers.d" || die "mkdir /etc/sudoers.d failed"
   copy_if_present /etc/sudoers.d/aios-checker-snapper \
     "${TARGET}/etc/sudoers.d/aios-checker-snapper"
@@ -581,6 +588,10 @@ copy_payload_into_target() {
     || die "aios-checker.service missing on target"
   [ -f "${TARGET}/etc/systemd/system/aios-agent.service" ] \
     || die "aios-agent.service missing on target"
+  [ -f "${TARGET}/etc/systemd/system/aios-intent.socket" ] \
+    || die "aios-intent.socket missing on target"
+  [ -f "${TARGET}/usr/lib/aios/intent/schema.json" ] \
+    || die "intent schema.json missing on target"
   [ -f "${TARGET}/etc/sudoers.d/aios-checker-snapper" ] \
     || die "aios-checker snapper sudoers missing on target"
   [ -f "${TARGET}/etc/sudoers.d/aios-agent-enact" ] \
@@ -626,6 +637,8 @@ copy_payload_into_target() {
     || die "agent memory.py missing on target"
   [ -f "${TARGET}/srv/aios/agent/aios_agent/goals.py" ] \
     || die "agent goals.py missing on target"
+  [ -f "${TARGET}/srv/aios/agent/aios_agent/intent_consume.py" ] \
+    || die "agent intent_consume.py missing on target"
 }
 
 # pacstrap bind-mounts /run onto /mnt/run; teardown can drop nested L-07 mounts.
@@ -722,6 +735,8 @@ EOF
   # HI-06: checker stays enabled on the installed disk. Not enabled on the live ISO.
   systemctl --root="${TARGET}" enable aios-checker.service \
     || die "failed to enable aios-checker.service in the chroot"
+  systemctl --root="${TARGET}" enable aios-intent.socket \
+    || die "failed to enable aios-intent.socket in the chroot"
   systemctl --root="${TARGET}" mask getty@tty1.service serial-getty@ttyS0.service \
     || die "failed to mask gettys (installer must own /dev/console)"
   systemctl --root="${TARGET}" enable systemd-networkd.service systemd-resolved.service \
@@ -733,6 +748,8 @@ EOF
     || die "aios-installer.service not enabled in the chroot"
   systemctl --root="${TARGET}" is-enabled aios-checker.service >/dev/null \
     || die "aios-checker.service not enabled in the chroot"
+  systemctl --root="${TARGET}" is-enabled aios-intent.socket >/dev/null \
+    || die "aios-intent.socket not enabled in the chroot"
   # L-20: Harness A must not start the proposer. P5 starts it after accept.
   _ag=$(systemctl --root="${TARGET}" is-enabled aios-agent.service 2>/dev/null || true)
   [ "${_ag}" != enabled ] \

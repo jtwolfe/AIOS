@@ -221,6 +221,7 @@ check_hashes() {
     'payload/profile/airootfs/etc/systemd/system/aios-installer.service$' \
     'payload/profile/airootfs/etc/systemd/system/aios-checker.service$' \
     'payload/profile/airootfs/etc/systemd/system/aios-agent.service$' \
+    'payload/profile/airootfs/etc/systemd/system/aios-intent.socket$' \
     'payload/profile/airootfs/etc/sudoers.d/aios-checker-snapper$' \
     'payload/profile/airootfs/etc/sudoers.d/aios-agent-enact$' \
     'payload/profile/airootfs/usr/lib/aios/hard-invariants.md$' \
@@ -245,6 +246,8 @@ check_hashes() {
       payload/profile/airootfs/usr/lib/aios/checker \
       agent \
       payload/profile/airootfs/usr/lib/aios/agent \
+      intent \
+      payload/profile/airootfs/usr/lib/aios/intent \
       installer \
       payload/profile/airootfs/usr/lib/aios/installer \
       -type f ! -path '*/__pycache__/*' ! -name '*.pyc' | sort)
@@ -404,6 +407,30 @@ check_firstboot_payload() {
   grep -qx 'ConditionPathExists=!/srv/aios/state/brake' \
     "${iso}/etc/systemd/system/aios-agent.service" \
     || die "aios-agent.service must ConditionPathExists the brake (L-12)"
+  grep -qx 'Sockets=aios-intent.socket' \
+    "${iso}/etc/systemd/system/aios-agent.service" \
+    || die "aios-agent.service must list Sockets=aios-intent.socket (L-05)"
+  [[ -f "${iso}/etc/systemd/system/aios-intent.socket" ]] || die "missing aios-intent.socket"
+  [[ ! -e "${iso}/etc/systemd/system/sockets.target.wants/aios-intent.socket" ]] \
+    || die "aios-intent.socket must not be enabled on the live ISO"
+  grep -qx 'ListenStream=/run/aios/intent.sock' \
+    "${iso}/etc/systemd/system/aios-intent.socket" \
+    || die "aios-intent.socket ListenStream must be /run/aios/intent.sock"
+  grep -qx 'SocketUser=aios-agent' \
+    "${iso}/etc/systemd/system/aios-intent.socket" \
+    || die "aios-intent.socket SocketUser must be aios-agent"
+  grep -qx 'SocketGroup=aios-work' \
+    "${iso}/etc/systemd/system/aios-intent.socket" \
+    || die "aios-intent.socket SocketGroup must be aios-work"
+  grep -qx 'SocketMode=0660' \
+    "${iso}/etc/systemd/system/aios-intent.socket" \
+    || die "aios-intent.socket SocketMode must be 0660"
+  grep -qx 'Accept=no' \
+    "${iso}/etc/systemd/system/aios-intent.socket" \
+    || die "aios-intent.socket Accept must be no"
+  [[ -f "${iso}/usr/lib/aios/intent/schema.json" ]] || die "missing intent schema.json"
+  [[ -f "${iso}/usr/lib/aios/agent/aios_agent/intent_consume.py" ]] \
+    || die "missing agent intent_consume.py"
   [[ -f "${iso}/usr/lib/aios/checker/aios_checker/schema.py" ]] || die "missing checker schema.py"
   [[ -d "${REPO_ROOT}/checker" ]] || die "missing checker/"
   diff -qr "${REPO_ROOT}/checker" "${iso}/usr/lib/aios/checker" \
@@ -418,6 +445,10 @@ check_firstboot_payload() {
     || die "firstboot must copy aios-agent.service"
   grep -q 'enable aios-agent.service' "${iso}/usr/lib/aios/bin/firstboot" \
     && die "firstboot must not enable aios-agent.service"
+  grep -q 'aios-intent.socket' "${iso}/usr/lib/aios/bin/firstboot" \
+    || die "firstboot must copy aios-intent.socket"
+  grep -q 'enable aios-intent.socket' "${iso}/usr/lib/aios/bin/firstboot" \
+    || die "firstboot must enable aios-intent.socket on the installed disk"
   [[ -f "${iso}/etc/sudoers.d/aios-checker-snapper" ]] \
     || die "missing aios-checker snapper sudoers"
   grep -q 'NOPASSWD: /usr/bin/snapper --no-dbus -c root list' \

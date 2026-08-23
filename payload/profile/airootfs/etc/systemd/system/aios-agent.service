@@ -15,6 +15,7 @@ User=aios-agent
 Group=aios-agent
 WorkingDirectory=/srv/aios/agent
 ExecStart=/usr/bin/python3 /srv/aios/agent/aios_agent/main.py
+Sockets=aios-intent.socket
 Restart=on-failure
 
 [Install]

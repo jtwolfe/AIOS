@@ -18,6 +18,9 @@ live ISO.
 ## Schema
 
 `aios_checker/schema.py` loads `/srv/aios/state/proposals/<id>.json`.
+Work-intent records (socket, L-05) are `validate_work_intent` against
+`intent/schema.json`. That is not a proposal; `intent.source=work-intent`
+on a proposal is a different document.
 
 ```
 {

@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 """aios-agent driver: idle proposer (L-21). Turns and goals via CLI."""
 
+import select
 import sys
 import time
 
@@ -31,9 +32,36 @@ def cmd_deny(argv):
 def serve():
     # L-21: available, not always proposing. Turns are CLI (`turn`).
     # Machine goals are CLI (`goals`). Empty restart invents nothing.
-    # Do not parse inputs here; one malformed document must not exit the unit.
+    # Socket: consume + ACK only (L-05, HI-13). One bad record must not exit.
+    from intent_consume import handle_connection, listen_socket
+
+    sock = listen_socket()
     while True:
-        time.sleep(POLL_S)
+        if sock is None:
+            time.sleep(POLL_S)
+            continue
+        try:
+            ready, _, _ = select.select([sock], [], [], POLL_S)
+        except (OSError, ValueError):
+            time.sleep(POLL_S)
+            continue
+        if not ready:
+            continue
+        conn = None
+        try:
+            conn, _peer = sock.accept()
+        except OSError:
+            continue
+        try:
+            handle_connection(conn)
+        except Exception:
+            pass
+        finally:
+            if conn is not None:
+                try:
+                    conn.close()
+                except OSError:
+                    pass
 
 
 def _provider_fail(exc):

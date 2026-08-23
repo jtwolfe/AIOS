@@ -20,7 +20,10 @@ in git). `aios-work` cannot read it (L-16, HI-13, HI-16). The checker
 does not import this tree (HI-02). The turn loop is CLI (P4.3). Machine
 goals are CLI (P4.4, L-21): idle default, event-driven repair, stall
 pause. `enact syu` is the full `-Syu` window (P4.5). The unit with no
-arguments still idles (L-21).
+arguments still idles (L-21). It inherits `aios-intent.socket` (`LISTEN_FDS`)
+and ACKs one JSON work-intent per connection (L-05, HI-13). It does not
+propose from the socket and does not execute `asked`. Host oracles set
+`AIOS_INTENT_SOCK` to a temp path; they never bind `/run/aios/intent.sock`.
 
 ## Deny-list
 
@@ -45,8 +48,9 @@ python3 /srv/aios/agent/aios_agent/main.py turn [--accept ID] [TEXT]
 python3 /srv/aios/agent/aios_agent/main.py goals [tick [JSON|FILE] | gap FINGERPRINT | infra KIND]
 ```
 
-With no arguments the service idles. It does not propose. It does not
-parse intents or proposals (a malformed document must not exit the unit).
+With no arguments the service idles. It does not propose. It consumes
+work-intents from the socket (validate + ACK). A malformed document must
+not exit the unit.
 Turns are `turn` on the CLI. `turn TEXT` plans; `turn --accept ID` enacts
 that stored plan once (L-20). Machine goals are `goals` (L-21): empty
 events invent no proposal; same-gap twice or infra pauses and offers

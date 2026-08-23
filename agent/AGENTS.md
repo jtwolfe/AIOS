@@ -53,7 +53,8 @@ not a plan generated in the same invocation (L-20). Never synthesise the
 work runtime from here (HI-15). Machine goals are `goals` CLI (P4.4,
 L-21). The `-Syu` window is P4.5.
 
-No-arg `serve()` stays idle (L-21). Fixture is the VM default (L-08).
+No-arg `serve()` stays idle (L-21). It consumes `/run/aios/intent.sock`
+(ACK only; never executes `asked`; HI-13). Fixture is the VM default (L-08).
 Live is device-code only (L-17); the OS token is
 `/srv/aios/state/provider/os.token` and `aios-work` cannot read it (L-16).
 
@@ -71,3 +72,4 @@ Harness A (payload / firstboot) must not call it. No `-Syu` in firstboot.
 - [aios_agent/skills.py](aios_agent/skills.py)
 - [aios_agent/memory.py](aios_agent/memory.py)
 - [aios_agent/goals.py](aios_agent/goals.py)
+- [aios_agent/intent_consume.py](aios_agent/intent_consume.py)

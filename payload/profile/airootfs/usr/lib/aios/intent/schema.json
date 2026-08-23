@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AIOS work intent",
+  "description": "One UTF-8 JSON object on SOCK_STREAM /run/aios/intent.sock (L-05). Not a shell (HI-13).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "source", "asked"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "UUID version 4",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    },
+    "source": {
+      "type": "string",
+      "enum": ["work-runtime", "work-runtime-bots"]
+    },
+    "asked": {
+      "type": "string",
+      "minLength": 1
+    },
+    "clause": {
+      "type": ["string", "null"]
+    },
+    "suggested_oracles": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "paths": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}
