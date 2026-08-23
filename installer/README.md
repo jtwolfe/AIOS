@@ -8,6 +8,25 @@ Views: `chrome`, `conversation`, `questions`, `envelope`, `accept`,
 `recovery`. Conversation is one view. Keyboard-complete so a serial
 fixture can finish the path. Skip is not a yes (HI-15).
 
+Operator username is **asked** as the questions-view field `operator`.
+It is not derived from purpose (fragile, PII-adjacent). Skip/empty is
+not a username (same class as skip ≠ yes). Accept is refused until a
+valid POSIX portable login (`[a-z_][a-z0-9_-]*`) that is not `root`,
+`aios-agent`, `aios-checker`, or `aios-work`. Written to `answers.json`
+as `operator`.
+
+On accept of a valid login (L-13): create that one non-root human
+login; do not give it enact sudo (`aios-agent` already has the only
+enact sudoers). After accept, tty1 and serial-getty@ttyS0 autologin
+that operator (same consoles as the installer). Disable/mask
+`aios-installer.service` in the **target**, not on the live ISO.
+Service uids stay nologin. Root is recovery only. Production uses
+`useradd` for the human login (not a fourth sysuser in `aios.conf`).
+Host oracles set `AIOS_ROOT` to a destdir and write the same
+passwd/shadow/group/home/getty files when `useradd` is missing. Live
+Grok login stays after accept (L-17). Work runtime stays default off
+(HI-15).
+
 On the machine the wrapper is `/usr/lib/aios/bin/installer` and the
 Python tree is `/usr/lib/aios/installer`. Progress is snapshotted under
 `/srv/aios/state/bootstrap-in-progress` (or `AIOS_BOOTSTRAP`):

@@ -958,7 +958,7 @@ Every privileged `enact`: snapper pre → transaction → snapper post + ESP cop
 
 | Question | Answer |
 | --- | --- |
-| Operator username | **Close when P5.4 starts.** Options: asked vs derived from purpose. Written to `answers.json`. [Open Questions](#open-questions). |
+| Operator username | **Asked** (P5.4). Not derived from purpose. Skip/empty is not a username. `answers.json` key `operator`. |
 | Bots | **Not** a first-envelope question. `answers.json` has no `bots` key, or `bots` is false. |
 | Views | Installer uses L-18: `conversation`, `questions`, `envelope`, `accept`, `recovery`, `chrome`. |
 
@@ -1902,9 +1902,9 @@ Procedure: download once, `sha256sum`, record URL + hash in `payload/build.sh` a
 
 **Lock:** A class of work earns a `SKILL.md` after **two** successful verbatim moments of that class in `/srv/aios/memory`, or when the human asks on the definition surface. Promotion is a privileged proposal (intent + oracles) in `/srv/aios/skills`, reviewed by the checker for overlap and envelope contradiction. The proposing model does not curate, discard, or rewrite the skill tree (HI-11). Nested project `AGENTS.md` outranks a general skill inside that tree. Direct human instruction outranks both, except hard invariants (HI-07). Duplicated citation blobs of the same class are a checker signal that the two-moment bar is met, not a third path the model uses to invent skills.
 
-### Operator username: asked vs derived — P5
+### Operator username: asked vs derived — P5 — **Resolved** (P5.4)
 
-**Options:** asked as a first-class questions-view field; derived from purpose (fragile); default `operator` with an optional override. Must be written to `answers.json`. One non-root login (L-13). No PII.
+**Lock:** asked as the questions-view field `operator`. Not derived from purpose (fragile, PII-adjacent). Skip/empty is not a username. Accept is refused until a valid POSIX portable login `[a-z_][a-z0-9_-]*` that is not `root`, `aios-agent`, `aios-checker`, or `aios-work`. Written to `answers.json` as `operator`. One non-root login (L-13). No enact sudo.
 
 ### How summon names the surface — P7
 

@@ -1,4 +1,6 @@
-"""Installer questions. Skip is not a yes (HI-15)."""
+"""Installer questions. Skip is not a yes (HI-15). Operator is asked (L-13)."""
+
+import re
 
 IDS = (
     "purpose",
@@ -8,6 +10,12 @@ IDS = (
     "networks",
     "remotes",
 )
+
+# Service uids and root are not a human login (L-13).
+RESERVED_LOGINS = frozenset(("root", "aios-agent", "aios-checker", "aios-work"))
+# POSIX portable login. Skip/empty is not a username.
+LOGIN_RE = re.compile(r"^[a-z_][a-z0-9_-]*$")
+LOGIN_MAX = 32
 
 PROMPTS = {
     "purpose": "What is this machine for?",
@@ -33,6 +41,30 @@ def empty():
             "remotes": False,
         },
     }
+
+
+def valid_login(name):
+    if not isinstance(name, str):
+        return False
+    name = name.strip()
+    if not name or len(name) > LOGIN_MAX:
+        return False
+    if name in RESERVED_LOGINS:
+        return False
+    return LOGIN_RE.fullmatch(name) is not None
+
+
+def operator_login(answers):
+    # Asked field only. Purpose is never a username (PII-adjacent, L-13).
+    if not isinstance(answers, dict):
+        return None
+    name = answers.get("operator")
+    if not isinstance(name, str):
+        return None
+    name = name.strip()
+    if not valid_login(name):
+        return None
+    return name
 
 
 def is_yes(text):
@@ -65,6 +97,7 @@ def apply_answer(answers, qid, text):
     if qid == "purpose":
         answers["purpose"] = text or None
     elif qid == "operator":
+        # Store what was asked. Empty/skip is unset, not a derived login.
         answers["operator"] = text or None
     elif qid == "never-do":
         answers.setdefault("vetoes", {})["never_do"] = text or None

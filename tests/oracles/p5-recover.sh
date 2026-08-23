@@ -43,12 +43,6 @@ if grep -R -q -- '-Syu' "${ROOT}/installer" "${ISO_INST}" 2>/dev/null; then
   fail "installer contains -Syu (L-20)"
 fi
 
-if grep -R -Eq -- '(^|[^[:alnum:]_])useradd([^[:alnum:]_]|$)' \
-  "${ROOT}/installer" "${ISO_INST}" 2>/dev/null
-then
-  fail "installer must not create operator login (P5.4)"
-fi
-
 if grep -R -q -- 'envelope-accepted' "${ROOT}/installer" "${ISO_INST}" 2>/dev/null; then
   fail "installer must not write envelope-accepted"
 fi
@@ -65,6 +59,7 @@ python3 -m py_compile \
   "${ROOT}/installer/aios_installer/questions.py" \
   "${ROOT}/installer/aios_installer/compiler.py" \
   "${RECOVER}" \
+  "${ROOT}/installer/aios_installer/login.py" \
   || fail "py_compile failed"
 
 _pyct=$(mktemp -d)
@@ -72,6 +67,7 @@ cp -a "${ISO_INST}/aios_installer/compiler.py" \
   "${ISO_INST}/aios_installer/questions.py" \
   "${ISO_INST}/aios_installer/main.py" \
   "${ISO_INST}/aios_installer/recover.py" \
+  "${ISO_INST}/aios_installer/login.py" \
   "${_pyct}/" \
   || fail "copy ISO python for py_compile"
 python3 -m py_compile \
@@ -79,6 +75,7 @@ python3 -m py_compile \
   "${_pyct}/questions.py" \
   "${_pyct}/main.py" \
   "${_pyct}/recover.py" \
+  "${_pyct}/login.py" \
   || fail "ISO py_compile failed"
 rm -rf "${_pyct}"
 
@@ -207,17 +204,22 @@ printf '%s\n' "${_out2}" | grep -q '"bots"' \
 
 # Reject records the decision and keeps the snapshot; does not enact rollback.
 BOOT_REJ="${TMP}/reject"
-mkdir -p "${BOOT_REJ}"
+ROOT_REJ="${TMP}/root-reject"
+mkdir -p "${BOOT_REJ}" "${ROOT_REJ}"
 _rej=$(
   AIOS_BOOTSTRAP="${BOOT_REJ}" \
+    AIOS_ROOT="${ROOT_REJ}" \
     AIOS_SNAPPER_PRE="${SNAP}" \
     AIOS_HI="${HI}" \
     python3 -u "${MAIN}" <<'EOF'
+answer operator alice
 view envelope
 reject
 quit
 EOF
 ) || true
+[ ! -e "${ROOT_REJ}/etc/passwd" ] \
+  || fail "reject must not create operator login (L-13)"
 printf '%s\n' "${_rej}" | grep -q 'envelope-decision: rejected' \
   || fail "reject missing: ${_rej}"
 printf '%s\n' "${_rej}" | grep -q 'L-19' \

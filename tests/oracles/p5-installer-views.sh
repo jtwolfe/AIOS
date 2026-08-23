@@ -56,10 +56,12 @@ python3 -m py_compile \
   "${ROOT}/installer/aios_installer/questions.py" \
   "${ROOT}/installer/aios_installer/compiler.py" \
   "${ROOT}/installer/aios_installer/recover.py" \
+  "${ROOT}/installer/aios_installer/login.py" \
   "${ISO_INST}/aios_installer/main.py" \
   "${ISO_INST}/aios_installer/questions.py" \
   "${ISO_INST}/aios_installer/compiler.py" \
   "${ISO_INST}/aios_installer/recover.py" \
+  "${ISO_INST}/aios_installer/login.py" \
   || fail "py_compile failed"
 
 sh -n "${ISO_BIN}" || fail "sh -n bin/installer"
@@ -172,7 +174,15 @@ printf '%s\n' "${_skip2}" | grep -q 'work-runtime: true' \
 printf '%s\n' "${_skip2}" | grep -q 'work-runtime: false' \
   || fail "named skip must leave false: ${_skip2}"
 
-_acc=$(drive 'view envelope' 'accept' 'quit') || true
+_acc_root=$(mktemp -d "${TMP}/accroot.XXXXXX")
+_acc=$(
+  _boot=$(mktemp -d "${TMP}/boot.XXXXXX")
+  printf '%s\n' \
+    'answer operator alice' \
+    'view envelope' \
+    'accept' \
+    'quit' | AIOS_BOOTSTRAP="${_boot}" AIOS_ROOT="${_acc_root}" python3 -u "${MAIN}"
+) || true
 printf '%s\n' "${_acc}" | grep -q 'envelope-decision: accepted' \
   || fail "accept action missing: ${_acc}"
 _rej=$(drive 'view envelope' 'reject' 'quit') || true
@@ -226,10 +236,12 @@ printf '%s\n' "${_br}" | grep -q 'brake: on' \
   || fail "brake flag missing: ${_br}"
 
 printf x > "${TMP}/brake_notdir"
-mkdir -p "${TMP}/brake-fail-boot"
+mkdir -p "${TMP}/brake-fail-boot" "${TMP}/brake-fail-root"
 _br_fail=$(
   AIOS_BOOTSTRAP="${TMP}/brake-fail-boot" \
+  AIOS_ROOT="${TMP}/brake-fail-root" \
   AIOS_BRAKE="${TMP}/brake_notdir/nested" python3 -u "${MAIN}" <<'EOF'
+answer operator alice
 brake
 view envelope
 accept

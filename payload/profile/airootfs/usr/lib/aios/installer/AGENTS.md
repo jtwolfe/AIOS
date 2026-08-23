@@ -38,3 +38,6 @@ HI-13). Work runtime stays default off (HI-15).
 7. Never commit to `main`. Never force-push (HI-03).
 8. Do not import a model client (HI-02).
 9. The unit is not enabled on the live ISO (L-09).
+10. Operator login is asked, never derived from purpose. Accept creates
+    one non-root human login and no enact sudo (L-13). Privileged writes
+    go under `AIOS_ROOT` when set. Host oracles must set it.

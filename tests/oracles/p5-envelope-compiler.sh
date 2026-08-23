@@ -52,12 +52,14 @@ _pyct=$(mktemp -d)
 cp -a "${ISO_INST}/aios_installer/compiler.py" \
   "${ISO_INST}/aios_installer/questions.py" \
   "${ISO_INST}/aios_installer/main.py" \
+  "${ISO_INST}/aios_installer/login.py" \
   "${_pyct}/" \
   || fail "copy ISO python for py_compile"
 python3 -m py_compile \
   "${_pyct}/compiler.py" \
   "${_pyct}/questions.py" \
   "${_pyct}/main.py" \
+  "${_pyct}/login.py" \
   || fail "ISO py_compile failed"
 rm -rf "${_pyct}"
 

@@ -56,6 +56,7 @@ need_file "${AIROOTFS}/usr/lib/aios/installer/aios_installer/main.py"
 need_file "${AIROOTFS}/usr/lib/aios/installer/aios_installer/questions.py"
 need_file "${AIROOTFS}/usr/lib/aios/installer/aios_installer/compiler.py"
 need_file "${AIROOTFS}/usr/lib/aios/installer/aios_installer/recover.py"
+need_file "${AIROOTFS}/usr/lib/aios/installer/aios_installer/login.py"
 SUDOERS="${AIROOTFS}/etc/sudoers.d/aios-checker-snapper"
 AGENT_SUDOERS="${AIROOTFS}/etc/sudoers.d/aios-agent-enact"
 need_file "${SUDOERS}"
@@ -281,6 +282,10 @@ fi
 
 if ! "${SCRIPT_DIR}/p5-recover.sh"; then
   fail "p5-recover"
+fi
+
+if ! "${SCRIPT_DIR}/p5-operator-login.sh"; then
+  fail "p5-operator-login"
 fi
 
 _prov=$(grep -R -n -- 'provider' "${ROOT}/checker" 2>/dev/null | head -n 1 || true)

@@ -7,6 +7,7 @@ import sys
 import time
 
 import compiler
+import login
 import questions
 import recover
 
@@ -166,6 +167,8 @@ class Session:
         _line(out, "prompt: %s" % questions.PROMPTS[qid])
         if qid == "work-runtime":
             _line(out, "skip: not a yes (HI-15)")
+        if qid == "operator":
+            _line(out, "skip: not a username (L-13)")
 
     def _envelope(self, out):
         for line in compiler.draft(self.answers).splitlines():
@@ -220,6 +223,13 @@ class Session:
         if self.snapper_id in (None, ""):
             self.snapper_id = recover.capture_snapper_pre()
             self.persist()
+        if self.decision == "accepted":
+            if os.path.isfile(_brake_path()):
+                self.braked = True
+                self.writes_frozen = True
+            else:
+                # Resume must apply the same login checks as accept (L-13).
+                self._apply_operator(persist_refusal=True)
 
     def switch(self, view_id):
         if view_id not in VIEWS:
@@ -276,13 +286,39 @@ class Session:
             return True
         return False
 
+    def _apply_operator(self, persist_refusal):
+        if self.writes_frozen:
+            self.note_text = "refused: writes frozen (L-12)"
+            return False
+        name = questions.operator_login(self.answers)
+        if not name:
+            self.note_text = "accept refused: operator login required (L-13)"
+            if persist_refusal:
+                self.decision = None
+                self.last_step = "questions"
+                self.view = "questions"
+                self.persist()
+            return False
+        try:
+            login.enact(name)
+        except (OSError, TypeError, ValueError) as exc:
+            self.note_text = "accept refused: %s (L-13)" % exc
+            if persist_refusal:
+                self.decision = None
+                self.last_step = "questions"
+                self.view = "questions"
+                self.persist()
+            return False
+        return True
+
     def accept(self):
         if self._frozen():
             return
-        # HI-09: record accept in the snapshot only. No login creation or accept stamp here.
+        if not self._apply_operator(persist_refusal=True):
+            return
         self.decision = "accepted"
         self.last_step = "accept"
-        self.note_text = "envelope accepted (HI-05)"
+        self.note_text = "envelope accepted (HI-05, L-13)"
         self.view = "accept"
         self.persist()
 
