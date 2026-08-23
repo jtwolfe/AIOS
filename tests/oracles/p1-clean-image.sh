@@ -273,6 +273,10 @@ if ! "${SCRIPT_DIR}/p5-installer-views.sh"; then
   fail "p5-installer-views"
 fi
 
+if ! "${SCRIPT_DIR}/p5-envelope-compiler.sh"; then
+  fail "p5-envelope-compiler"
+fi
+
 _prov=$(grep -R -n -- 'provider' "${ROOT}/checker" 2>/dev/null | head -n 1 || true)
 [ -z "${_prov}" ] || fail "checker names provider (HI-02, L-08): ${_prov}"
 grep -q '/srv/aios/state/provider/os.token' \
