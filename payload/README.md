@@ -15,9 +15,16 @@ minisign -Vm dist/aios-*.iso -p payload/minisign.pub
 
 `payload/hashes.txt` is GNU `sha256sum` text-mode output (64 lowercase
 hex, two spaces, path relative to the repository root). It pins shipped
-blobs that exist now, including both `pacstrap.x86_64` copies. Stubs are
-allowed; the hashes still pin whatever is shipped. The hard-invariants
-file is not listed until it is copied into the payload.
+blobs that exist now, including both `pacstrap.x86_64` copies, firstboot,
+installer, enact, sysusers, tmpfiles, the installer unit, getty drop-ins,
+seeds, the hard-invariants file, and `minisign.pub`. Stubs are allowed;
+the hashes still pin whatever is shipped.
+
+The live ISO carries `minisign.pub` and a firstboot `hashes.txt` at
+`/usr/lib/aios/` so firstboot can verify before touching disks. That live
+list uses ISO paths (relative to `/usr/lib/aios/` or absolute). `build.sh`
+signs it when the secret key is present (`hashes.txt.minisig` is
+gitignored).
 
 Public key (`payload/minisign.pub`):
 

@@ -195,14 +195,49 @@ check_package_lists() {
     || die "airootfs pacstrap.x86_64 is not the same bytes as profile/pacstrap.x86_64"
 }
 
+# Live ISO pubkey must match the repo trust anchor (hashes.txt on the ISO is a live-path list).
+sync_iso_pubkey() {
+  local dest="${PROFILE}/airootfs/usr/lib/aios/minisign.pub"
+  mkdir -p "${PROFILE}/airootfs/usr/lib/aios"
+  if [[ ! -f "${dest}" ]] || ! cmp -s "${PUBKEY}" "${dest}"; then
+    cp -a "${PUBKEY}" "${dest}"
+  fi
+}
+
 check_hashes() {
-  local lines path base
+  local lines path base pin rel
   [[ -f "${HASHES}" ]] || die "missing ${HASHES}"
   [[ -f "${PUBKEY}" ]] || die "missing ${PUBKEY}"
   lines=$(grep -E '^[0-9a-f]{64} ' "${HASHES}" || true)
   [[ -n "${lines}" ]] || die "${HASHES} has no sha256 lines"
   grep -Eq '^[0-9a-f]{64}  .+/pacstrap\.x86_64$' "${HASHES}" \
     || die "${HASHES} must pin pacstrap.x86_64"
+  for pin in \
+    'payload/profile/airootfs/usr/lib/aios/bin/firstboot$' \
+    'payload/profile/airootfs/usr/lib/aios/bin/installer$' \
+    'payload/profile/airootfs/usr/lib/aios/bin/enact$' \
+    'payload/profile/airootfs/usr/lib/sysusers.d/aios.conf$' \
+    'payload/profile/airootfs/usr/lib/tmpfiles.d/aios.conf$' \
+    'payload/profile/airootfs/etc/systemd/system/aios-installer.service$' \
+    'payload/profile/airootfs/usr/lib/aios/hard-invariants.md$' \
+    'payload/profile/airootfs/usr/lib/aios/minisign.pub$' \
+    'payload/profile/airootfs/usr/lib/aios/hashes.txt$' \
+    'getty@tty1.service.d/autologin.conf$' \
+    'serial-getty@ttyS0.service.d/autologin.conf$' \
+    'payload/profile/airootfs/srv/aios/seeds/work-runtime/' \
+    'payload/profile/airootfs/srv/aios/seeds/work-runtime-bots/'
+  do
+    grep -Eq "^[0-9a-f]{64}  .*${pin}" "${HASHES}" \
+      || die "${HASHES} must pin ${pin}"
+  done
+  while IFS= read -r rel; do
+    [[ -z "${rel}" ]] && continue
+    grep -Eq "^[0-9a-f]{64}  ${rel}$" "${HASHES}" \
+      || die "${HASHES} must pin ${rel}"
+  done < <(cd "${REPO_ROOT}" && find \
+      seed/work-runtime seed/work-runtime-bots \
+      payload/profile/airootfs/srv/aios/seeds \
+      -type f | sort)
   while read -r path; do
     [[ -z "${path}" ]] && continue
     path="${path#\*}"
@@ -357,6 +392,86 @@ check_firstboot_payload() {
     "${iso}/usr/lib/aios/bin/installer"; then
     die "firstboot/installer must not contain -Syu"
   fi
+
+  local iso_hashes="${iso}/usr/lib/aios/hashes.txt"
+  local iso_pub="${iso}/usr/lib/aios/minisign.pub"
+  local docs_hi="${REPO_ROOT}/docs/envelope/hard-invariants.md"
+  local line hash path f
+  [[ -f "${iso_hashes}" ]] || die "missing ISO hashes.txt"
+  [[ -f "${iso_pub}" ]] || die "missing ISO minisign.pub"
+  cmp -s "${PUBKEY}" "${iso_pub}" || die "ISO minisign.pub != payload/minisign.pub"
+  [[ -f "${iso}/usr/lib/aios/hard-invariants.md" ]] || die "missing HI file"
+  [[ -f "${iso}/usr/lib/aios/envelope/hard-invariants.md" ]] || die "missing envelope HI file"
+  cmp -s "${docs_hi}" "${iso}/usr/lib/aios/hard-invariants.md" \
+    || die "ISO HI != docs/envelope/hard-invariants.md"
+  cmp -s "${docs_hi}" "${iso}/usr/lib/aios/envelope/hard-invariants.md" \
+    || die "ISO envelope HI != docs/envelope/hard-invariants.md"
+  [[ -d "${iso}/srv/aios/seeds/work-runtime" ]] || die "missing work-runtime seed"
+  [[ -d "${iso}/srv/aios/seeds/work-runtime-bots" ]] || die "missing work-runtime-bots seed"
+  diff -qr "${REPO_ROOT}/seed/work-runtime" "${iso}/srv/aios/seeds/work-runtime" \
+    || die "ISO work-runtime seed != seed/work-runtime"
+  diff -qr "${REPO_ROOT}/seed/work-runtime-bots" "${iso}/srv/aios/seeds/work-runtime-bots" \
+    || die "ISO work-runtime-bots seed != seed/work-runtime-bots"
+  grep -q '/srv/aios/seeds/work-runtime/' "${iso_hashes}" \
+    || die "ISO hashes.txt must pin work-runtime seed"
+  grep -q '/srv/aios/seeds/work-runtime-bots/' "${iso_hashes}" \
+    || die "ISO hashes.txt must pin work-runtime-bots seed"
+  grep -Eq '  pacstrap\.x86_64$' "${iso_hashes}" || die "ISO hashes.txt must pin pacstrap.x86_64"
+  grep -Eq '  bin/firstboot$' "${iso_hashes}" || die "ISO hashes.txt must pin firstboot"
+  grep -Eq '  bin/installer$' "${iso_hashes}" || die "ISO hashes.txt must pin installer"
+  grep -Eq '  bin/enact$' "${iso_hashes}" || die "ISO hashes.txt must pin enact"
+  grep -Eq '  (envelope/)?hard-invariants\.md$' "${iso_hashes}" || die "ISO hashes.txt must pin HI"
+  grep -Eq '  minisign\.pub$' "${iso_hashes}" || die "ISO hashes.txt must pin minisign.pub"
+  grep -Eq 'aios-installer\.service$' "${iso_hashes}" || die "ISO hashes.txt must pin installer unit"
+  grep -Eq 'sysusers\.d/aios\.conf$' "${iso_hashes}" || die "ISO hashes.txt must pin sysusers"
+  grep -Eq 'tmpfiles\.d/aios\.conf$' "${iso_hashes}" || die "ISO hashes.txt must pin tmpfiles"
+  grep -Fq 'getty@tty1.service.d/autologin.conf' "${iso_hashes}" \
+    || die "ISO hashes.txt must pin getty@tty1 drop-in"
+  grep -Fq 'serial-getty@ttyS0.service.d/autologin.conf' "${iso_hashes}" \
+    || die "ISO hashes.txt must pin serial-getty drop-in"
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    [[ -z "${line}" || "${line}" == \#* ]] && continue
+    hash=${line%% *}
+    path=${line#* }
+    path=${path# }
+    path=${path#\*}
+    [[ -n "${hash}" && -n "${path}" ]] || die "bad ISO hashes.txt line"
+    if [[ "${path}" == /* ]]; then
+      f="${iso}${path}"
+    else
+      f="${iso}/usr/lib/aios/${path}"
+    fi
+    [[ -e "${f}" ]] || die "ISO hashed path missing: ${path}"
+    printf '%s  %s\n' "${hash}" "${f}" | sha256sum -c --status - \
+      || die "ISO hash mismatch: ${path}"
+  done < "${iso_hashes}"
+}
+
+# firstboot refuses disks unless /usr/lib/aios/hashes.txt.minisig verifies (P1.2/P1.4).
+sign_live_hashes() {
+  local seckey iso_hashes iso_sig
+  iso_hashes="${PROFILE}/airootfs/usr/lib/aios/hashes.txt"
+  iso_sig="${iso_hashes}.minisig"
+  [[ -f "${iso_hashes}" ]] || die "missing ${iso_hashes}"
+  seckey=$(resolve_seckey)
+  rm -f "${iso_sig}"
+  if [[ ! -f "${seckey}" ]]; then
+    if [[ "${PUBLISH}" -eq 1 ]]; then
+      die "publish refused: minisign secret key missing; cannot sign live hashes.txt (L-10)"
+    fi
+    printf 'unsigned: %s (no secret key; firstboot will refuse disks)\n' "${iso_hashes}" >&2
+    return 0
+  fi
+  ensure_chroot_minisign
+  bind_seckey "${seckey}"
+  run_minisign -S -s /root/aios-minisign.key \
+    -m /mnt/aios/payload/profile/airootfs/usr/lib/aios/hashes.txt \
+    || die "minisign sign failed for live hashes.txt"
+  [[ -f "${iso_sig}" ]] || die "missing ${iso_sig} after sign"
+  run_minisign -Vm /mnt/aios/payload/profile/airootfs/usr/lib/aios/hashes.txt \
+    -p /mnt/aios/payload/minisign.pub >/dev/null \
+    || die "minisign: bad signature for live hashes.txt"
+  unbind_seckey
 }
 
 verify_pin() {
@@ -464,10 +579,12 @@ done
 trap cleanup EXIT
 
 check_package_lists
+sync_iso_pubkey
 check_hashes
 check_firstboot_payload
 verify_pin
 prepare_chroot
+sign_live_hashes
 run_mkarchiso
 
 shopt -s nullglob
