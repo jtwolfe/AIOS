@@ -495,6 +495,18 @@ seat["oracles"] = [
 seat["evidence"]["ran"] = list(seat["oracles"])
 validate_proposal(seat)
 
+concat = copy.deepcopy(env)
+concat["oracles"] = ["pacman -Qi neovim; policy/packages-drift.sh"]
+concat["evidence"]["ran"] = list(concat["oracles"])
+concat["citations"] = []
+reject(concat, "P4.6")
+assert "pacman" in citation_classes(
+    {"asked": "record photography purpose"}, concat["oracles"]
+)
+assert agent_classes("record photography purpose", concat["oracles"]) == (
+    "pacman",
+)
+
 syu = citation_classes({"asked": "run a full -Syu"}, [HI08])
 assert "pacman" in syu, syu
 assert agent_classes("run a full -Syu", [HI08]) == syu

@@ -110,7 +110,8 @@ _CLASS_MARKERS = (
         ),
     ),
 )
-_POLICY_ORACLE = re.compile(r"(?i)(^|[\s/])policy/|^[\w./-]+\.sh$")
+# Whole-token seatbelt path, not a policy/ substring of a command line.
+_POLICY_ORACLE = re.compile(r"(?i)^(policy/[\w./-]+|[\w./-]+\.sh)$")
 _WIKI_CITE = re.compile(r"(?i)^https://wiki\.archlinux\.org/\S+$")
 _MAN_WEB_CITE = re.compile(r"(?i)^https://man\.archlinux\.org/\S+$")
 _MAN_CMD_CITE = re.compile(r"(?i)^man(\s+[0-9]+)?\s+[A-Za-z0-9._:-]+$")
@@ -170,7 +171,7 @@ def citation_ok(item):
 
 def _oracle_class_text(item):
     text = str(item).strip()
-    if not text or _POLICY_ORACLE.search(text):
+    if not text or _POLICY_ORACLE.match(text):
         return ""
     return text
 
