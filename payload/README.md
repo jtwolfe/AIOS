@@ -27,8 +27,8 @@ printf '%s  %s\n' \
 ```
 
 If GnuPG already has the Arch ISO signing key, `build.sh` also checks
-`archlinux-bootstrap-2026.08.01-x86_64.tar.zst.sig`. Missing key is not a
-pass: the sha256 pin still binds.
+`archlinux-bootstrap-2026.08.01-x86_64.tar.zst.sig`. A missing key skips
+PGP (the sha256 pin still binds). A bad signature fails the build.
 
 ## Build
 

@@ -11,8 +11,7 @@ DIST="${REPO_ROOT}/dist"
 WORK="${REPO_ROOT}/work"
 CACHE="${WORK}/cache"
 
-# Option B (docs/design-plan.md Open Questions): Arch Linux Archive, dated path.
-# Do not substitute an undated alias for this URL.
+# Dated Archive bootstrap; do not substitute an undated alias.
 BOOTSTRAP_VERSION="2026.08.01"
 BOOTSTRAP_FILENAME="archlinux-bootstrap-${BOOTSTRAP_VERSION}-x86_64.tar.zst"
 BOOTSTRAP_URL="https://archive.archlinux.org/iso/${BOOTSTRAP_VERSION}/${BOOTSTRAP_FILENAME}"
@@ -22,6 +21,28 @@ BOOTSTRAP_SIG_URL="${BOOTSTRAP_URL}.sig"
 # Matching repo freeze so package fetch is not a rolling mirror.
 ARCHIVE_REPO='https://archive.archlinux.org/repos/2026/08/01/$repo/os/$arch'
 
+PACSTRAP_LOCK=(
+  base
+  linux
+  linux-lts
+  linux-firmware
+  btrfs-progs
+  snapper
+  snap-pac
+  kernel-modules-hook
+  git
+  python
+  pacman
+  systemd
+  etckeeper
+  minisign
+  iwd
+  sudo
+  openssh
+  zram-generator
+)
+
+BOOTSTRAP_ROOT=""
 MOUNTED_REPO=""
 
 die() {
@@ -29,9 +50,47 @@ die() {
   exit 1
 }
 
+# Mount targets under dir, deepest first. Empty if dir is missing.
+mounts_under() {
+  local dir="${1%/}" t depth targets
+  [[ -d "${dir}" ]] || return 0
+  command -v findmnt >/dev/null 2>&1 || die "need findmnt (util-linux)"
+  targets=$(findmnt --list -n -o TARGET) || die "findmnt --list failed"
+  while IFS= read -r t; do
+    [[ -z "${t}" ]] && continue
+    case "${t}" in
+      "${dir}"|"${dir}"/*)
+        depth=${t//[^\/]/}
+        printf '%s\t%s\n' "${#depth}" "${t}"
+        ;;
+    esac
+  done <<< "${targets}" | sort -k1,1nr | cut -f2-
+}
+
+# Unmount every mount under dir (proc/sys/dev/run, repo bind, mkarchiso). Busy umount dies.
+unmount_under() {
+  local dir="$1" t list
+  [[ -d "${dir}" ]] || return 0
+  list=$(mounts_under "${dir}") || die "could not list mounts under ${dir}"
+  while IFS= read -r t; do
+    [[ -z "${t}" ]] && continue
+    umount "${t}" || die "busy umount: ${t}"
+  done <<< "${list}"
+}
+
 cleanup() {
-  if [[ -n "${MOUNTED_REPO}" && -d "${MOUNTED_REPO}" ]]; then
-    umount "${MOUNTED_REPO}" 2>/dev/null || umount -l "${MOUNTED_REPO}" 2>/dev/null || true
+  local leftover
+  trap - EXIT
+  # arch-chroot leftovers (proc/sys/dev/run) and the repo bind, deepest first.
+  unmount_under "${WORK}/mkarchiso"
+  unmount_under "${WORK}/bootstrap"
+  leftover=$(mounts_under "${WORK}/bootstrap") || die "could not list mounts under ${WORK}/bootstrap"
+  if [[ -n "${leftover}" ]]; then
+    die "still mounted under ${WORK}/bootstrap after cleanup:"$'\n'"${leftover}"
+  fi
+  leftover=$(mounts_under "${WORK}/mkarchiso") || die "could not list mounts under ${WORK}/mkarchiso"
+  if [[ -n "${leftover}" ]]; then
+    die "still mounted under ${WORK}/mkarchiso after cleanup:"$'\n'"${leftover}"
   fi
 }
 trap cleanup EXIT
@@ -60,9 +119,11 @@ check_package_lists() {
   if grep -qEi '^(hyprland|gnome|plasma|sddm|gdm)$' "${PROFILE}/packages.x86_64" "${PROFILE}/pacstrap.x86_64"; then
     die "DE/display-manager name in package lists"
   fi
-  grep -qx linux "${PROFILE}/pacstrap.x86_64" || die "linux missing from pacstrap.x86_64"
-  grep -qx linux-lts "${PROFILE}/pacstrap.x86_64" || die "linux-lts missing from pacstrap.x86_64"
-  grep -qx zram-generator "${PROFILE}/pacstrap.x86_64" || die "zram-generator missing from pacstrap.x86_64"
+  if grep -qEi '^(yay|paru)$' "${PROFILE}/packages.x86_64" "${PROFILE}/pacstrap.x86_64"; then
+    die "AUR helper in package lists"
+  fi
+  cmp -s "${PROFILE}/pacstrap.x86_64" <(printf '%s\n' "${PACSTRAP_LOCK[@]}") \
+    || die "pacstrap.x86_64 is not the locked 18-name set"
   while read -r pac; do
     [[ -z "${pac}" || "${pac}" == \#* ]] && continue
     grep -qx "${pac}" "${PROFILE}/packages.x86_64" || die "${pac} in pacstrap.x86_64 is not in packages.x86_64"
@@ -75,7 +136,7 @@ verify_pin() {
   mkdir -p "${CACHE}"
   local sums="${CACHE}/sha256sums-${BOOTSTRAP_VERSION}.txt"
   local tarball="${CACHE}/${BOOTSTRAP_FILENAME}"
-  local listed
+  local listed gpg_rc
 
   fetch "${SHA256SUMS_URL}" "${sums}"
   listed=$(awk -v f="${BOOTSTRAP_FILENAME}" '$2 == f { print $1; exit }' "${sums}")
@@ -90,10 +151,14 @@ verify_pin() {
 
   if command -v gpg >/dev/null 2>&1; then
     if fetch "${BOOTSTRAP_SIG_URL}" "${tarball}.sig"; then
-      if gpg --verify "${tarball}.sig" "${tarball}" >/dev/null 2>&1; then
+      gpg_rc=0
+      gpg --verify "${tarball}.sig" "${tarball}" >/dev/null 2>&1 || gpg_rc=$?
+      if [[ "${gpg_rc}" -eq 0 ]]; then
         printf 'pgp: Arch signature accepted for %s\n' "${BOOTSTRAP_FILENAME}"
-      else
+      elif [[ "${gpg_rc}" -eq 2 ]]; then
         printf 'pgp: Arch signing key not in this keyring; sha256 pin still binds\n' >&2
+      else
+        die "pgp: bad Arch signature for ${BOOTSTRAP_FILENAME} (gpg exit ${gpg_rc})"
       fi
     fi
   fi
@@ -102,8 +167,16 @@ verify_pin() {
 prepare_chroot() {
   local tarball="${CACHE}/${BOOTSTRAP_FILENAME}"
   local parent="${WORK}/bootstrap"
+  local leftover
   [[ "${EUID}" -eq 0 ]] || die "mkarchiso needs root (bootstrap pin already verified)"
+  command -v findmnt >/dev/null 2>&1 || die "need findmnt (util-linux)"
 
+  if [[ -d "${parent}" ]]; then
+    leftover=$(mounts_under "${parent}") || die "could not list mounts under ${parent}"
+    if [[ -n "${leftover}" ]]; then
+      die "refusing to rm -rf ${parent}: still mounted:"$'\n'"${leftover}"
+    fi
+  fi
   rm -rf "${parent}"
   mkdir -p "${parent}"
   tar -C "${parent}" -xf "${tarball}" --numeric-owner
@@ -129,9 +202,19 @@ prepare_chroot() {
 }
 
 run_mkarchiso() {
-  local epoch
+  local epoch leftover
   epoch=$(date -u -d "${BOOTSTRAP_VERSION//./-}" +%s) || epoch=""
-  mkdir -p "${WORK}/mkarchiso" "${DIST}"
+  mkdir -p "${DIST}"
+  # Fresh -w each run so leftover _run_once stamps cannot skip pacstrap.
+  if [[ -d "${WORK}/mkarchiso" ]]; then
+    unmount_under "${WORK}/mkarchiso"
+    leftover=$(mounts_under "${WORK}/mkarchiso") || die "could not list mounts under ${WORK}/mkarchiso"
+    if [[ -n "${leftover}" ]]; then
+      die "refusing to rm -rf ${WORK}/mkarchiso: still mounted:"$'\n'"${leftover}"
+    fi
+  fi
+  rm -rf "${WORK}/mkarchiso"
+  mkdir -p "${WORK}/mkarchiso"
   if [[ -n "${epoch}" ]]; then
     SOURCE_DATE_EPOCH="${epoch}" \
       "${BOOTSTRAP_ROOT}/bin/arch-chroot" "${BOOTSTRAP_ROOT}" \
