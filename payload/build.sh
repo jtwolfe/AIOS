@@ -73,16 +73,33 @@ operator_home() {
   printf '%s\n' "${HOME}"
 }
 
+# XDG under sudo is root's or empty; only honor it if it is under the operator home.
+operator_config_home() {
+  local home xdg
+  home=$(operator_home)
+  xdg="${XDG_CONFIG_HOME:-}"
+  if [[ -n "${xdg}" ]]; then
+    case "${xdg}" in
+      "${home}"|"${home}"/*)
+        printf '%s\n' "${xdg}"
+        return
+        ;;
+    esac
+  fi
+  printf '%s\n' "${home}/.config"
+}
+
 # Secret key is operator-local; never under payload/.
 resolve_seckey() {
-  local home key
+  local home cfg key
   if [[ -n "${AIOS_MINISIGN_SECKEY:-}" ]]; then
     printf '%s\n' "${AIOS_MINISIGN_SECKEY}"
     return
   fi
   home=$(operator_home)
+  cfg=$(operator_config_home)
   for key in \
-    "${home}/.config/aios/minisign.key" \
+    "${cfg}/aios/minisign.key" \
     "${home}/.minisign/minisign.key"
   do
     if [[ -f "${key}" ]]; then
@@ -90,7 +107,7 @@ resolve_seckey() {
       return
     fi
   done
-  printf '%s\n' "${home}/.config/aios/minisign.key"
+  printf '%s\n' "${cfg}/aios/minisign.key"
 }
 
 # Mount targets under dir, deepest first. Empty if dir is missing.
@@ -179,16 +196,23 @@ check_package_lists() {
 }
 
 check_hashes() {
-  local lines
+  local lines path base
   [[ -f "${HASHES}" ]] || die "missing ${HASHES}"
   [[ -f "${PUBKEY}" ]] || die "missing ${PUBKEY}"
   lines=$(grep -E '^[0-9a-f]{64} ' "${HASHES}" || true)
   [[ -n "${lines}" ]] || die "${HASHES} has no sha256 lines"
   grep -Eq '^[0-9a-f]{64}  .+/pacstrap\.x86_64$' "${HASHES}" \
     || die "${HASHES} must pin pacstrap.x86_64"
-  if grep -Eqe '\.minisign\.key([[:space:]]|$)|(^|[[:space:]])minisign\.key$' "${HASHES}"; then
-    die "${HASHES} lists a secret key path"
-  fi
+  while read -r path; do
+    [[ -z "${path}" ]] && continue
+    path="${path#\*}"
+    base="${path##*/}"
+    case "${base}" in
+      minisign.key|*.minisign.key)
+        die "${HASHES} lists a secret key path"
+        ;;
+    esac
+  done < <(awk '/^[0-9a-f]{64} / { print $2 }' "${HASHES}")
   (cd "${REPO_ROOT}" && grep -E '^[0-9a-f]{64} ' "${HASHES}" | sha256sum -c --strict -) \
     || die "${HASHES} mismatch"
 }

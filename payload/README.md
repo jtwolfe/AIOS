@@ -31,22 +31,26 @@ key is operator-local and never in git:
 
 `${XDG_CONFIG_HOME:-$HOME/.config}/aios/minisign.key` (mode 0600).
 
-`build.sh` honours `AIOS_MINISIGN_SECKEY` if set. Under `sudo` it looks
-in the invoking user's `~/.config/aios/minisign.key`, then
-`~/.minisign/minisign.key`. Do not put the secret under `payload/` or
+`build.sh` honours `AIOS_MINISIGN_SECKEY` if set. Otherwise it looks in
+`${XDG_CONFIG_HOME:-$HOME/.config}/aios/minisign.key`, then
+`~/.minisign/minisign.key`. Under `sudo` it uses the invoking user's
+home; `XDG_CONFIG_HOME` is honoured only when it is under that home
+(root's XDG is ignored). Do not put the secret under `payload/` or
 anywhere a `git add` can see it.
 
-If this workstation has no key yet:
+To sign with the in-tree public key, copy the matching secret key out
+of band. Do not generate a new pair onto `payload/minisign.pub` — that
+overwrites the committed trust anchor and breaks `hashes.txt`. Only
+replace `payload/minisign.pub` when rotating the pair, in the same
+change as `payload/hashes.txt`. Keep the secret file outside the work
+tree. A new pair (rotation or a fresh workstation) is:
 
 ```sh
 mkdir -p ~/.config/aios
 chmod 700 ~/.config/aios
-minisign -G -W -p payload/minisign.pub -s ~/.config/aios/minisign.key
+minisign -G -W -p /tmp/aios-minisign.pub -s ~/.config/aios/minisign.key
 chmod 600 ~/.config/aios/minisign.key
 ```
-
-Replacing `payload/minisign.pub` is a reviewable payload change. Keep
-the secret file outside the work tree.
 
 ## Pinned bootstrap (hour 1)
 
