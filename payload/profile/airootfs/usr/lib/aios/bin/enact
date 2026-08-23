@@ -11,8 +11,10 @@ ACCEPT_STAMP=/etc/aios/envelope-accepted
 STATE=/srv/aios/state
 PIN="${STATE}/packages.txt"
 MAP="${STATE}/esp-generations"
+STATE_BARE=/srv/aios/git/state.git
 GENROOT=/boot/aios-gen
 WINDOW_LOCK=/run/aios/enact.window
+STATE_INDEX=
 
 # Four live images only; 1G ESP cannot hold fallback initramfs copies (L-19).
 ESP_FILES="vmlinuz-linux vmlinuz-linux-lts initramfs-linux.img initramfs-linux-lts.img"
@@ -112,12 +114,31 @@ validate_unit() {
   is_aios_unit "${_unit}" || die "unit is not an aios-* unit: ${_unit}"
 }
 
+# Best-effort: pin files / worktree .git back to aios-agent; bare repo to aios-checker (L-03).
+# Must not die: this runs on EXIT after a failed commit/push.
+restore_owners() {
+  if [ -d "${STATE}" ]; then
+    _own=$(stat -c '%U:%G' "${STATE}" 2>/dev/null || true)
+    if [ -n "${_own}" ]; then
+      [ ! -f "${PIN}" ] || chown "${_own}" "${PIN}" 2>/dev/null || true
+      [ ! -f "${MAP}" ] || chown "${_own}" "${MAP}" 2>/dev/null || true
+      [ ! -d "${STATE}/.git" ] || chown -R "${_own}" "${STATE}/.git" 2>/dev/null || true
+    fi
+  fi
+  if [ -d "${STATE_BARE}" ] && id -u aios-checker >/dev/null 2>&1; then
+    chown -R aios-checker:aios-checker "${STATE_BARE}" 2>/dev/null || true
+  fi
+  [ -z "${STATE_INDEX}" ] || rm -f "${STATE_INDEX}" 2>/dev/null || true
+  rm -f "${STATE}/esp-generations.tmp."* "${STATE}/packages.txt.tmp."* 2>/dev/null || true
+}
+
 # Two windows interleaving pre/post/ESP would leave a snapper id without a boot image (HI-06).
 acquire_window() {
   command -v flock >/dev/null 2>&1 || die "flock missing"
   mkdir -p /run/aios || die "mkdir /run/aios failed"
   exec 9>"${WINDOW_LOCK}"
   flock -n 9 || die "enact window already running"
+  trap restore_owners EXIT
 }
 
 parse_slug() {
@@ -205,25 +226,75 @@ copy_esp_generation() {
   log "ESP generation ${_id}"
 }
 
+generation_complete() {
+  _gid=$1
+  for _gf in ${ESP_FILES}; do
+    [ -s "${GENROOT}/${_gid}/${_gf}" ] || return 1
+  done
+  return 0
+}
+
 map_last_id() {
   [ -f "${MAP}" ] || return 0
   grep -v '^[[:space:]]*#' "${MAP}" | grep -v '^[[:space:]]*$' | tail -n 1 | awk '{print $1}'
 }
 
+# Last map id, only if it is a complete generation other than post.
+prev_from_map() {
+  _post=$1
+  _cand=$(map_last_id || true)
+  case "${_cand}" in
+    ''|*[!0-9]*) return 0 ;;
+  esac
+  [ "${_cand}" -gt 0 ] || return 0
+  [ "${_cand}" != "${_post}" ] || return 0
+  generation_complete "${_cand}" || return 0
+  printf '%s\n' "${_cand}"
+}
+
+# Highest complete aios-gen id other than post. Used only when the map did not name a prev.
+prev_from_disk() {
+  _post=$1
+  _best=
+  [ -d "${GENROOT}" ] || return 0
+  for _d in "${GENROOT}"/*; do
+    [ -d "${_d}" ] || continue
+    _id=${_d##*/}
+    case "${_id}" in
+      ''|*[!0-9]*) continue ;;
+    esac
+    [ "${_id}" -gt 0 ] || continue
+    [ "${_id}" != "${_post}" ] || continue
+    generation_complete "${_id}" || continue
+    if [ -z "${_best}" ] || [ "${_id}" -gt "${_best}" ]; then
+      _best=${_id}
+    fi
+  done
+  printf '%s\n' "${_best}"
+}
+
 # Retention N=2: current post + previous successful post. Delete the rest in the same window.
+# Atomic mv on /srv (same filesystem as MAP). Do not rm other gens unless prev is complete on disk.
 retain_esp_generations() {
   _post=$1
   require_numeric_id "${_post}" "retain post id"
-  _prev=$(map_last_id || true)
+  generation_complete "${_post}" || die "current ESP generation ${_post} is incomplete (L-19)"
+
+  _prev=$(prev_from_map "${_post}" || true)
+  if [ -z "${_prev}" ]; then
+    _prev=$(prev_from_disk "${_post}" || true)
+  fi
   case "${_prev}" in
-    "${_post}"|'') _prev= ;;
-    *[!0-9]*) die "malformed esp-generations last id: ${_prev}" ;;
+    ''|*[!0-9]*) _prev= ;;
   esac
-  if [ -n "${_prev}" ] && [ "${_prev}" -eq 0 ]; then
-    die "esp-generations last id must be > 0"
+  if [ -n "${_prev}" ]; then
+    [ "${_prev}" -gt 0 ] || _prev=
+  fi
+  if [ -n "${_prev}" ] && ! generation_complete "${_prev}"; then
+    _prev=
   fi
 
-  _tmp="${WINDOW_LOCK}.map.$$"
+  _tmp="${STATE}/esp-generations.tmp.$$"
   {
     printf '%s\n' '# snapper_id esp_dir'
     if [ -n "${_prev}" ]; then
@@ -231,26 +302,22 @@ retain_esp_generations() {
     fi
     printf '%s /boot/aios-gen/%s\n' "${_post}" "${_post}"
   } > "${_tmp}" || die "write ${_tmp} failed"
-  cat "${_tmp}" > "${MAP}" || die "write ${MAP} failed"
-  rm -f "${_tmp}"
+  mv -f "${_tmp}" "${MAP}" || die "atomic replace ${MAP} failed"
 
   [ -d "${GENROOT}" ] || die "missing ${GENROOT}"
-  for _d in "${GENROOT}"/*; do
-    [ -e "${_d}" ] || continue
-    [ -d "${_d}" ] || die "unexpected non-directory in aios-gen: ${_d}"
-    _id=${_d##*/}
-    require_numeric_id "${_id}" "aios-gen directory"
-    if [ "${_id}" = "${_post}" ]; then
-      continue
-    fi
-    if [ -n "${_prev}" ] && [ "${_id}" = "${_prev}" ]; then
-      continue
-    fi
-    rm -rf "${_d}" || die "failed to drop stale ESP generation ${_id}"
-    log "dropped stale ESP generation ${_id}"
-  done
-
+  # Without a complete named prev, keep every aios-gen dir (truncated-map retry must not drop last-known-good).
   if [ -n "${_prev}" ]; then
+    for _d in "${GENROOT}"/*; do
+      [ -e "${_d}" ] || continue
+      [ -d "${_d}" ] || die "unexpected non-directory in aios-gen: ${_d}"
+      _id=${_d##*/}
+      require_numeric_id "${_id}" "aios-gen directory"
+      if [ "${_id}" = "${_post}" ] || [ "${_id}" = "${_prev}" ]; then
+        continue
+      fi
+      rm -rf "${_d}" || die "failed to drop stale ESP generation ${_id}"
+      log "dropped stale ESP generation ${_id}"
+    done
     write_aios_prev "${_prev}"
   else
     # boot-seatbelt: aios-prev.conf must be absent until a second generation exists.
@@ -259,38 +326,16 @@ retain_esp_generations() {
   printf '%s\n' "${_prev}"
 }
 
-root_uuid() {
-  _u=
-  if command -v findmnt >/dev/null 2>&1; then
-    _u=$(findmnt -n -o UUID / 2>/dev/null || true)
-  fi
-  if [ -z "${_u}" ] && command -v findmnt >/dev/null 2>&1; then
-    _src=$(findmnt -n -o SOURCE / 2>/dev/null || true)
-    if [ -n "${_src}" ]; then
-      _u=$(blkid -s UUID -o value "${_src}" 2>/dev/null || true)
-    fi
-  fi
-  [ -n "${_u}" ] || die "cannot determine root UUID for aios-prev.conf"
-  printf '%s\n' "${_u}"
-}
-
 # Firmware previous-kernel menu only; still rootflags=subvol=@. P7.7 restore is aios-rollback.conf, not this.
 write_aios_prev() {
   _prev=$1
   require_numeric_id "${_prev}" "previous generation id"
-  _linux="${GENROOT}/${_prev}/vmlinuz-linux"
-  _initrd="${GENROOT}/${_prev}/initramfs-linux.img"
-  need_boot_file "${_linux}"
-  need_boot_file "${_initrd}"
-  _opts=
-  if [ -f /boot/loader/entries/aios-linux.conf ]; then
-    _opts=$(awk '/^options[[:space:]]/ { sub(/^options[[:space:]]+/, ""); print; exit }' \
-      /boot/loader/entries/aios-linux.conf || true)
-  fi
-  if [ -z "${_opts}" ]; then
-    _uuid=$(root_uuid)
-    _opts="root=UUID=${_uuid} rootflags=subvol=@ rw console=tty0"
-  fi
+  generation_complete "${_prev}" || die "previous ESP generation ${_prev} is incomplete (L-19)"
+  [ -f /boot/loader/entries/aios-linux.conf ] \
+    || die "missing /boot/loader/entries/aios-linux.conf"
+  _opts=$(awk '/^options[[:space:]]/ { sub(/^options[[:space:]]+/, ""); print; exit }' \
+    /boot/loader/entries/aios-linux.conf || true)
+  [ -n "${_opts}" ] || die "aios-linux.conf has no options line"
   mkdir -p /boot/loader/entries || die "mkdir /boot/loader/entries failed"
   cat > /boot/loader/entries/aios-prev.conf <<EOF || die "write aios-prev.conf failed"
 title   AIOS (previous)
@@ -303,13 +348,12 @@ EOF
 # Pacman -Qqe pin; linux and linux-lts stay explicit (HI-06).
 write_packages_txt() {
   [ -d "${STATE}" ] || die "missing ${STATE}"
-  _tmp="${WINDOW_LOCK}.packages.$$"
+  _tmp="${STATE}/packages.txt.tmp.$$"
   pacman -Qqe > "${_tmp}" || die "pacman -Qqe failed"
   [ -s "${_tmp}" ] || die "pacman -Qqe produced no explicit packages"
   grep -qx linux "${_tmp}" || die "linux missing from packages.txt (HI-06)"
   grep -qx linux-lts "${_tmp}" || die "linux-lts missing from packages.txt (HI-06)"
-  cat "${_tmp}" > "${PIN}" || die "write ${PIN} failed"
-  rm -f "${_tmp}"
+  mv -f "${_tmp}" "${PIN}" || die "atomic replace ${PIN} failed"
 }
 
 clear_git_env() {
@@ -324,38 +368,77 @@ git_state() {
     -C "${STATE}" "$@"
 }
 
+git_bare() {
+  git --git-dir="${STATE_BARE}" --work-tree="${STATE}" \
+    -c safe.directory="${STATE_BARE}" \
+    -c safe.directory="${STATE}" \
+    -c user.name=aios \
+    -c user.email=aios@localhost \
+    "$@"
+}
+
+# Land only packages.txt + esp-generations on state.git main (git commit --only onto main, not HEAD).
 record_state_git() {
   _pre=$1
   _post=$2
   _slug=$3
   clear_git_env
-  git -C "${STATE}" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
-    || die "${STATE} is not a git worktree (HI-01)"
-  git_state add -- packages.txt esp-generations \
-    || die "git add packages.txt esp-generations failed"
-  if git_state diff --cached --quiet; then
-    log "state pin unchanged"
+  [ -d "${STATE_BARE}/objects" ] || die "missing ${STATE_BARE} (HI-01)"
+  [ -f "${PIN}" ] && [ -f "${MAP}" ] || die "pin files missing before state commit"
+  git --git-dir="${STATE_BARE}" rev-parse --verify refs/heads/main >/dev/null 2>&1 \
+    || die "${STATE_BARE} has no main"
+
+  STATE_INDEX=/run/aios/enact.state.index.$$
+  rm -f "${STATE_INDEX}"
+  GIT_INDEX_FILE="${STATE_INDEX}"
+  export GIT_INDEX_FILE
+  GIT_AUTHOR_NAME=aios
+  GIT_AUTHOR_EMAIL=aios@localhost
+  GIT_COMMITTER_NAME=aios
+  GIT_COMMITTER_EMAIL=aios@localhost
+  export GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL
+
+  git_bare read-tree refs/heads/main \
+    || die "git read-tree main failed"
+  git_bare add -- packages.txt esp-generations \
+    || die "git add pin files failed"
+  if git_bare diff --cached --quiet; then
+    log "state pin unchanged on main"
+    rm -f "${STATE_INDEX}"
+    STATE_INDEX=
+    unset GIT_INDEX_FILE
+    unset GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL
     return 0
   fi
-  git_state commit -m "feat(state): ${_slug} window
+  _tree=$(git_bare write-tree) || die "git write-tree failed"
+  _parent=$(git --git-dir="${STATE_BARE}" rev-parse refs/heads/main) \
+    || die "rev-parse main failed"
+  _commit=$(git_bare commit-tree "${_tree}" -p "${_parent}" -m "feat(state): ${_slug} window
 
 Snapshot: snapper pre #${_pre} post #${_post}
-ESP: /boot/aios-gen/${_post}" \
-    || die "git commit ${STATE} failed"
-  _br=$(git_state symbolic-ref --short HEAD) \
-    || die "${STATE} HEAD is not a branch"
-  [ -n "${_br}" ] || die "${STATE} branch name empty"
-  git_state push origin "HEAD:refs/heads/${_br}" \
-    || die "git push ${STATE} ${_br} failed (HI-01)"
-}
+ESP: /boot/aios-gen/${_post}") \
+    || die "git commit-tree main pin failed"
+  git --git-dir="${STATE_BARE}" update-ref refs/heads/main "${_commit}" \
+    || die "update-ref main failed (HI-01)"
+  rm -f "${STATE_INDEX}"
+  unset GIT_INDEX_FILE
+  STATE_INDEX=
+  unset GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL
 
-restore_state_owner() {
-  # Root wrote pin files (and maybe git objects) in an aios-agent worktree.
-  # Do not chown -R the tree: brake and bootstrap-in-progress stay root-owned (L-12, L-20).
-  _own=$(stat -c '%U:%G' "${STATE}") || die "cannot stat ${STATE}"
-  chown "${_own}" "${PIN}" "${MAP}" || die "chown pin files failed"
-  if [ -d "${STATE}/.git" ]; then
-    chown -R "${_own}" "${STATE}/.git" || die "chown ${STATE}/.git failed"
+  # Root created objects in checker-owned state.git; restore L-03 before any later merge.
+  id -u aios-checker >/dev/null 2>&1 || die "aios-checker missing (L-03)"
+  chown -R aios-checker:aios-checker "${STATE_BARE}" \
+    || die "chown ${STATE_BARE} failed (L-03)"
+
+  clear_git_env
+  if git -C "${STATE}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    git_state fetch origin \
+      || die "git fetch state origin failed"
+    _br=$(git_state symbolic-ref --short HEAD 2>/dev/null || true)
+    if [ "${_br}" = main ]; then
+      git_state merge --ff-only origin/main \
+        || die "state worktree main failed to ff to pin (HI-01)"
+    fi
   fi
 }
 
@@ -386,7 +469,6 @@ finish_window() {
   retain_esp_generations "${_post}" >/dev/null
   write_packages_txt
   record_state_git "${_pre}" "${_post}" "${_slug}"
-  restore_state_owner
   bootctl_update
   # Predicates must stay true after the window (HI-06, L-19); checker will re-run them.
   run_policy boot-seatbelt.sh "HI-06, L-19"

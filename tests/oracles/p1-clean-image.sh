@@ -80,8 +80,8 @@ grep -q 'etckeeper.timer' "${AIROOTFS}/usr/lib/aios/agent/aios_agent/deny.py" \
   || fail "agent deny-list missing etckeeper"
 grep -q 'partial pacman is not allowlisted' "${ENACT}" \
   || fail "enact allowlist missing partial-pacman refusal"
-grep -q -- 'pacman -Syu' "${ENACT}" \
-  || fail "enact cmd_syu must run pacman -Syu (P4.5)"
+grep -Fq '/usr/bin/pacman -Syu --noconfirm' "${ENACT}" \
+  || fail "enact cmd_syu must run /usr/bin/pacman -Syu --noconfirm (P4.5)"
 grep -q 'syu window is not this phase' "${ENACT}" \
   && fail "enact cmd_syu must not die closed (P4.5)"
 grep -q '/boot/aios-gen/' "${ENACT}" \
@@ -90,6 +90,14 @@ grep -q 'initramfs-linux-lts.img' "${ENACT}" \
   || fail "enact ESP copy missing linux-lts initramfs (L-19)"
 grep -E '^ESP_FILES=.*fallback' "${ENACT}" \
   && fail "enact must not copy fallback initramfs (L-19)"
+grep -q 'Retention N=2' "${ENACT}" \
+  || fail "enact must keep ESP retention N=2 (L-19)"
+grep -q 'dropped stale ESP generation' "${ENACT}" \
+  || fail "enact must drop extra aios-gen dirs (L-19)"
+grep -q 'pacman -Qqe' "${ENACT}" \
+  || fail "enact must refresh packages.txt from pacman -Qqe"
+grep -q 'boot-seatbelt.sh' "${ENACT}" \
+  || fail "enact must run boot-seatbelt.sh after the window (HI-06, L-19)"
 grep -Fq 'syu|snapper-pre|snapper-post|bootctl|unit' "${ENACT}" \
   || fail "enact allowlist verbs missing"
 grep -q 'ACCEPT_STAMP=/etc/aios/envelope-accepted' "${ENACT}" \
