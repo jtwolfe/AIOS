@@ -36,7 +36,9 @@ Python 3 stdlib only (L-01). The only root path is `/usr/lib/aios/bin/enact`
 8. Work agents never enact through this tree. They file intents
    (HI-13, HI-16). Work runtime stays default off (HI-15).
 9. Research (wiki/man) is plan-only. `enact` does not curl (L-20).
-10. Idle is the default. Do not invent motives (L-21).
+10. Idle is the default. Do not invent motives (L-21). Same-gap twice
+    or infra error pauses and offers rollback. Unknown goal state
+    restores paused, never self-driving.
 11. The proposing model does not decide what memory is worth keeping
     (HI-11). Discard is an envelope patch.
 
@@ -48,8 +50,8 @@ writes. Memory ingest is verbatim and unconditional (HI-11): worktree
 plus a commit on `agent/<date>-memory-<id>`. The model does not decide
 what to keep. Never commit to `main` (HI-03). Accept a stored plan id,
 not a plan generated in the same invocation (L-20). Never synthesise the
-work runtime from here (HI-15). Machine goals are P4.4. The `-Syu`
-window is P4.5.
+work runtime from here (HI-15). Machine goals are `goals` CLI (P4.4,
+L-21). The `-Syu` window is P4.5.
 
 No-arg `serve()` stays idle (L-21). Fixture is the VM default (L-08).
 Live is device-code only (L-17); the OS token is
@@ -68,3 +70,4 @@ Harness A (payload / firstboot) must not call it. No `-Syu` in firstboot.
 - [aios_agent/triage.py](aios_agent/triage.py)
 - [aios_agent/skills.py](aios_agent/skills.py)
 - [aios_agent/memory.py](aios_agent/memory.py)
+- [aios_agent/goals.py](aios_agent/goals.py)

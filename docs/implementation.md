@@ -465,12 +465,17 @@ proposer does not merge to `main` (HI-03).
 `enact` does not run during plan (L-20). Accept is `turn --accept ID`
 of a stored `waiting-accept` plan, not a plan generated in the same
 invocation. Work-runtime is not synthesised here (HI-15). Machine goals
-are P4.4. The `-Syu` window is P4.5 (`gated-p45` is not a successful
+are `goals` CLI (P4.4, L-21): idle default; event-driven repair;
+bounded sysupgrade plan (live `-Syu` is P4.5); same-gap twice or infra
+pauses and offers TUI rollback; corrupt/unknown state restores paused.
+The `-Syu` window is P4.5 (`gated-p45` is not a successful
 moment for the SKILL.md bar). Wiki/man citation reject is P4.6.
 
 The unit with no arguments still idles (L-21). Turns are CLI:
 `python3 …/main.py turn [--accept ID] [TEXT]` with the fixture provider
-from P4.2 (`AIOS_PROVIDER` / `AIOS_FIXTURE`).
+from P4.2 (`AIOS_PROVIDER` / `AIOS_FIXTURE`). Goals are
+`python3 …/main.py goals [tick [JSON|FILE] | gap FINGERPRINT | infra KIND]`
+(`AIOS_GOALS` / `AIOS_NOTIFY`).
 
 ---
 

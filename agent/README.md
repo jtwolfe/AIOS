@@ -17,9 +17,10 @@ Provider adapters are `aios_agent/provider` (P4.2). Fixture is the
 default; live is Grok device-code (L-17). The live OS token is
 `/srv/aios/state/provider/os.token` (mode `0600`, uid `aios-agent`, not
 in git). `aios-work` cannot read it (L-16, HI-13, HI-16). The checker
-does not import this tree (HI-02). The turn loop is CLI (P4.3). No
-machine-goal runner (P4.4). `enact syu` is the full `-Syu` window (P4.5).
-The unit with no arguments still idles (L-21).
+does not import this tree (HI-02). The turn loop is CLI (P4.3). Machine
+goals are CLI (P4.4, L-21): idle default, event-driven repair, stall
+pause. `enact syu` is the full `-Syu` window (P4.5). The unit with no
+arguments still idles (L-21).
 
 ## Deny-list
 
@@ -41,15 +42,19 @@ python3 /srv/aios/agent/aios_agent/main.py provider path
 python3 /srv/aios/agent/aios_agent/main.py provider fixture complete FILE [TEXT]
 python3 /srv/aios/agent/aios_agent/main.py provider live login
 python3 /srv/aios/agent/aios_agent/main.py turn [--accept ID] [TEXT]
+python3 /srv/aios/agent/aios_agent/main.py goals [tick [JSON|FILE] | gap FINGERPRINT | infra KIND]
 ```
 
 With no arguments the service idles. It does not propose. It does not
 parse intents or proposals (a malformed document must not exit the unit).
 Turns are `turn` on the CLI. `turn TEXT` plans; `turn --accept ID` enacts
-that stored plan once (L-20). VM tests set `AIOS_PROVIDER=fixture` and
-`AIOS_FIXTURE`. Optional `AIOS_MEMORY` / `AIOS_SKILLS` / `AIOS_ENACT`
-point at fixtures. Memory ingest commits on `agent/<date>-memory-<id>`,
-never on `main` (HI-03, HI-11). Live login prints a verification URL and user code on
+that stored plan once (L-20). Machine goals are `goals` (L-21): empty
+events invent no proposal; same-gap twice or infra pauses and offers
+TUI rollback; corrupt/unknown state restores paused. VM tests set
+`AIOS_PROVIDER=fixture` and
+`AIOS_FIXTURE`. Optional `AIOS_MEMORY` / `AIOS_SKILLS` / `AIOS_ENACT` /
+`AIOS_GOALS` / `AIOS_NOTIFY` point at fixtures. Memory ingest commits on
+`agent/<date>-memory-<id>`, never on `main` (HI-03, HI-11). Live login prints a verification URL and user code on
 stderr; the token never appears in the transcript. Run `provider live
 login` as `aios-agent` (the unit). Do not `sudo` it; P7.6 TUI must not
 sudo this CLI. If invoked as root, the adapter `chown`s the token to

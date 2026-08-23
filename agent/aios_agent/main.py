@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""aios-agent driver: idle proposer (L-21). Turns via CLI (P4.3)."""
+"""aios-agent driver: idle proposer (L-21). Turns and goals via CLI."""
 
 import sys
 import time
@@ -30,6 +30,7 @@ def cmd_deny(argv):
 
 def serve():
     # L-21: available, not always proposing. Turns are CLI (`turn`).
+    # Machine goals are CLI (`goals`). Empty restart invents nothing.
     # Do not parse inputs here; one malformed document must not exit the unit.
     while True:
         time.sleep(POLL_S)
@@ -88,9 +89,16 @@ def cmd_turn(argv):
     return _turn(argv)
 
 
+def cmd_goals(argv):
+    # Lazy import: the idle unit must not load goals.json on a malformed wake.
+    from goals import cmd_goals as _goals
+
+    return _goals(argv)
+
+
 def _usage():
     sys.stderr.write(
-        "usage: main.py [deny KIND [ARGS] | provider path | provider fixture complete FILE [TEXT] | provider live login | turn [--accept ID] [TEXT]]\n"
+        "usage: main.py [deny KIND [ARGS] | provider path | provider fixture complete FILE [TEXT] | provider live login | turn [--accept ID] [TEXT] | goals [tick [JSON|FILE] | gap FINGERPRINT | infra KIND]]\n"
     )
     return 2
 
@@ -109,6 +117,8 @@ def main(argv=None):
         return cmd_provider(argv[1:])
     if argv[0] == "turn":
         return cmd_turn(argv[1:])
+    if argv[0] == "goals":
+        return cmd_goals(argv[1:])
     return _usage()
 
 

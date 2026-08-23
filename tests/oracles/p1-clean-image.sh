@@ -51,6 +51,7 @@ need_file "${AIROOTFS}/usr/lib/aios/agent/aios_agent/loop.py"
 need_file "${AIROOTFS}/usr/lib/aios/agent/aios_agent/triage.py"
 need_file "${AIROOTFS}/usr/lib/aios/agent/aios_agent/skills.py"
 need_file "${AIROOTFS}/usr/lib/aios/agent/aios_agent/memory.py"
+need_file "${AIROOTFS}/usr/lib/aios/agent/aios_agent/goals.py"
 SUDOERS="${AIROOTFS}/etc/sudoers.d/aios-checker-snapper"
 AGENT_SUDOERS="${AIROOTFS}/etc/sudoers.d/aios-agent-enact"
 need_file "${SUDOERS}"
@@ -251,6 +252,10 @@ fi
 
 if ! "${SCRIPT_DIR}/p4-loop.sh"; then
   fail "p4-loop"
+fi
+
+if ! "${SCRIPT_DIR}/p4-goals.sh"; then
+  fail "p4-goals"
 fi
 
 _prov=$(grep -R -n -- 'provider' "${ROOT}/checker" 2>/dev/null | head -n 1 || true)
