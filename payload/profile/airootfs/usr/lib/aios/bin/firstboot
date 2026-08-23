@@ -645,12 +645,16 @@ configure_snapper() {
   mkdir -p "${TARGET}/.snapshots" || die "mkdir /.snapshots failed"
   mount -o subvol=@snapshots "${ROOTP}" "${TARGET}/.snapshots" \
     || die "remount @snapshots at /.snapshots failed"
-  chmod 750 "${TARGET}/.snapshots"
+  chmod 750 "${TARGET}/.snapshots" || die "chmod 750 /.snapshots failed"
 
   # Nested /home/.snapshots stays a subvolume of @home; do not mount @snapshots there.
   arch-chroot "${TARGET}" /usr/bin/snapper --no-dbus -c home create-config /home \
     || die "snapper -c home create-config failed"
   [ -d "${TARGET}/home/.snapshots" ] || die "home .snapshots missing after create-config"
+  ! mountpoint -q "${TARGET}/home/.snapshots" \
+    || die "home .snapshots must not be a mount (do not mount @snapshots there)"
+  btrfs subvolume show "${TARGET}/home/.snapshots" >/dev/null \
+    || die "home .snapshots is not a btrfs subvolume of @home"
 
   systemctl --root="${TARGET}" enable snapper-timeline.timer snapper-cleanup.timer \
     || die "failed to enable snapper timers"
@@ -675,6 +679,10 @@ create_first_snapshot() {
 
 copy_first_esp_generation() {
   [ -n "${SNAP_ID}" ] || die "snapper id unset for ESP generation"
+  mountpoint -q "${TARGET}/boot" \
+    || die "ESP /boot is not mounted; refuse to write aios-gen onto @"
+  mountpoint -q "${TARGET}/srv" \
+    || die "/srv is not mounted; refuse to write esp-generations onto @"
   _gen="${TARGET}/boot/aios-gen/${SNAP_ID}"
   mkdir -p "${_gen}" || die "mkdir ${_gen} failed"
   # Four live images only; 1G ESP cannot hold fallback initramfs copies.
@@ -683,8 +691,8 @@ copy_first_esp_generation() {
     cp -a "${TARGET}/boot/${_f}" "${_gen}/${_f}" \
       || die "cp -a /boot/${_f} to aios-gen/${SNAP_ID} failed"
   done
-  mkdir -p "${TARGET}/srv/aios/state"
-  cat > "${TARGET}/srv/aios/state/esp-generations" <<EOF
+  mkdir -p "${TARGET}/srv/aios/state" || die "mkdir /srv/aios/state failed"
+  cat > "${TARGET}/srv/aios/state/esp-generations" <<EOF || die "write esp-generations failed"
 # snapper_id esp_dir
 ${SNAP_ID} /boot/aios-gen/${SNAP_ID}
 EOF
@@ -697,7 +705,9 @@ EOF
 }
 
 write_packages_txt() {
-  mkdir -p "${TARGET}/srv/aios/state"
+  mountpoint -q "${TARGET}/srv" \
+    || die "/srv is not mounted; refuse to write packages.txt onto @"
+  mkdir -p "${TARGET}/srv/aios/state" || die "mkdir /srv/aios/state failed"
   arch-chroot "${TARGET}" pacman -Qqe > "${TARGET}/srv/aios/state/packages.txt" \
     || die "pacman -Qqe failed"
   grep -qx linux "${TARGET}/srv/aios/state/packages.txt" \
@@ -706,15 +716,18 @@ write_packages_txt() {
     || die "linux-lts missing from packages.txt"
 }
 
-# etckeeper remote of /etc at /srv/aios/etc-mirror (architecture.md).
 init_etc_mirror() {
   [ -x "${TARGET}/usr/bin/etckeeper" ] || die "etckeeper missing on target"
   [ -x "${TARGET}/usr/bin/git" ] || die "git missing on target"
+  mountpoint -q "${TARGET}/srv" \
+    || die "/srv is not mounted; refuse to write etc-mirror onto @"
   [ ! -e "${TARGET}/srv/aios/etc-mirror" ] || die "etc-mirror already exists"
   arch-chroot "${TARGET}" /usr/bin/etckeeper init \
     || die "etckeeper init failed"
-  arch-chroot "${TARGET}" /usr/bin/git -C /etc config user.name aios
-  arch-chroot "${TARGET}" /usr/bin/git -C /etc config user.email aios@localhost
+  arch-chroot "${TARGET}" /usr/bin/git -C /etc config user.name aios \
+    || die "etckeeper git user.name failed"
+  arch-chroot "${TARGET}" /usr/bin/git -C /etc config user.email aios@localhost \
+    || die "etckeeper git user.email failed"
   if ! arch-chroot "${TARGET}" /usr/bin/git -C /etc rev-parse --verify HEAD >/dev/null 2>&1; then
     arch-chroot "${TARGET}" /usr/bin/etckeeper commit firstboot \
       || die "etckeeper commit failed"
