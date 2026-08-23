@@ -9,7 +9,12 @@ Views: `chrome`, `conversation`, `questions`, `envelope`, `accept`,
 fixture can finish the path. Skip is not a yes (HI-15).
 
 On the machine the wrapper is `/usr/lib/aios/bin/installer` and the
-Python tree is `/usr/lib/aios/installer`.
+Python tree is `/usr/lib/aios/installer`. Progress is snapshotted under
+`/srv/aios/state/bootstrap-in-progress` (or `AIOS_BOOTSTRAP`):
+`answers.json`, `envelope.draft.md`, `snapper_pre`, `step`. A restart
+re-presents last accepted answers. Skip is not a yes (HI-15). Reject
+does not create an operator login, stamp accept, or sysupgrade; L-19
+rollback is offered, not enacted here (HI-09).
 
 ```
 python3 installer/aios_installer/main.py

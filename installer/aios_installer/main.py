@@ -100,6 +100,7 @@ class Session:
         self.note_text = ""
         self.snapper_id = None
         self.piped = False
+        self._restore()
 
     def qid(self):
         if 0 <= self.qindex < len(questions.IDS):
@@ -182,12 +183,51 @@ class Session:
         ).splitlines():
             _line(out, line)
 
+    def persist(self):
+        try:
+            recover.save(
+                self.last_step,
+                self.answers,
+                self.snapper_id,
+                self.decision,
+                self.qindex,
+            )
+        except (OSError, TypeError, ValueError):
+            return
+
+    def _restore(self):
+        present = os.path.isfile(recover.answers_path())
+        loaded = recover.load()
+        if loaded is None:
+            if present:
+                self.note_text = "snapshot malformed; fresh questions (L-18)"
+            self.snapper_id = recover.capture_snapper_pre()
+            self.persist()
+            return
+        self.answers = loaded["answers"]
+        self.last_step = loaded["last_step"]
+        self.qindex = loaded["qindex"]
+        self.snapper_id = loaded["snapper_id"]
+        self.decision = loaded["decision"]
+        if self.last_step in ("questions", "envelope", "accept"):
+            self.view = self.last_step
+        else:
+            self.view = "questions"
+            self.last_step = "questions"
+        if self.snapper_id in (None, ""):
+            self.snapper_id = recover.capture_snapper_pre()
+            self.persist()
+
     def switch(self, view_id):
         if view_id not in VIEWS:
             self.note_text = "unknown view %s (L-18)" % view_id
             return
         self.view = view_id
-        self.last_step = view_id
+        if view_id in ("questions", "envelope", "accept"):
+            self.last_step = view_id
+            self.note_text = ""
+            self.persist()
+            return
         self.note_text = ""
 
     def brake(self):
@@ -236,18 +276,22 @@ class Session:
     def accept(self):
         if self._frozen():
             return
+        # HI-09: record accept in the snapshot only. No login creation or accept stamp here.
         self.decision = "accepted"
         self.last_step = "accept"
         self.note_text = "envelope accepted (HI-05)"
         self.view = "accept"
+        self.persist()
 
     def reject(self):
         if self._frozen():
             return
+        # L-19 rollback is offered in the recovery view; do not enact it here (HI-09).
         self.decision = "rejected"
         self.last_step = "accept"
-        self.note_text = "envelope rejected; rollback is L-19 (no half-install)"
+        self.note_text = "envelope rejected; rollback is L-19 (no half-install, HI-09)"
         self.view = "accept"
+        self.persist()
 
     def resume(self):
         target = recover.resume_view(self.last_step)
@@ -268,6 +312,7 @@ class Session:
             self._advance()
         self.last_step = "questions"
         self.note_text = "skip: %s" % result
+        self.persist()
 
     def answer(self, payload):
         payload = (payload or "").strip()
@@ -290,6 +335,7 @@ class Session:
             self._advance()
         self.last_step = "questions"
         self.note_text = "answer: %s" % result
+        self.persist()
 
     def mode_switch(self, target):
         target = (target or "").strip().lower()

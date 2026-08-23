@@ -25,8 +25,12 @@ HI-13). Work runtime stays default off (HI-15).
    `/srv/aios/src/work-runtime`.
 3. Envelope view is reachable without scrolling the transcript. Accept
    and reject are first-class keyboard actions.
-4. Recovery is a view with a resume action. Durable snapshot files are
-   not this tree’s job.
+4. Recovery is a view with a resume action (L-18). Persist accepted
+   answers, envelope draft, snapper_pre, and step under
+   `/srv/aios/state/bootstrap-in-progress` (or `AIOS_BOOTSTRAP`). Skip
+   is not a yes (HI-15). Malformed snapshot fails closed to questions.
+   Reject offers L-19 rollback and does not leave undeclared live state
+   (HI-09).
 5. Emergency brake is a chrome action (L-12): freeze privileged writes;
    this TUI stays up. Human-only. Do not invent a daemon.
 6. Harness A: no sysupgrade during the conversation (L-20). Do not curl.
