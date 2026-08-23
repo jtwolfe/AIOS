@@ -58,6 +58,14 @@ def _run_git(args, *, git_dir=None, cwd=None, env=None):
     run_env = os.environ.copy()
     if env:
         run_env.update(env)
+    # Hooks set GIT_DIR; squash cwd= worktree must not inherit it (L-03).
+    for key in (
+        "GIT_DIR",
+        "GIT_WORK_TREE",
+        "GIT_INDEX_FILE",
+        "GIT_OBJECT_DIRECTORY",
+    ):
+        run_env.pop(key, None)
     try:
         proc = subprocess.run(
             cmd,
