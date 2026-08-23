@@ -110,11 +110,11 @@ is a docs patch on this file, not a silent drift in code.
 | L-04 | Enact helper | `aios-agent` is not root. The only root path is `/usr/lib/aios/bin/enact`, a small allowlisted helper (pacman as a full `-Syu` window, snapper create, ESP/UKI generation copy, `bootctl`, systemctl for `aios-*` units). sudoers: `aios-agent ALL=(root) NOPASSWD: /usr/lib/aios/bin/enact`. `aios-work` has no sudoers line. Partial `pacman -S` is not on the allowlist. |
 | L-05 | Intent transport | `/run/aios/intent.sock` via `aios-intent.socket`. `SOCK_STREAM`. One JSON object per connection, then close. Mode `0660`, owner `aios-agent`, group `aios-work`. Agent is the only consumer. Not a shell. |
 
-| L-06 | Work slice | Every work unit: `Slice=aios-work.slice`, `User=aios-work`, `NoNewPrivileges=yes`, `ProtectSystem=strict`, `CapabilityBoundingSet=`, `InaccessiblePaths=` privileged trees. Denial is the kernel, not a prompt (HI-13, HI-16). |
+| L-06 | Work slice | System slice `/etc/systemd/system/aios-work.slice` caps any **system-level** work cgroup (`MemoryMax`/`CPUQuota`). L-23 work-runtime and bots are **user** units: the same `MemoryMax`/`CPUQuota`/`NoNewPrivileges=yes`/`ProtectSystem=strict`/`CapabilityBoundingSet=`/`InaccessiblePaths=` numbers live on the **user** unit at `/usr/lib/systemd/user/`. `User=` is implied by the `aios-work` user manager (do not set `User=` on the user unit). Prefer `Slice=aios-work.slice` on the user unit only if systemd accepts it. Denial is the kernel, not a prompt (HI-13, HI-16). |
 | L-07 | Disk (VM default) | 32G qcow2, GPT. 1G ESP vfat `/boot` (**not** in btrfs). Rest btrfs: `@` → `/`, `@home` → `/home`, `@srv` → `/srv`, `@var_log` → `/var/log`, `@snapshots` for snapper. zram swap. Snapper of `@` does not include the ESP or nested `@home`/`@srv`. L-19 is required or snapper is a false seatbelt. Metal may add a swap partition; that commit is hardware-specific (P10). |
 | L-08 | Provider | Two implementations: `fixture` (default in `tests/vm`) and `live`. Live is Grok device-code OAuth (L-17), not a pasted API key. Tests never require a paid API or a browser. Checker imports no provider. |
 
-| L-09 | First surface | TTY **TUI**. `getty` autologin on `tty1` → installer TUI during bootstrap, then the same TUI in OS mode after accept. No display manager in the payload. Views are L-18. |
+| L-09 | First surface | TTY **TUI**. Live ISO getty/serial-getty autologin → `/usr/lib/aios/bin/firstboot`. Installed-disk `aios-installer.service` owns `/dev/console` until P5 accept (`TTYPath=/dev/console`; **not** enabled on the live ISO). After accept, operator getty autologin. No display manager in the payload. Views are L-18. |
 | L-10 | Signing | minisign. Public key in `payload/minisign.pub` and printed on the out-of-band README. Unsigned images must not leave the workstation (P1.2). |
 | L-11 | Time/locale until envelope | UTC, `en_US.UTF-8`, hostname `aios`. Envelope may change these as ordinary proposals. |
 | L-12 | Emergency brake | TTY command `aios brake`: stop and mask `aios-agent.service`, freeze `enact`, write `/srv/aios/state/brake`. Installer stays up. Human-only. |
@@ -131,7 +131,9 @@ is a docs patch on this file, not a silent drift in code.
 | L-23 | Work-runtime unit | systemd **user** unit, system-managed at `/usr/lib/systemd/user/`. Work runtime and bots: user units only. Do not ship system units for them. OS agent, checker, and installer stay **system** units. Human lock 2026-08-23. |
 
 
-The slice drop-in later in this file is the **floor** (write the work-runtime tree only). P8.2 must patch L-15 and that drop-in together. They are not allowed to disagree.
+The system-slice and L-23 user-unit floor snippets later in this file
+are the **floor** (write the work-runtime tree only). P8.2 must patch
+L-15 and those snippets together. They are not allowed to disagree.
 
 ---
 
@@ -256,6 +258,10 @@ g aios-work   -
 
 ### Slice drop-in (work units)
 
+System slice — caps any **system-level** work cgroup (P6). L-23 user
+units do not join this slice unless systemd accepts `Slice=` on a user
+unit.
+
 ```
 # /etc/systemd/system/aios-work.slice
 [Unit]
@@ -265,13 +271,16 @@ MemoryMax=2G
 CPUQuota=200%
 ```
 
-Work `.service` files include:
+L-23 user-unit floor (work-runtime and bots). `User=`/`Group=` are
+implied by the `aios-work` user manager — do not set them on the user
+unit. Copy `MemoryMax`/`CPUQuota` onto the user unit. Prefer
+`Slice=aios-work.slice` only if systemd accepts it.
 
 ```
+# /usr/lib/systemd/user/aios-work-runtime.service
 [Service]
-Slice=aios-work.slice
-User=aios-work
-Group=aios-work
+MemoryMax=2G
+CPUQuota=200%
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=read-only
@@ -504,8 +513,12 @@ skip a row because the first slice worked.
 
 4. Copy seeds, HI file, sysusers, units, `enact`. systemd-sysusers.
    Init bare git under `/srv/aios/git`. Materialise worktrees.
-5. Enable `aios-installer.service` on `getty@tty1` autologin. Reboot
-   to disk.
+5. Inside the chroot only: enable `aios-installer.service`
+   (`TTYPath=/dev/console`; Conflicts `getty@tty1` /
+   `serial-getty@ttyS0`). Do **not** enable the installer on the live
+   ISO. ISO getty already ran `/usr/lib/aios/bin/firstboot`. Reboot to
+   disk; installer owns `/dev/console` until P5 accept, then operator
+   getty autologin.
 6. Installer on TTY: purpose; work-runtime (skip = no); vetoes; operator
    login name. After every accepted answer, write `bootstrap-in-progress/`.
    Bots is **not** asked here.
@@ -514,7 +527,7 @@ skip a row because the first slice worked.
    resume from the snapshot (HI-09, recovery).
 8. Checker merges the first envelope to `envelope` `main` under the
    human-accept record. Create the operator login (L-13). Agent unit
-   starts. Installer stops. `tty1` autologin becomes the operator.
+   starts. Installer stops. Operator getty autologin (L-09).
 9. If work-runtime was yes, synthesis is a machine goal (P8) and
    bootstrap is not finished until that git exists and P8 oracles
    that do not need a live model are green.
@@ -529,7 +542,7 @@ this plan already names every product surface that v1 will ship.
 **Depends.** Human merge of the docs stack when ready. Proposer does not
 merge to `main`.
 
-**Must close.** None left open: L-01…L-21 and the coverage table are
+**Must close.** None left open: L-01…L-23 and the coverage table are
 the closures. A new daemon that is not in the units list is a docs
 patch first (HI-12). A new view that is not in L-18 is a docs patch
 first.
@@ -539,7 +552,7 @@ first.
 
 - Complete spec on `main` (this file plus the rest of `docs/`).
 
-- This file: L-01…L-21, coverage table, HI oracle map, v1 holes.
+- This file: L-01…L-23, coverage table, HI oracle map, v1 holes.
 
 - Future code trees named above.
 
@@ -560,7 +573,7 @@ surface, which phase accepts it and which oracle fails if they skip it.
 | P0.1 | Keep the spec tip current | `main` remains the complete spec until implementation PRs land. |
 | P0.2 | Name the implementation trees | payload, agent, checker, installer, intent, operator-client, tests/vm. |
 
-| P0.3 | Lock implementer decisions | L-01…L-21. Code that contradicts them is a docs patch first. |
+| P0.3 | Lock implementer decisions | L-01…L-23. Code that contradicts them is a docs patch first. |
 
 | P0.4 | Coverage | Every v1 surface has a phase and an oracle in this file. |
 
@@ -592,9 +605,11 @@ the product path). Version string is **locked** (L-22): `/etc/os-release`.
   ESP generation copy is `cp -a` (no `rsync` package).
 
 - Self-checksum plus minisign signature the human can check out of band.
-- First-boot: TTY autologin to the installer, not a graphical session.
+- Live ISO: getty autologin → `/usr/lib/aios/bin/firstboot`. Disk boot:
+  installer owns `/dev/console` until P5 accept. No graphical session.
+  Do not enable `aios-installer.service` on the live ISO.
 - `payload/hashes.txt` — pinned sha256 of agent, checker, installer,
-  seeds, hard-invariants, enact, sysusers, units.
+  seeds, hard-invariants, enact, sysusers, units, `pacstrap.x86_64`.
 - `payload/build.sh` — reproducible image build from this repository,
   pinned Arch bootstrap tarball URL + sha256.
 - Seeds copied into the airootfs so P2 does not fetch GitHub.
@@ -620,8 +635,8 @@ the public artifact after later phases, not a throwaway demo ISO.
 | --- | --- | --- |
 | P1.1 | archiso profile | `payload/profile` with the minimal package list. |
 | P1.2 | Self-verify | Checksum + minisign; out-of-band steps in `payload/README.md`. |
-| P1.3 | TTY firstboot | getty autologin → `aios-firstboot`. No display manager. |
-| P1.4 | Pinned blobs | `hashes.txt` for agent, checker, installer, seeds, HI file, enact. |
+| P1.3 | TTY firstboot | getty autologin → `/usr/lib/aios/bin/firstboot`. No display manager. No `aios-firstboot.service`. |
+| P1.4 | Pinned blobs | `hashes.txt` for agent, checker, installer, seeds, HI file, enact, sysusers, units, `pacstrap.x86_64`. |
 | P1.5 | Clean image | No secrets, no PII, sshd disabled, no DE. |
 
 ## P2 — Machine skeleton
@@ -953,7 +968,10 @@ oracle. Copying markdown is not done. A vague “agents work” is not done.
   same commit. `~/src` vs `/srv/aios/src/work-runtime` may not disagree.
 - Unit type is **locked** (L-23): user unit at
   `/usr/lib/systemd/user/`. Do not ship a system unit for work-runtime
-  or bots. Seed oracles match that path.
+  or bots. Vendor user-unit **file** may exist after P8.2 when the bit
+  is no; disabled oracles are `is-enabled`/`is-active` false, no
+  linger-started service, work tree inert (HI-15) — not `test ! -f` on
+  the user-unit path. `test ! -f /etc/systemd/system/aios-work-runtime.service`.
 - How bots is asked: on the OS definition surface, after work-runtime
   is already yes. Never as a third bootstrap question.
 
@@ -964,8 +982,8 @@ incomplete, even if a daemon starts.
 **Deliverables**
 
 - Machine goal: `envelope.work-runtime=yes` ⇒
-  `/srv/aios/src/work-runtime` exists as its own git repo, units in
-  `aios-work.slice`.
+  `/srv/aios/src/work-runtime` exists as its own git repo, L-23 user
+  units enabled (L-06 hardening on the user unit).
 - Synthesis from `/srv/aios/seeds/work-runtime` (not GitHub). Bootstrap
   is not finished until that git exists.
 - Units named in this plan / envelope before they exist (HI-12).

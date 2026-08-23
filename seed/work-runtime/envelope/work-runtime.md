@@ -12,23 +12,31 @@ When enabled:
 
 - `/srv/aios/src/work-runtime` exists as its own git repository.
 - Its `AGENTS.md` forbids privileged system mutation.
-- User units for the runtime are declared in `state/` and installed only
-  after the checker passes. Unit file:
+- User units are declared in `state/` and **enabled** only after the
+  checker passes. Vendor unit **file** (P8.2 / L-23):
   `/usr/lib/systemd/user/aios-work-runtime.service` (system-managed;
   not a system unit under `/etc/systemd/system/`; not only in a live
-  `~/.config`). Linger `aios-work` so the user instance starts at boot.
+  `~/.config`). That file may already exist before enable. Linger
+  `aios-work` so the user instance starts at boot.
 - Resource caps match the `aios-work.slice` floor (MemoryMax / CPUQuota)
   on the user unit. Processes run as uid `aios-work`.
 
 When disabled:
 
-- No work-runtime units are started.
-- The seed may remain in this GitHub tree. Absence of live units is not a
-  defect.
+- No work-runtime unit is enabled or active (HI-15). No linger-started
+  work-runtime service. The work tree is absent or inert.
+- The vendor user-unit file may still exist after P8.2. That is not a
+  defect. A **system** unit at `/etc/systemd/system/` must not exist.
+- The seed may remain in this GitHub tree.
 
 ## Oracle examples
 
-- `test ! -f /usr/lib/systemd/user/aios-work-runtime.service` when disabled.
+- `test ! -f /etc/systemd/system/aios-work-runtime.service` (must never
+  be a system unit).
+- When disabled: `systemctl --user -M aios-work@ is-enabled
+  aios-work-runtime.service` and `is-active` are false (user instance
+  absent counts as not active); no linger-started service; work tree
+  absent or inert. Do not require `test ! -f` on the user-unit path.
 - `systemctl --user -M aios-work@ is-enabled aios-work-runtime.service`
   is enabled only when the clause is true.
 - `git -C /srv/aios/src/work-runtime rev-parse --is-inside-work-tree` is

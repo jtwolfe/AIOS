@@ -6,7 +6,7 @@
 | Author | Workstation implementer (Grok Build `/design`) |
 | Date | 2026-08-23 |
 | Status | Draft (two must-closes resolved by the human on 2026-08-23: version string = `/etc/os-release`; work-runtime = user unit. Still not `/execute` until the human says so.) |
-| Spine | [docs/implementation.md](implementation.md) (P0–P11, L-01–L-21). This file expands that spine; it does not replace it. |
+| Spine | [docs/implementation.md](implementation.md) (P0–P11, L-01–L-23). This file expands that spine; it does not replace it. |
 | Invariants | [docs/envelope/hard-invariants.md](envelope/hard-invariants.md) — quote by id. Do not extend. |
 | Audience | Senior engineers implementing from `main`. Proposer never merges to `main`. |
 
@@ -14,7 +14,7 @@
 
 ## Overview
 
-AIOS is an Arch Linux machine a privileged systemd service maintains so the human does not administer it. Control is a living envelope of checkable conditions. Enactment is local git. Validation is a different process (the checker), not the model asked again. The specification on `main` is complete. There is no implementation code yet. This document is the `/design` expansion of [docs/implementation.md](implementation.md): the same phase IDs **P0–P11**, the same locks **L-01–L-21**, the same units, views, schemas, and oracles — written so an engineer can execute phase by phase without inventing a parallel architecture.
+AIOS is an Arch Linux machine a privileged systemd service maintains so the human does not administer it. Control is a living envelope of checkable conditions. Enactment is local git. Validation is a different process (the checker), not the model asked again. The specification on `main` is complete. There is no implementation code yet. This document is the `/design` expansion of [docs/implementation.md](implementation.md): the same phase IDs **P0–P11**, the same locks **L-01–L-23**, the same units, views, schemas, and oracles — written so an engineer can execute phase by phase without inventing a parallel architecture.
 
 The first executable slice is **P1**: a signed-shaped archiso payload that installs a minimal Arch (no desktop, no `-Syu`, both kernels) and reaches a TTY installer in QEMU. Public release is **P11** (signed image + full VM matrix). Bare metal (**P10**) is extra proof after that. The optional work runtime is default off (HI-15) and is not synthesised in the ISO.
 
@@ -66,9 +66,9 @@ Also out: a new language runtime; a memory product; DE/WM lock-in; privileged wo
 
 Changing a lock is a docs patch to [docs/implementation.md](implementation.md) first, then human approval — not a surprise in code.
 
-### L-01…L-21 (restated)
+### L-01…L-23 (restated)
 
-Canonical table remains [docs/implementation.md](implementation.md) “Locked decisions”; this is a copy. Any lock change is a spine patch first, then this restatement.
+Canonical table remains [docs/implementation.md](implementation.md) “Locked decisions”; this is a copy. Any lock change is a spine patch first, then this restatement. L-01…L-21 were locked before 2026-08-23; L-22 and L-23 are the 2026-08-23 human locks.
 
 | ID | Decision | Rationale (why this lock exists) |
 | --- | --- | --- |
@@ -77,10 +77,10 @@ Canonical table remains [docs/implementation.md](implementation.md) “Locked de
 | L-03 | Bare git checker-owned. Agent pushes only `refs/heads/agent/*`. No proposer `main`, no force-push. | HI-01, HI-02, HI-03. |
 | L-04 | Only root path: `/usr/lib/aios/bin/enact`. Full `-Syu` window, snapper, ESP copy, `bootctl`, `aios-*` units. Partial `pacman -S` is not allowlisted. | HI-04, HI-06. Mixing research and pacman is how the box bricks. |
 | L-05 | `/run/aios/intent.sock` via `aios-intent.socket`. `SOCK_STREAM`. One JSON object, then close. Mode `0660`, owner `aios-agent`, group `aios-work`. Not a shell. | HI-13. |
-| L-06 | Work slice: `NoNewPrivileges`, `ProtectSystem=strict`, empty caps, `InaccessiblePaths` on privileged trees. | HI-13, HI-16. Denial is the kernel. |
+| L-06 | Work slice: system slice caps any system-level work cgroup; L-23 user units carry `MemoryMax`/`CPUQuota`/`NoNewPrivileges`/`ProtectSystem`/`InaccessiblePaths` on the **user** unit. `User=` implied by the `aios-work` user manager. | HI-13, HI-16. Denial is the kernel. |
 | L-07 | 32G qcow2 GPT. 1G ESP vfat `/boot` **not in btrfs**. Rest btrfs: `@` `/`, `@home` `/home`, `@srv` `/srv`, `@var_log` `/var/log`, `@snapshots` `/.snapshots`. zram swap. Snapper of `@` does not include ESP or nested subvolumes. | Arch Wiki Snapper suggested layout + Installation guide UEFI GPT example. HI-06: snapper-alone on this layout is a false seatbelt. |
 | L-08 | Provider: `fixture` (VM default) and `live`. Checker imports no provider. | HI-08. Tests never require a paid API. |
-| L-09 | First surface: TTY TUI. No display manager in the payload. Views are L-18. | Bootstrap constraint: payload is less free than the running system. |
+| L-09 | First surface: TTY TUI. ISO getty → firstboot; disk installer owns `/dev/console` until P5 accept; then operator getty autologin. Not enabled on the live ISO. No display manager. Views are L-18. | Bootstrap constraint: payload is less free than the running system. |
 | L-10 | minisign. Unsigned images do not leave the workstation. | HI-04. |
 | L-11 | Until envelope: UTC, `en_US.UTF-8`, hostname `aios`. | Deterministic firstboot. Envelope may change later as ordinary proposals. |
 | L-12 | `aios brake`: stop+mask proposer, freeze enact, write `/srv/aios/state/brake`. Human-only. Installer stays up. | HI-05, human emergency brake. |
@@ -201,13 +201,13 @@ payload boots TTY
 
 **Done.** An implementer can clone the spec tip and know, for every surface, which phase accepts it and which oracle fails if they skip it.
 
-**Must-close.** None left open: L-01…L-21 and the coverage table are the closures. A new daemon that is not in the units list is a docs patch first (HI-12). A new view that is not in L-18 is a docs patch first.
+**Must-close.** None left open: L-01…L-23 and the coverage table are the closures. A new daemon that is not in the units list is a docs patch first (HI-12). A new view that is not in L-18 is a docs patch first.
 
 | WP | Title | Delivers |
 | --- | --- | --- |
 | P0.1 | Keep the spec tip current | `main` remains the complete spec until implementation PRs land. |
 | P0.2 | Name the implementation trees | payload, agent, checker, installer, intent, operator-client, tests/vm. |
-| P0.3 | Lock implementer decisions | L-01…L-21. Code that contradicts them is a docs patch first. |
+| P0.3 | Lock implementer decisions | L-01…L-23. Code that contradicts them is a docs patch first. |
 | P0.4 | Coverage | Every v1 surface has a phase and an oracle in the spine. |
 
 **Files and units.** Spec docs and seeds already in this repository. No new daemons.
@@ -1173,12 +1173,12 @@ Brake freezes `enact`. Snapper view rollback is the L-19 path. Do not require li
 | Question | Rule |
 | --- | --- |
 | Write set (L-15) | Which directories. Patch the slice drop-in in the **same commit**. `~/src` vs `/srv/aios/src/work-runtime` may not disagree. Options: [Open Questions](#open-questions). |
-| System unit vs user unit | **Locked (L-23, human 2026-08-23): user unit.** Rationale: work runtime is the multi-agent environment for user tasks *outside* OS configure/manage (HI-15, L-14). OS agent / checker / installer stay system units. Do **not** ship both. Unit file: `/usr/lib/systemd/user/aios-work-runtime.service` (bots: `aios-work-runtime-bots.service`). System-managed; `enact` installs it as a declared git file. Linger `aios-work` (`/var/lib/systemd/linger/aios-work` via tmpfiles, not a live homedir). Enable: `systemctl --user -M aios-work@ is-enabled aios-work-runtime.service`. Not `~/.config/systemd/user/` as the only copy (HI-09). Seed oracles patched. PR 32 still applies the matching drop-in before any unit is enabled. |
+| System unit vs user unit | **Locked (L-23, human 2026-08-23): user unit.** Rationale: work runtime is the multi-agent environment for user tasks *outside* OS configure/manage (HI-15, L-14). OS agent / checker / installer stay system units. Do **not** ship both. Unit file: `/usr/lib/systemd/user/aios-work-runtime.service` (bots: `aios-work-runtime-bots.service`). System-managed; PR 32 installs the vendor **file** (may exist when the bit is no). Enable only at synthesis (P8.1) when the envelope bit is yes: `systemctl --user -M aios-work@`. Linger `aios-work` (`/var/lib/systemd/linger/aios-work` via tmpfiles, not a live homedir). Not `~/.config/systemd/user/` as the only copy (HI-09). Disabled oracles: `is-enabled`/`is-active` false, no linger-started service, work tree inert — not `test ! -f` on the user-unit path. Never `/etc/systemd/system/aios-work-runtime.service`. |
 | How bots is asked | On the OS definition surface, **after** work-runtime is already yes. Never as a third bootstrap question. Options: [Open Questions](#open-questions). |
 
 This phase does **not** specify additional Python files. It specifies questions and oracles. Named synthesis targets: `/srv/aios/src/work-runtime` (P8.1, only if work-runtime bit). `/srv/aios/src/work-runtime-bots` (P8.13, **only** if the second bit is on; HI-15-class). Language lock L-01 holds.
 
-Units named before they exist (HI-12). Unit *type* is locked (L-23). **Do not enable** a work unit until PR 32 installs the matching user-unit file and linger drop-in.
+Units named before they exist (HI-12). Unit *type* is locked (L-23). PR 32 installs the vendor user-unit **file**. **Do not enable** until synthesis (P8.1) when the envelope bit is yes.
 
 #### Transferred surfaces (InsideMan/Grokbot **structure only**)
 
@@ -1266,8 +1266,10 @@ POSIX/vm targets — a story is not an oracle:
 ```sh
 # tests/vm/oracles/vm-work-no.sh
 policy/hi-15-work-default-off.sh
-test ! -f /usr/lib/systemd/user/aios-work-runtime.service
+test ! -f /etc/systemd/system/aios-work-runtime.service
 ! systemctl --user -M aios-work@ is-enabled aios-work-runtime.service
+! systemctl --user -M aios-work@ is-active aios-work-runtime.service
+# vendor user-unit file may exist after P8.2; HI-15 is not-enabled + work tree absent or inert
 # tests/vm/oracles/vm-work-yes.sh
 git -C /srv/aios/src/work-runtime rev-parse --is-inside-work-tree
 # tests/vm/oracles/vm-privilege-deny.sh + policy/work-slice.sh
@@ -1285,7 +1287,9 @@ git -C /srv/aios/src/work-runtime rev-parse --is-inside-work-tree
 # tests/vm/oracles/vm-work-provider.sh
 # tests/vm/oracles/vm-work-disable.sh + policy/hi-15-work-default-off.sh
 # tests/vm/oracles/vm-bots-off.sh
-! test -f /usr/lib/systemd/user/aios-work-runtime-bots.service
+test ! -f /etc/systemd/system/aios-work-runtime-bots.service
+! systemctl --user -M aios-work@ is-enabled aios-work-runtime-bots.service
+! systemctl --user -M aios-work@ is-active aios-work-runtime-bots.service
 # enabled only if second bit: systemctl --user -M aios-work@ is-enabled aios-work-runtime-bots.service
 # tests/vm/oracles/vm-bots-job.sh — live tree /srv/aios/src/work-runtime-bots only when second bit on
 git -C /srv/aios/src/work-runtime-bots rev-parse --is-inside-work-tree
@@ -1303,7 +1307,7 @@ Synthesis is privileged (OS agent, `enact`, snapper+ESP) because it writes units
 | Risk | Severity | Mitigation |
 | --- | --- | --- |
 | Shipping “unit started” as done | High | P8.14 album; P11 blocked on it. |
-| Work unit as a system unit | High | L-23 user unit only; seed oracles under `/usr/lib/systemd/user/`. |
+| Work unit as a system unit | High | L-23 user unit only; `test ! -f /etc/systemd/system/aios-work-runtime.service`. |
 | Write set vs `~/src` disagreement | High | P8.2 same commit as slice drop-in. |
 | Bots implied by work-runtime yes | High | `vm-bots-off`; answers.json has no bots yes. |
 | Identity store / avatars | High | HI-12; seed-bots invariants; refuse list. |
@@ -1783,7 +1787,7 @@ Chosen path (kernel denial, reconstructible, not an operator-homedir snowflake):
 - User instance of uid **`aios-work`**, not the operator login: `loginctl enable-linger aios-work` via declared `/var/lib/systemd/linger/aios-work` (tmpfiles). Enable with `systemctl --user -M aios-work@`.
 - Hardening on the user unit: `NoNewPrivileges=yes`, `ProtectSystem=strict`, `CapabilityBoundingSet=`, `InaccessiblePaths=` privileged trees, `ReadWritePaths=` L-15 set + tmp. Same MemoryMax/CPUQuota numbers as the `aios-work.slice` floor.
 - `aios-work.slice` remains the system slice cap. If a user instance cannot join that system slice, HI-13/HI-16 still hold via uid `aios-work` + unit hardening. Prefer `Slice=aios-work.slice` on the user unit when systemd accepts it.
-- Seed oracles: `test ! -f /usr/lib/systemd/user/aios-work-runtime.service` when disabled; `systemctl --user -M aios-work@ is-enabled aios-work-runtime.service` only when the clause is true.
+- Seed oracles: `test ! -f /etc/systemd/system/aios-work-runtime.service` (never a system unit). When disabled: `systemctl --user -M aios-work@ is-enabled` / `is-active` false, no linger-started service, work tree inert (HI-15). The vendor file at `/usr/lib/systemd/user/` may exist after P8.2. Enable only when the clause is true.
 - Do **not** ship both a system unit and a user unit.
 
 ### 5. `snapper undochange` / `snapper rollback` vs TUI previous generation + `@`
@@ -2009,7 +2013,7 @@ Each PR: one WP or a tightly bound pair. Description: envelope clause or “docs
 
 | PR | Branch slug | Title | Files / components | Depends | Description |
 | --- | --- | --- | --- | --- | --- |
-| 0 | `docs/design-plan` | docs: add implementable design plan linked from the spine | `docs/design-plan.md`, `docs/implementation.md` (link only) | — | This document. No code trees. |
+| 0 | `docs/design-plan` | docs: add implementable design plan linked from the spine | `docs/design-plan.md`, `docs/implementation.md`, `seed/work-runtime/envelope/work-runtime.md` | — | This document. Spine carries L-22/L-23. No code trees. |
 | 1 | `feat/p1-archiso-profile` | feat(payload): archiso profile and locked package lists | `payload/profile/**` including `pacstrap.x86_64`, `payload/build.sh` (pin placeholder until hour-1 close) | 0, P0 | P1.1. Copy releng; locked pacstrap list; ISO extras only as needed to boot firstboot. No DE. `zram-generator` in pacstrap.x86_64. |
 | 2 | `feat/p1-minisign` | feat(payload): hashes.txt and minisign self-verify | `payload/hashes.txt`, `payload/minisign.pub`, `payload/README.md` | 1 | P1.2. Out-of-band verify steps. Secret key never in git. Unsigned ISO does not leave the workstation. |
 | 3 | `feat/p1-firstboot-tty` | feat(payload): firstboot disk install and TTY installer stub | `firstboot`, installer stub, ISO getty drop-ins, **chroot-enabled** `aios-installer.service` (`TTYPath=/dev/console`), sysusers/tmpfiles, `.network`, zram-generator.conf, `/usr/lib/aios/pacstrap.x86_64`, `aios-linux.conf` + `aios-linux-serial.conf` | 1 | P1.3. L-07; `pacstrap -K` from `/usr/lib/aios/pacstrap.x86_64`; default entry `console=tty0`; serial entry for qemu.sh via fw_cfg `console=serial`; OVMF; **no `-Syu`**. Installer unit not enabled on the ISO. |
@@ -2041,7 +2045,7 @@ Each PR: one WP or a tightly bound pair. Description: envelope clause or “docs
 | 29 | `feat/p7-os-views-login` | feat(tui): OS catalog, login view, keyboard-complete | operator-client views | 27, **23** | P7.5, P7.6. `vm-tui-keys`, `vm-login-oob`. |
 | 30 | `feat/p7-surface-split` | feat(tui): OS vs work summon split | chrome mode | 27, 25 | P7.4. L-14. |
 | 31 | `feat/p7-snapper-rollback` | feat(tui): L-19 restore procedure | snapper view + RW `@.restore-<N>` + `aios-rollback.conf` + rename to `@` | 17, 29, **23** | P7.7. Not live USB. Not undochange. Not boot RO snapper snapshot. |
-| 32 | `feat/p8-writeset-lock` | feat: L-15 write set drop-in **and** install L-23 user-unit file | slice `ReadWritePaths`, `/usr/lib/systemd/user/aios-work-runtime.service`, linger tmpfiles | 31 | **One commit / one PR.** Unit *type* is already L-23; this PR applies the matching drop-in. Still no enable until synthesis (P8.1) when the envelope bit is yes. |
+| 32 | `feat/p8-writeset-lock` | feat: L-15 write set drop-in **and** install L-23 user-unit file | slice `ReadWritePaths`, `/usr/lib/systemd/user/aios-work-runtime.service`, linger tmpfiles | 31 | **One commit / one PR.** Unit *type* is already L-23; this PR installs the vendor user-unit **file** and the matching drop-in. The file may exist when work-runtime is no (HI-15). Disabled oracles are `is-enabled`/`is-active` false, no linger-started service, work tree inert — not `test ! -f` on the user-unit path. Never a system unit. Still no **enable** until synthesis (P8.1) when the envelope bit is yes. |
 | 33 | `feat/p8-synthesis` | feat(agent): work-runtime synthesis machine goal | agent goals, `/srv/aios/src/work-runtime` from seeds | 32, 26 | P8.1. Offline. HI-15/HI-17. |
 | 35 | `feat/p8-wake-skills` | feat(work): wake inject, explicit send, skills | work runtime per seed; no extra unnamed daemons | 33 | P8.4, P8.5. |
 | 36 | `feat/p8-connectors-provider` | feat(work): connectors and work provider | L-16 token isolation | 35 | P8.6, P8.10. |
