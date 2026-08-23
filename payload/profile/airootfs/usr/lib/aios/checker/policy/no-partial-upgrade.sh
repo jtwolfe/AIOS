@@ -17,23 +17,44 @@ harness_a() {
 }
 
 # Clustered short flags: -Syyu counts as sync+refresh+sysupgrade.
+# --root/-r/--sysroot exempts pacstrap into a target, not --root / on the live box.
 classify_pacman() {
   HAS_S=0
   HAS_Y=0
   HAS_U=0
   HAS_ROOT=0
-  HAS_LINUX=0
-  HAS_LTS=0
-  HAS_BASE=0
+  ROOT_PATH=
+  _want_root=0
   for _tok in ${CMD}; do
+    if [ "${_want_root}" -eq 1 ]; then
+      case "${_tok}" in
+        -*)
+          _want_root=0
+          ;;
+        *)
+          ROOT_PATH=${_tok}
+          HAS_ROOT=1
+          _want_root=0
+          continue
+          ;;
+      esac
+    fi
     case "${_tok}" in
-      --root|--root=*|-r) HAS_ROOT=1 ;;
+      --root|--sysroot|-r)
+        HAS_ROOT=1
+        _want_root=1
+        ;;
+      --root=*)
+        HAS_ROOT=1
+        ROOT_PATH=${_tok#--root=}
+        ;;
+      --sysroot=*)
+        HAS_ROOT=1
+        ROOT_PATH=${_tok#--sysroot=}
+        ;;
       --sysupgrade) HAS_U=1 ;;
       --sync) HAS_S=1 ;;
       --refresh) HAS_Y=1 ;;
-      linux) HAS_LINUX=1 ;;
-      linux-lts) HAS_LTS=1 ;;
-      base) HAS_BASE=1 ;;
       --*) ;;
       -*)
         _rest=${_tok#-}
@@ -44,12 +65,29 @@ classify_pacman() {
             S) HAS_S=1 ;;
             y) HAS_Y=1 ;;
             u) HAS_U=1 ;;
-            r) HAS_ROOT=1 ;;
+            r)
+              HAS_ROOT=1
+              _want_root=1
+              ;;
           esac
         done
         ;;
     esac
   done
+}
+
+# Pacstrap into /mnt (etc.). --root / is the live system.
+pacstrap_root() {
+  [ "${HAS_ROOT}" -eq 1 ] || return 1
+  [ -n "${ROOT_PATH}" ] || return 1
+  _rp=${ROOT_PATH}
+  while [ "${#_rp}" -gt 1 ]; do
+    case "${_rp}" in
+      */) _rp=${_rp%/} ;;
+      *) break ;;
+    esac
+  done
+  [ "${_rp}" != / ] && [ "${_rp}" != . ]
 }
 
 # IgnorePkg of linux while the rest moves is the same brick as pacman -S.
@@ -97,39 +135,34 @@ if [ -d /srv/aios/state ]; then
   [ -z "${_uc}" ] || fail "snapper undochange recorded in ${_uc} (HI-06)"
 fi
 
-if [ -f /var/log/pacman.log ]; then
-  # Each Running line is one invocation. Pacstrap is -S of the locked set
-  # (may include linux+linux-lts); that is Harness A install, not -Syu.
-  while IFS= read -r _line || [ -n "${_line}" ]; do
-    [ -n "${_line}" ] || continue
-    CMD=${_line}
-    classify_pacman
-    if [ "${HAS_S}" -eq 1 ] && [ "${HAS_U}" -eq 1 ]; then
-      if [ "${HAS_Y}" -eq 0 ]; then
-        fail "pacman -Su without refresh is not a -Syu window: ${_line}"
-      fi
-      if harness_a; then
-        fail "Harness A -Syu: ${_line} (L-20)"
-      fi
+[ -f /var/log/pacman.log ] || fail "pacman.log missing"
+
+# Each Running line is one invocation. Pacstrap --root /mnt is not a live -Syu.
+while IFS= read -r _line || [ -n "${_line}" ]; do
+  [ -n "${_line}" ] || continue
+  CMD=${_line}
+  classify_pacman
+  if [ "${HAS_S}" -eq 1 ] && [ "${HAS_U}" -eq 1 ]; then
+    if [ "${HAS_Y}" -eq 0 ]; then
+      fail "pacman -Su without refresh is not a -Syu window: ${_line}"
+    fi
+    if harness_a; then
+      fail "Harness A -Syu: ${_line} (L-20)"
+    fi
+    continue
+  fi
+  if [ "${HAS_S}" -eq 1 ] && [ "${HAS_U}" -eq 0 ]; then
+    if pacstrap_root; then
       continue
     fi
-    # -S / -Sy without -u: live partial upgrade. Pacstrap into a --root, or the
-    # locked firstboot set (base + both kernels) before envelope accept, is not.
-    if [ "${HAS_S}" -eq 1 ] && [ "${HAS_U}" -eq 0 ]; then
-      [ "${HAS_ROOT}" -eq 0 ] || continue
-      if [ "${HAS_LINUX}" -eq 1 ] && [ "${HAS_LTS}" -eq 1 ] && [ "${HAS_BASE}" -eq 1 ] \
-        && harness_a; then
-        continue
-      fi
-      if [ "${HAS_Y}" -eq 1 ]; then
-        fail "pacman -Sy without -u: ${_line}"
-      fi
-      fail "pacman -S without a full -Syu window: ${_line}"
+    if [ "${HAS_Y}" -eq 1 ]; then
+      fail "pacman -Sy without -u: ${_line}"
     fi
-  done <<EOF
+    fail "pacman -S without a full -Syu window: ${_line}"
+  fi
+done <<EOF
 $(sed -n "s/.*\\[PACMAN\\] Running '\\(.*\\)'\$/\\1/p" /var/log/pacman.log)
 EOF
-fi
 
 # undochange class: db claims linux files that are not on disk.
 if command -v pacman >/dev/null 2>&1; then

@@ -44,7 +44,8 @@ done
 if command -v systemctl >/dev/null 2>&1; then
   FAILED=$(systemctl --failed --plain --no-legend 2>/dev/null || true)
   if [ -n "${FAILED}" ]; then
-    _aios=$(printf '%s\n' "${FAILED}" | awk '{print $1}' | grep -E '^aios-' || true)
+    _aios=$(printf '%s\n' "${FAILED}" | awk '{print $1}' | grep -E '^aios-' | tr '\n' ' ' || true)
+    _aios=$(printf '%s' "${_aios}" | sed 's/[[:space:]]*$//')
     if [ -n "${_aios}" ] && [ "${N}" -eq 0 ]; then
       fail "failed aios unit without an HI-14 payload: ${_aios}"
     fi

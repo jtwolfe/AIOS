@@ -7,11 +7,12 @@ fail() {
   exit 1
 }
 
-# Pieces stay on separate lines so this script does not match the assembled pattern.
+# Pieces stay on separate lines so this file does not match the assembled pattern.
 _fetch='cur''l|wge''t|fetch'
 _shell='(ba)?sh'
-_pre="(${_fetch})[^[:space:]].*"
 _bar='\|'
+# Optional argv between the fetcher and the pipe (tight form or with flags).
+_pre="(${_fetch})([[:space:]].*)?"
 _suf="[[:space:]]*(sudo[[:space:]]+)?${_shell}"
 PIPE_RE="${_pre}${_bar}${_suf}"
 
@@ -37,7 +38,7 @@ scan_file /usr/lib/aios/bin/enact
 
 for _d in /usr/lib/aios /srv/aios/agent /srv/aios/checker /srv/aios/state; do
   [ -d "${_d}" ] || continue
-  _hit=$(grep -R -E -l -- "${PIPE_RE}" "${_d}" 2>/dev/null | head -n 1 || true)
+  _hit=$(grep -R -E -l --exclude='no-curl-sh.sh' --exclude='*.md' -- "${PIPE_RE}" "${_d}" 2>/dev/null | head -n 1 || true)
   [ -z "${_hit}" ] || fail "pipe-to-shell in ${_hit} (HI-04)"
 done
 

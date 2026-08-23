@@ -34,6 +34,11 @@ grep -q '^SUBVOLUME=' /etc/snapper/configs/home \
 command -v mountpoint >/dev/null 2>&1 || fail "mountpoint missing"
 mountpoint -q /.snapshots \
   || fail "/.snapshots is not a mount (L-07 @snapshots)"
+command -v findmnt >/dev/null 2>&1 || fail "findmnt missing"
+_opts=$(findmnt -n -o OPTIONS /.snapshots) \
+  || fail "cannot read /.snapshots mount options"
+printf '%s\n' "${_opts}" | grep -Eq '(^|,)subvol=(/?@snapshots)(,|$)' \
+  || fail "/.snapshots is not subvol=@snapshots (L-07)"
 
 enabled snapper-timeline.timer
 enabled snapper-cleanup.timer

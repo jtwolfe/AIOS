@@ -11,6 +11,58 @@ need_file() {
   [ -s "$1" ] || fail "missing or empty $1"
 }
 
+# Highest non-timeline pre/post/single id and its type (space-separated).
+last_snapper_window() {
+  LASTWIN=
+  command -v snapper >/dev/null 2>&1 || fail "snapper binary missing"
+  SNAP_RC=0
+  SNAP=$(snapper --no-dbus -c root list 2>/dev/null) || SNAP_RC=$?
+  if [ "${SNAP_RC}" -eq 0 ] && [ -n "${SNAP}" ]; then
+    LASTWIN=$(
+      printf '%s\n' "${SNAP}" | awk -F'|' '
+        /^[[:space:]]*[0-9]+/ {
+          gsub(/^[[:space:]]+|[[:space:]]+$/, "", $1)
+          n=$1
+          if (n+0 == 0) next
+          type=$2
+          gsub(/^[[:space:]]+|[[:space:]]+$/, "", type)
+          if (type == "timeline" || type == "number") next
+          if (n+0 >= best+0) { best=n; lasttype=type }
+        }
+        END { if (best != "") print best, lasttype }
+      '
+    )
+    [ -n "${LASTWIN}" ] || fail "snapper list has no pre/post/single window"
+    return 0
+  fi
+  # Checker uid may not be allowed snapper(8); /.snapshots numbering is the same ids.
+  [ -d /.snapshots ] || fail "cannot list snapper windows (snapper list failed, /.snapshots missing)"
+  _best=0
+  _best_type=
+  _saw=0
+  for _info in /.snapshots/*/info.xml; do
+    [ -f "${_info}" ] || continue
+    _num=${_info#/.snapshots/}
+    _num=${_num%/info.xml}
+    case "${_num}" in
+      ''|*[!0-9]*) continue ;;
+    esac
+    [ "${_num}" -gt 0 ] || continue
+    _type=$(sed -n 's/.*<type>\([^<]*\)<\/type>.*/\1/p' "${_info}" | head -n 1)
+    [ -n "${_type}" ] || fail "cannot read type from ${_info}"
+    [ "${_type}" = timeline ] && continue
+    [ "${_type}" = number ] && continue
+    _saw=1
+    if [ "${_num}" -ge "${_best}" ]; then
+      _best=${_num}
+      _best_type=${_type}
+    fi
+  done
+  [ "${_saw}" -eq 1 ] \
+    || fail "cannot list snapper windows (snapper list failed, /.snapshots unreadable)"
+  LASTWIN="${_best} ${_best_type}"
+}
+
 MAP=/srv/aios/state/esp-generations
 GENROOT=/boot/aios-gen
 
@@ -20,15 +72,25 @@ pacman -Q linux-lts >/dev/null 2>&1 || fail "linux-lts is not installed"
 pacman -Q snap-pac >/dev/null 2>&1 || fail "snap-pac is not installed"
 pacman -Q kernel-modules-hook >/dev/null 2>&1 || fail "kernel-modules-hook is not installed"
 
+command -v mountpoint >/dev/null 2>&1 || fail "mountpoint missing"
+mountpoint -q /boot \
+  || fail "/boot is not a mount (ESP generations on @ are a false seatbelt)"
+if command -v findmnt >/dev/null 2>&1; then
+  _fstype=$(findmnt -n -o FSTYPE /boot) || fail "cannot read /boot fstype"
+  [ "${_fstype}" != btrfs ] \
+    || fail "/boot is btrfs; ESP is not in @ (HI-06)"
+fi
+
 need_file /boot/vmlinuz-linux
 need_file /boot/vmlinuz-linux-lts
 need_file /boot/initramfs-linux.img
 need_file /boot/initramfs-linux-lts.img
 need_file /boot/loader/entries/aios-linux.conf
 need_file /boot/loader/entries/aios-linux-lts.conf
-grep -q vmlinuz-linux /boot/loader/entries/aios-linux.conf \
+# vmlinuz-linux is a prefix of vmlinuz-linux-lts; require the field, not a substring.
+grep -Eq '^linux[[:space:]]+/vmlinuz-linux$' /boot/loader/entries/aios-linux.conf \
   || fail "aios-linux.conf does not point at linux"
-grep -q vmlinuz-linux-lts /boot/loader/entries/aios-linux-lts.conf \
+grep -Eq '^linux[[:space:]]+/vmlinuz-linux-lts$' /boot/loader/entries/aios-linux-lts.conf \
   || fail "aios-linux-lts.conf does not point at linux-lts"
 
 KVER=$(uname -r)
@@ -77,50 +139,27 @@ else
   [ ! -e "${PREV}" ] || fail "aios-prev.conf must be absent until a second generation exists"
 fi
 
-if command -v bootctl >/dev/null 2>&1; then
-  LIST=$(bootctl list 2>/dev/null || true)
-  if [ -n "${LIST}" ]; then
-    printf '%s\n' "${LIST}" | grep -Fq 'aios-linux.conf' \
-      || fail "bootctl list does not show linux"
-    printf '%s\n' "${LIST}" | grep -Fq 'aios-linux-lts.conf' \
-      || fail "bootctl list does not show linux-lts"
-    if [ "${N}" -ge 2 ]; then
-      printf '%s\n' "${LIST}" | grep -Fq 'aios-prev.conf' \
-        || fail "bootctl list does not show previous after a second generation exists"
-    fi
-  fi
+command -v bootctl >/dev/null 2>&1 || fail "bootctl missing"
+LIST=$(bootctl list 2>/dev/null) || fail "bootctl list failed"
+[ -n "${LIST}" ] || fail "bootctl list is empty"
+printf '%s\n' "${LIST}" | grep -Fq 'aios-linux.conf' \
+  || fail "bootctl list does not show linux"
+printf '%s\n' "${LIST}" | grep -Fq 'aios-linux-lts.conf' \
+  || fail "bootctl list does not show linux-lts"
+if [ "${N}" -ge 2 ]; then
+  printf '%s\n' "${LIST}" | grep -Fq 'aios-prev.conf' \
+    || fail "bootctl list does not show previous after a second generation exists"
 fi
 
-# If this uid can list snapper, the last pre/post or single window must match the map.
-# Timeline snapshots are not ESP keys (L-19).
-if command -v snapper >/dev/null 2>&1; then
-  SNAP=$(snapper --no-dbus -c root list 2>/dev/null || true)
-  if [ -n "${SNAP}" ]; then
-    LASTWIN=$(
-      printf '%s\n' "${SNAP}" | awk -F'|' '
-        /^[[:space:]]*[0-9]+/ {
-          gsub(/^[[:space:]]+|[[:space:]]+$/, "", $1)
-          n=$1
-          if (n+0 == 0) next
-          type=$2
-          gsub(/^[[:space:]]+|[[:space:]]+$/, "", type)
-          if (type == "timeline" || type == "number") next
-          last=n
-          lasttype=type
-        }
-        END { if (last != "") print last, lasttype }
-      '
-    )
-    if [ -n "${LASTWIN}" ]; then
-      WID=${LASTWIN%% *}
-      WTYPE=${LASTWIN#* }
-      if [ "${WTYPE}" = pre ]; then
-        fail "incomplete snapper pre ${WID} has no matching ESP generation"
-      fi
-      [ "${WID}" = "${ID}" ] \
-        || fail "last snapper window ${WID} (${WTYPE}) != esp-generations ${ID}"
-    fi
-  fi
+last_snapper_window
+WID=${LASTWIN%% *}
+WTYPE=${LASTWIN#* }
+[ -n "${WID}" ] && [ -n "${WTYPE}" ] && [ "${WID}" != "${LASTWIN}" ] \
+  || fail "malformed snapper window: ${LASTWIN}"
+if [ "${WTYPE}" = pre ]; then
+  fail "incomplete snapper pre ${WID} has no matching ESP generation"
 fi
+[ "${WID}" = "${ID}" ] \
+  || fail "last snapper window ${WID} (${WTYPE}) != esp-generations ${ID}"
 
 exit 0
