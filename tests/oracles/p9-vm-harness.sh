@@ -46,12 +46,60 @@ grep -q -- '-serial stdio' "${QEMU}" \
 grep -q 'qemu-img snapshot' "${QEMU}" \
   || fail "qemu.sh must snapshot the qcow2"
 
+qemu_arm() {
+  awk -v lab="$1" '
+    $0 == "  " lab ")" {p=1}
+    p {print}
+    p && $0 ~ /^[[:space:]]*;;$/ {exit}
+  ' "${QEMU}"
+}
+
+_iso_arm=$(qemu_arm iso) || _iso_arm=
+_disk_arm=$(qemu_arm disk) || _disk_arm=
+[ -n "${_iso_arm}" ] || fail "qemu.sh missing iso stanza"
+[ -n "${_disk_arm}" ] || fail "qemu.sh missing disk stanza"
+printf '%s\n' "${_iso_arm}" | grep -q 'opt/org.aios/firstboot,string=auto' \
+  || fail "iso exec must pass firstboot fw_cfg auto"
+printf '%s\n' "${_iso_arm}" | grep -q 'opt/org.aios/console,string=serial' \
+  || fail "iso exec must pass console fw_cfg serial"
+printf '%s\n' "${_disk_arm}" | grep -q 'opt/org.aios/firstboot' \
+  && fail "disk exec must omit firstboot fw_cfg" || true
+printf '%s\n' "${_disk_arm}" | grep -q 'opt/org.aios/console' \
+  && fail "disk exec must omit console fw_cfg" || true
+printf '%s\n' "${_disk_arm}" | grep -q -- '-cdrom' \
+  && fail "disk exec must omit -cdrom" || true
+
 grep -q 'minisign before boot' "${RUN}" \
   || fail "run.sh must mention minisign before boot"
 grep -q 'minisign -Vm' "${RUN}" \
   || fail "run.sh must minisign -Vm the ISO before qemu"
+grep -q 'AIOS_ROOT' "${RUN}" \
+  || fail "run.sh host drive must set AIOS_ROOT (HI-09)"
+grep -q 'AIOS_BOOTSTRAP' "${RUN}" \
+  || fail "run.sh host drive must set AIOS_BOOTSTRAP (HI-09)"
+grep -q 'AIOS_VM_BOOT' "${RUN}" \
+  || fail "run.sh must gate qemu boot on AIOS_VM_BOOT (HI-08)"
+grep -q 'do not skip green' "${RUN}" \
+  || fail "run.sh must fail closed without ISO"
+grep -q 'Full ISO boot not claimed' "${RUN}" \
+  || fail "run.sh must not claim a green ISO boot (HI-08)"
 if grep -q 'qemu-system-x86_64' "${RUN}"; then
   fail "run.sh must use qemu.sh, not a second wrapper"
+fi
+
+# p9 green is not vm-smoke green (HI-08). Without an ISO, the named entrypoint
+# must fail closed — not skip-green, not a host-only ok.
+_iso_n=0
+for _f in "${ROOT}/dist"/aios-*.iso; do
+  [ -f "${_f}" ] || continue
+  _iso_n=$((_iso_n + 1))
+done
+if [ "${_iso_n}" -eq 0 ]; then
+  _smoke_run=$("${RUN}" smoke 2>&1) && _smoke_rc=0 || _smoke_rc=$?
+  [ "${_smoke_rc}" -ne 0 ] \
+    || fail "run.sh smoke must fail closed without ISO (do not skip green)"
+  printf '%s\n' "${_smoke_run}" | grep -q 'fail closed (do not skip green)' \
+    || fail "run.sh smoke missing fail-closed ISO error: ${_smoke_run}"
 fi
 
 if grep -R -q -- '-Syu' "${ROOT}/tests/vm" 2>/dev/null; then

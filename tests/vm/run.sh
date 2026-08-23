@@ -35,7 +35,8 @@ find_iso() {
   printf '%s\n' "${_iso}"
 }
 
-# minisign before boot (L-10). Unsigned ISO must not reach qemu.
+# smoke/recover minisign before boot (L-10). Unsigned ISO must not reach qemu
+# on those paths. iso|disk is a raw qemu.sh passthrough and does not minisign.
 minisign_iso() {
   _iso=$(find_iso)
   command -v minisign >/dev/null 2>&1 || die "minisign missing; fail closed (L-10)"
