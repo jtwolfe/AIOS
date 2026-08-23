@@ -1,0 +1,3 @@
+# Local git is the source of truth (HI-01).
+__pycache__/
+*.pyc

@@ -27,12 +27,12 @@ grep -q '^User=aios-checker$' /etc/systemd/system/aios-checker.service \
 _st=$(systemctl is-enabled aios-checker.service 2>/dev/null || true)
 [ "${_st}" = enabled ] || fail "aios-checker.service is ${_st:-missing}, not enabled"
 
-if [ -f /etc/systemd/system/aios-agent.service ]; then
-  grep -q '^User=aios-agent$' /etc/systemd/system/aios-agent.service \
-    || fail "aios-agent.service is not User=aios-agent"
-  grep -q '^User=aios-checker$' /etc/systemd/system/aios-agent.service \
-    && fail "proposer unit shares the checker user"
-fi
+[ -f /etc/systemd/system/aios-agent.service ] \
+  || fail "aios-agent.service missing"
+grep -q '^User=aios-agent$' /etc/systemd/system/aios-agent.service \
+  || fail "aios-agent.service is not User=aios-agent"
+grep -q '^User=aios-checker$' /etc/systemd/system/aios-agent.service \
+  && fail "proposer unit shares the checker user"
 
 # Import guard: the checker tree must not name a model client module.
 # The word this guard searches for is the aios_agent adapter package path.

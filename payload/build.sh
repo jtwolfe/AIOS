@@ -220,7 +220,9 @@ check_hashes() {
     'payload/profile/airootfs/usr/lib/tmpfiles.d/aios.conf$' \
     'payload/profile/airootfs/etc/systemd/system/aios-installer.service$' \
     'payload/profile/airootfs/etc/systemd/system/aios-checker.service$' \
+    'payload/profile/airootfs/etc/systemd/system/aios-agent.service$' \
     'payload/profile/airootfs/etc/sudoers.d/aios-checker-snapper$' \
+    'payload/profile/airootfs/etc/sudoers.d/aios-agent-enact$' \
     'payload/profile/airootfs/usr/lib/aios/hard-invariants.md$' \
     'payload/profile/airootfs/usr/lib/aios/minisign.pub$' \
     'payload/profile/airootfs/usr/lib/aios/hashes.txt$' \
@@ -241,7 +243,9 @@ check_hashes() {
       payload/profile/airootfs/srv/aios/seeds \
       checker \
       payload/profile/airootfs/usr/lib/aios/checker \
-      -type f | sort)
+      agent \
+      payload/profile/airootfs/usr/lib/aios/agent \
+      -type f ! -path '*/__pycache__/*' ! -name '*.pyc' | sort)
   while read -r path; do
     [[ -z "${path}" ]] && continue
     path="${path#\*}"
@@ -379,12 +383,30 @@ check_firstboot_payload() {
   grep -q '^ExecStart=/usr/bin/python3 /srv/aios/checker/aios_checker/main.py$' \
     "${iso}/etc/systemd/system/aios-checker.service" \
     || die "aios-checker.service ExecStart must be the checker driver"
+  [[ -f "${iso}/etc/systemd/system/aios-agent.service" ]] || die "missing aios-agent.service"
+  [[ ! -e "${iso}/etc/systemd/system/multi-user.target.wants/aios-agent.service" ]] \
+    || die "aios-agent.service must not be enabled on the live ISO"
+  grep -q '^User=aios-agent$' "${iso}/etc/systemd/system/aios-agent.service" \
+    || die "aios-agent.service must set User=aios-agent"
+  grep -q '^Group=aios-agent$' "${iso}/etc/systemd/system/aios-agent.service" \
+    || die "aios-agent.service must set Group=aios-agent"
+  grep -q '^ExecStart=/usr/bin/python3 /srv/aios/agent/aios_agent/main.py$' \
+    "${iso}/etc/systemd/system/aios-agent.service" \
+    || die "aios-agent.service ExecStart must be the agent driver"
   [[ -f "${iso}/usr/lib/aios/checker/aios_checker/schema.py" ]] || die "missing checker schema.py"
   [[ -d "${REPO_ROOT}/checker" ]] || die "missing checker/"
   diff -qr "${REPO_ROOT}/checker" "${iso}/usr/lib/aios/checker" \
     || die "ISO checker != checker/"
+  [[ -f "${iso}/usr/lib/aios/agent/aios_agent/main.py" ]] || die "missing agent main.py"
+  [[ -d "${REPO_ROOT}/agent" ]] || die "missing agent/"
+  diff -qr "${REPO_ROOT}/agent" "${iso}/usr/lib/aios/agent" \
+    || die "ISO agent != agent/"
   grep -q 'aios-checker.service' "${iso}/usr/lib/aios/bin/firstboot" \
     || die "firstboot must copy aios-checker.service"
+  grep -q 'aios-agent.service' "${iso}/usr/lib/aios/bin/firstboot" \
+    || die "firstboot must copy aios-agent.service"
+  grep -q 'enable aios-agent.service' "${iso}/usr/lib/aios/bin/firstboot" \
+    && die "firstboot must not enable aios-agent.service"
   [[ -f "${iso}/etc/sudoers.d/aios-checker-snapper" ]] \
     || die "missing aios-checker snapper sudoers"
   grep -q 'NOPASSWD: /usr/bin/snapper --no-dbus -c root list' \
@@ -394,6 +416,15 @@ check_firstboot_payload() {
     && die "sudoers must not grant ALL"
   grep -q 'aios-checker-snapper' "${iso}/usr/lib/aios/bin/firstboot" \
     || die "firstboot must copy aios-checker snapper sudoers"
+  [[ -f "${iso}/etc/sudoers.d/aios-agent-enact" ]] \
+    || die "missing aios-agent enact sudoers"
+  grep -qx 'aios-agent ALL=(root) NOPASSWD: /usr/lib/aios/bin/enact' \
+    "${iso}/etc/sudoers.d/aios-agent-enact" \
+    || die "sudoers must allow only enact"
+  grep -q 'NOPASSWD: ALL' "${iso}/etc/sudoers.d/aios-agent-enact" \
+    && die "sudoers must not grant ALL"
+  grep -q 'aios-agent-enact' "${iso}/usr/lib/aios/bin/firstboot" \
+    || die "firstboot must copy aios-agent enact sudoers"
   [[ ! -e "${iso}/etc/systemd/system/aios-firstboot.service" ]] \
     || die "aios-firstboot.service is not a named unit (HI-12)"
   grep -q 'login-program /usr/lib/aios/bin/firstboot' \
@@ -452,8 +483,11 @@ check_firstboot_payload() {
   grep -Eq '  minisign\.pub$' "${iso_hashes}" || die "ISO hashes.txt must pin minisign.pub"
   grep -Eq 'aios-installer\.service$' "${iso_hashes}" || die "ISO hashes.txt must pin installer unit"
   grep -Eq 'aios-checker\.service$' "${iso_hashes}" || die "ISO hashes.txt must pin checker unit"
+  grep -Eq 'aios-agent\.service$' "${iso_hashes}" || die "ISO hashes.txt must pin agent unit"
   grep -Fq 'sudoers.d/aios-checker-snapper' "${iso_hashes}" \
     || die "ISO hashes.txt must pin aios-checker snapper sudoers"
+  grep -Fq 'sudoers.d/aios-agent-enact' "${iso_hashes}" \
+    || die "ISO hashes.txt must pin aios-agent enact sudoers"
   grep -Eq 'sysusers\.d/aios\.conf$' "${iso_hashes}" || die "ISO hashes.txt must pin sysusers"
   grep -Eq 'tmpfiles\.d/aios\.conf$' "${iso_hashes}" || die "ISO hashes.txt must pin tmpfiles"
   grep -Fq 'getty@tty1.service.d/autologin.conf' "${iso_hashes}" \
@@ -473,7 +507,7 @@ check_firstboot_payload() {
     [[ -z "${rel}" ]] && continue
     grep -Eq "^[0-9a-f]{64}  ${rel}$" "${iso_hashes}" \
       || die "ISO hashes.txt must pin ${rel}"
-  done < <(cd "${iso}/usr/lib/aios" && find checker -type f | sort)
+  done < <(cd "${iso}/usr/lib/aios" && find checker agent -type f ! -path '*/__pycache__/*' ! -name '*.pyc' | sort)
   while IFS= read -r line || [[ -n "${line}" ]]; do
     [[ -z "${line}" || "${line}" == \#* ]] && continue
     hash=${line%% *}

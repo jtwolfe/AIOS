@@ -36,19 +36,43 @@ need_file "${PACSTRAP_ISO}"
 need_file "${FIRSTBOOT}"
 need_file "${INSTALLER}"
 CHECKER_UNIT="${AIROOTFS}/etc/systemd/system/aios-checker.service"
+AGENT_UNIT="${AIROOTFS}/etc/systemd/system/aios-agent.service"
+ENACT="${AIROOTFS}/usr/lib/aios/bin/enact"
 need_file "${CHECKER_UNIT}"
+need_file "${AGENT_UNIT}"
+need_file "${ENACT}"
 need_file "${AIROOTFS}/usr/lib/aios/checker/aios_checker/schema.py"
+need_file "${AIROOTFS}/usr/lib/aios/agent/aios_agent/main.py"
+need_file "${AIROOTFS}/usr/lib/aios/agent/aios_agent/deny.py"
 SUDOERS="${AIROOTFS}/etc/sudoers.d/aios-checker-snapper"
+AGENT_SUDOERS="${AIROOTFS}/etc/sudoers.d/aios-agent-enact"
 need_file "${SUDOERS}"
+need_file "${AGENT_SUDOERS}"
 need_line "${SUDOERS}" \
   "aios-checker ALL=(root) NOPASSWD: /usr/bin/snapper --no-dbus -c root list"
-if grep -q 'NOPASSWD: ALL' "${SUDOERS}" 2>/dev/null; then
+need_line "${AGENT_SUDOERS}" \
+  "aios-agent ALL=(root) NOPASSWD: /usr/lib/aios/bin/enact"
+if grep -q 'NOPASSWD: ALL' "${SUDOERS}" "${AGENT_SUDOERS}" 2>/dev/null; then
   fail "sudoers must not grant ALL"
 fi
 need_line "${CHECKER_UNIT}" "User=aios-checker"
 need_line "${CHECKER_UNIT}" "Group=aios-checker"
 need_line "${CHECKER_UNIT}" \
   "ExecStart=/usr/bin/python3 /srv/aios/checker/aios_checker/main.py"
+need_line "${AGENT_UNIT}" "User=aios-agent"
+need_line "${AGENT_UNIT}" "Group=aios-agent"
+need_line "${AGENT_UNIT}" \
+  "ExecStart=/usr/bin/python3 /srv/aios/agent/aios_agent/main.py"
+grep -q 'cannot merge to main (HI-03)' "${AIROOTFS}/usr/lib/aios/agent/aios_agent/deny.py" \
+  || fail "agent deny-list missing HI-03 merge-to-main"
+grep -q 'HI-06' "${AIROOTFS}/usr/lib/aios/agent/aios_agent/deny.py" \
+  || fail "agent deny-list missing HI-06 seatbelts"
+grep -q 'partial pacman is not allowlisted' "${ENACT}" \
+  || fail "enact allowlist missing partial-pacman refusal"
+grep -q 'refuse to' "${ENACT}" \
+  || fail "enact allowlist missing HI-06 unit refusal"
+grep -qi 'does not curl' "${ENACT}" \
+  || fail "enact must refuse curl (HI-04, L-20)"
 [ -d "${AIROOTFS}/etc/systemd/system" ] || fail "missing airootfs systemd/system"
 
 # No DE / display-manager names in the live ISO list or the installed set.
@@ -99,6 +123,24 @@ checker_wants=$(find "${AIROOTFS}/etc/systemd" \
 if [ -n "${checker_wants}" ]; then
   fail "aios-checker.service must not be enabled on the live ISO: ${checker_wants}"
 fi
+
+# aios-agent.service is copied for the chroot; it is not enabled on the ISO (L-20).
+if [ -e "${AIROOTFS}/etc/systemd/system/multi-user.target.wants/aios-agent.service" ]; then
+  fail "aios-agent.service must not be in multi-user.target.wants"
+fi
+agent_wants=$(find "${AIROOTFS}/etc/systemd" \
+  \( -path '*.wants/aios-agent.service' -o -path '*.requires/aios-agent.service' \) \
+  -print 2>/dev/null || true)
+if [ -n "${agent_wants}" ]; then
+  fail "aios-agent.service must not be enabled on the live ISO: ${agent_wants}"
+fi
+if grep -q 'enable aios-agent.service' "${FIRSTBOOT}" 2>/dev/null; then
+  fail "firstboot must not enable aios-agent.service (L-20)"
+fi
+grep -q 'aios-agent.service' "${FIRSTBOOT}" \
+  || fail "firstboot must copy aios-agent.service"
+grep -q 'aios-agent-enact' "${FIRSTBOOT}" \
+  || fail "firstboot must copy aios-agent enact sudoers"
 
 # No aios-firstboot.service (HI-12: autologin execs the binary).
 firstboot_unit=$(find "${PAYLOAD}" -name 'aios-firstboot.service' -print 2>/dev/null || true)

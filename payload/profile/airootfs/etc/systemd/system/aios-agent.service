@@ -1,0 +1,19 @@
+[Unit]
+Description=AIOS privileged proposer
+After=local-fs.target
+# Live ISO has no /srv/aios/agent worktree; do not start there.
+ConditionPathExists=/srv/aios/agent/aios_agent/main.py
+# L-12: brake freezes the proposer until the human clears it.
+ConditionPathExists=!/srv/aios/state/brake
+
+[Service]
+Type=simple
+# HI-02: different process from the checker; idle until a later WP proposes (L-21).
+User=aios-agent
+Group=aios-agent
+WorkingDirectory=/srv/aios/agent
+ExecStart=/usr/bin/python3 /srv/aios/agent/aios_agent/main.py
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

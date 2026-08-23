@@ -20,6 +20,8 @@ named() {
   || fail "aios-checker.service missing"
 [ -f /etc/systemd/system/aios-installer.service ] \
   || fail "aios-installer.service missing"
+[ -f /etc/systemd/system/aios-agent.service ] \
+  || fail "aios-agent.service missing"
 
 [ ! -e /etc/systemd/system/aios-firstboot.service ] \
   || fail "aios-firstboot.service is not a named unit"

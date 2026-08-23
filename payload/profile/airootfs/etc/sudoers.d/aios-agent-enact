@@ -1,0 +1,3 @@
+# L-04: aios-agent may run only the enact helper. Not a general root shell.
+Defaults:aios-agent !requiretty
+aios-agent ALL=(root) NOPASSWD: /usr/lib/aios/bin/enact

@@ -532,7 +532,8 @@ copy_payload_into_target() {
     "${TARGET}/etc/systemd/system" \
     "${TARGET}/srv/aios/envelope" \
     "${TARGET}/srv/aios/seeds" \
-    "${TARGET}/srv/aios/checker"
+    "${TARGET}/srv/aios/checker" \
+    "${TARGET}/srv/aios/agent"
   copy_if_present "${AIOS_LIB}/bin/installer" "${TARGET}/usr/lib/aios/bin/installer"
   copy_if_present "${AIOS_LIB}/bin/enact" "${TARGET}/usr/lib/aios/bin/enact"
   copy_if_present "${PACSTRAP_LIST}" "${TARGET}/usr/lib/aios/pacstrap.x86_64"
@@ -542,33 +543,54 @@ copy_payload_into_target() {
     "${TARGET}/etc/systemd/system/aios-installer.service"
   copy_if_present /etc/systemd/system/aios-checker.service \
     "${TARGET}/etc/systemd/system/aios-checker.service"
+  copy_if_present /etc/systemd/system/aios-agent.service \
+    "${TARGET}/etc/systemd/system/aios-agent.service"
   mkdir -p "${TARGET}/etc/sudoers.d" || die "mkdir /etc/sudoers.d failed"
   copy_if_present /etc/sudoers.d/aios-checker-snapper \
     "${TARGET}/etc/sudoers.d/aios-checker-snapper"
+  copy_if_present /etc/sudoers.d/aios-agent-enact \
+    "${TARGET}/etc/sudoers.d/aios-agent-enact"
   copy_if_present "${AIOS_LIB}/hard-invariants.md" \
     "${TARGET}/srv/aios/envelope/hard-invariants.md"
   copy_if_present "${AIOS_LIB}/envelope/hard-invariants.md" \
     "${TARGET}/srv/aios/envelope/hard-invariants.md"
-  # init_one_git commits this tree into /srv/aios/checker.
+  # init_one_git commits these trees into /srv/aios/{checker,agent}.
   [ -d "${AIOS_LIB}/checker/aios_checker" ] \
     || die "payload checker source missing"
   cp -a "${AIOS_LIB}/checker/." "${TARGET}/srv/aios/checker/" \
     || die "copy checker source failed"
+  [ -d "${AIOS_LIB}/agent/aios_agent" ] \
+    || die "payload agent source missing"
+  cp -a "${AIOS_LIB}/agent/." "${TARGET}/srv/aios/agent/" \
+    || die "copy agent source failed"
   materialise_seeds
   [ -x "${TARGET}/usr/lib/aios/bin/installer" ] \
     || die "installer missing on target"
+  [ -x "${TARGET}/usr/lib/aios/bin/enact" ] \
+    || die "enact missing on target"
   [ -f "${TARGET}/etc/systemd/system/aios-installer.service" ] \
     || die "aios-installer.service missing on target"
   [ -f "${TARGET}/etc/systemd/system/aios-checker.service" ] \
     || die "aios-checker.service missing on target"
+  [ -f "${TARGET}/etc/systemd/system/aios-agent.service" ] \
+    || die "aios-agent.service missing on target"
   [ -f "${TARGET}/etc/sudoers.d/aios-checker-snapper" ] \
     || die "aios-checker snapper sudoers missing on target"
+  [ -f "${TARGET}/etc/sudoers.d/aios-agent-enact" ] \
+    || die "aios-agent enact sudoers missing on target"
   chmod 0440 "${TARGET}/etc/sudoers.d/aios-checker-snapper" \
     || die "chmod sudoers.d/aios-checker-snapper failed"
+  chmod 0440 "${TARGET}/etc/sudoers.d/aios-agent-enact" \
+    || die "chmod sudoers.d/aios-agent-enact failed"
   grep -q 'NOPASSWD: /usr/bin/snapper --no-dbus -c root list' \
     "${TARGET}/etc/sudoers.d/aios-checker-snapper" \
     || die "sudoers must allow only snapper list"
   grep -q 'NOPASSWD: ALL' "${TARGET}/etc/sudoers.d/aios-checker-snapper" \
+    && die "sudoers must not grant ALL"
+  grep -qx 'aios-agent ALL=(root) NOPASSWD: /usr/lib/aios/bin/enact' \
+    "${TARGET}/etc/sudoers.d/aios-agent-enact" \
+    || die "sudoers must allow only enact"
+  grep -q 'NOPASSWD: ALL' "${TARGET}/etc/sudoers.d/aios-agent-enact" \
     && die "sudoers must not grant ALL"
   [ -f "${TARGET}/srv/aios/checker/aios_checker/schema.py" ] \
     || die "checker schema.py missing on target"
@@ -577,6 +599,10 @@ copy_payload_into_target() {
     && [ -f "${TARGET}/srv/aios/checker/hooks/reference-transaction" ] \
     && [ -f "${TARGET}/srv/aios/checker/hooks/common.sh" ] \
     || die "checker hook templates missing on target"
+  [ -f "${TARGET}/srv/aios/agent/aios_agent/main.py" ] \
+    || die "agent main.py missing on target"
+  [ -f "${TARGET}/srv/aios/agent/aios_agent/deny.py" ] \
+    || die "agent deny.py missing on target"
 }
 
 # pacstrap bind-mounts /run onto /mnt/run; teardown can drop nested L-07 mounts.
@@ -678,6 +704,10 @@ EOF
     || die "aios-installer.service not enabled in the chroot"
   systemctl --root="${TARGET}" is-enabled aios-checker.service >/dev/null \
     || die "aios-checker.service not enabled in the chroot"
+  # L-20: Harness A must not start the proposer. P5 starts it after accept.
+  _ag=$(systemctl --root="${TARGET}" is-enabled aios-agent.service 2>/dev/null || true)
+  [ "${_ag}" != enabled ] \
+    || die "aios-agent.service must not be enabled before envelope accept (L-20)"
   _g1=$(systemctl --root="${TARGET}" is-enabled getty@tty1.service 2>/dev/null || true)
   _gs=$(systemctl --root="${TARGET}" is-enabled serial-getty@ttyS0.service 2>/dev/null || true)
   [ "${_g1}" = masked ] || die "getty@tty1.service is not masked on the target"
@@ -1051,6 +1081,10 @@ init_privileged_git() {
     || die "envelope.git missing hard-invariants.md (HI-17)"
   arch-chroot "${TARGET}" /usr/bin/git -C /srv/aios/git/checker.git cat-file -e main:aios_checker/schema.py \
     || die "checker.git missing aios_checker/schema.py"
+  [ -f "${TARGET}/srv/aios/agent/aios_agent/main.py" ] \
+    || die "agent worktree missing main.py"
+  arch-chroot "${TARGET}" /usr/bin/git -C /srv/aios/git/agent.git cat-file -e main:aios_agent/main.py \
+    || die "agent.git missing aios_agent/main.py"
   log "privileged git trees"
 }
 

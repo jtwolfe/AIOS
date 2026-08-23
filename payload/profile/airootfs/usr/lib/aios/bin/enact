@@ -1,4 +1,126 @@
 #!/bin/sh
-# P4 allowlisted helper. Harness A / firstboot must not enact (L-04, L-20).
-printf 'error: enact refuses until envelope accept (P4)\n' >&2
-exit 1
+# L-04 allowlisted root helper. Does not curl (HI-04, L-20). No /usr outside pacman.
+set -eu
+
+PATH="/usr/bin:/usr/sbin:/bin:/sbin"
+export PATH
+
+BRAKE=/srv/aios/state/brake
+ANSWERS=/srv/aios/state/bootstrap-in-progress/answers.json
+
+die() {
+  printf 'error: %s\n' "$*" >&2
+  exit 1
+}
+
+usage() {
+  printf 'usage: enact {syu|snapper-pre|snapper-post|bootctl|unit} ...\n' >&2
+  exit 2
+}
+
+require_root() {
+  [ "$(id -u)" -eq 0 ] || die "enact must run as root (L-04)"
+}
+
+require_not_frozen() {
+  [ ! -e "${BRAKE}" ] || die "enact frozen (L-12)"
+}
+
+require_harness_b() {
+  if [ -f "${ANSWERS}" ] \
+    && grep -Eq '"accepted"[[:space:]]*:[[:space:]]*true' "${ANSWERS}"; then
+    return 0
+  fi
+  die "enact refuses until envelope accept (L-20)"
+}
+
+is_aios_unit() {
+  _u=$1
+  case "${_u}" in
+    */*|*..*|*" "*) return 1 ;;
+  esac
+  case "${_u}" in
+    aios-*.service|aios-*.socket|aios-*.timer|aios-*.slice|aios-*.target|aios-*.path) return 0 ;;
+  esac
+  return 1
+}
+
+is_seatbelt_unit() {
+  case "$1" in
+    aios-checker.service|snapper-timeline.timer|snapper-cleanup.timer) return 0 ;;
+  esac
+  return 1
+}
+
+cmd_syu() {
+  # P4.5 owns the full -Syu window. Naming the verb is the allowlist; do not run pacman here.
+  die "syu window is not this phase (P4.5)"
+}
+
+cmd_snapper_pre() {
+  die "snapper pre is not this phase (P4.5)"
+}
+
+cmd_snapper_post() {
+  die "snapper post + ESP copy is not this phase (P4.5)"
+}
+
+cmd_bootctl() {
+  die "bootctl in the enact window is not this phase (P4.5)"
+}
+
+cmd_unit() {
+  [ "$#" -eq 2 ] || die "unit takes ACTION UNIT only"
+  _act=$1
+  _unit=$2
+  case "${_act}" in
+    enable|disable|start|stop|mask|unmask|is-enabled|is-active) ;;
+    *) die "unit action not allowlisted: ${_act}" ;;
+  esac
+  case "${_act}" in
+    disable|mask|stop)
+      if is_seatbelt_unit "${_unit}"; then
+        die "refuse to ${_act} ${_unit} (HI-06)"
+      fi
+      if [ "${_unit}" = aios-agent.service ]; then
+        die "refuse to ${_act} aios-agent.service (L-12 human brake only)"
+      fi
+      ;;
+  esac
+  case "${_unit}" in
+    aios-work-runtime.service|aios-work-runtime-bots.service)
+      die "${_unit} is a user unit (L-23)"
+      ;;
+  esac
+  is_aios_unit "${_unit}" || die "unit is not an aios-* unit: ${_unit}"
+  exec /usr/bin/systemctl --no-ask-password "${_act}" "${_unit}"
+}
+
+main() {
+  require_root
+  require_not_frozen
+  [ "$#" -ge 1 ] || usage
+  # Raw pacman argv is never allowlisted (L-04). Partial -S is a brick (HI-06).
+  case "$1" in
+    -S*|pacman)
+      die "partial pacman is not allowlisted (L-04); use enact syu"
+      ;;
+    syu|snapper-pre|snapper-post|bootctl|unit) ;;
+    *)
+      die "not allowlisted: $1"
+      ;;
+  esac
+  require_harness_b
+  _cmd=$1
+  shift
+  case "${_cmd}" in
+    syu) cmd_syu "$@" ;;
+    snapper-pre) cmd_snapper_pre "$@" ;;
+    snapper-post) cmd_snapper_post "$@" ;;
+    bootctl) cmd_bootctl "$@" ;;
+    unit) cmd_unit "$@" ;;
+    *) die "not allowlisted: ${_cmd}" ;;
+  esac
+}
+
+main "$@"

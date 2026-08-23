@@ -1,0 +1,6 @@
+[project]
+name = "aios-agent"
+version = "0"
+requires-python = ">=3.12"
+# L-01: Arch python stdlib only. No third-party deps in v1.
+dependencies = []
