@@ -398,7 +398,10 @@ record_state_git() {
   GIT_COMMITTER_EMAIL=aios@localhost
   export GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL
 
-  git_bare read-tree refs/heads/main \
+  # Capture main first; update-ref CAS below refuses a raced checker fast-forward (HI-01).
+  _parent=$(git --git-dir="${STATE_BARE}" rev-parse refs/heads/main) \
+    || die "rev-parse main failed"
+  git_bare read-tree "${_parent}" \
     || die "git read-tree main failed"
   git_bare add -- packages.txt esp-generations \
     || die "git add pin files failed"
@@ -411,15 +414,13 @@ record_state_git() {
     return 0
   fi
   _tree=$(git_bare write-tree) || die "git write-tree failed"
-  _parent=$(git --git-dir="${STATE_BARE}" rev-parse refs/heads/main) \
-    || die "rev-parse main failed"
   _commit=$(git_bare commit-tree "${_tree}" -p "${_parent}" -m "feat(state): ${_slug} window
 
 Snapshot: snapper pre #${_pre} post #${_post}
 ESP: /boot/aios-gen/${_post}") \
     || die "git commit-tree main pin failed"
-  git --git-dir="${STATE_BARE}" update-ref refs/heads/main "${_commit}" \
-    || die "update-ref main failed (HI-01)"
+  git --git-dir="${STATE_BARE}" update-ref refs/heads/main "${_commit}" "${_parent}" \
+    || die "update-ref main failed (non-ff or raced) (HI-01)"
   rm -f "${STATE_INDEX}"
   unset GIT_INDEX_FILE
   STATE_INDEX=
@@ -436,6 +437,9 @@ ESP: /boot/aios-gen/${_post}") \
       || die "git fetch state origin failed"
     _br=$(git_state symbolic-ref --short HEAD 2>/dev/null || true)
     if [ "${_br}" = main ]; then
+      # Unstaged pin files match origin/main but abort ff-only; stage them first.
+      git_state add -- packages.txt esp-generations \
+        || die "git add pin files in worktree failed"
       git_state merge --ff-only origin/main \
         || die "state worktree main failed to ff to pin (HI-01)"
     fi
