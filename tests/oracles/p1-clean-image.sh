@@ -202,6 +202,8 @@ if grep -R -q -- '-Syu' "${AIROOTFS}/usr/lib/aios/installer" 2>/dev/null; then
 fi
 grep -q 'aios_installer/main.py' "${FIRSTBOOT}" \
   || fail "firstboot must copy installer Python tree"
+grep -q '/srv/aios/state/snapper_pre' "${FIRSTBOOT}" \
+  || fail "firstboot must write snapper_pre for installer recovery (HI-09)"
 grep -q 'exec /usr/bin/python3' "${INSTALLER}" \
   || fail "bin/installer must exec python3 TUI"
 

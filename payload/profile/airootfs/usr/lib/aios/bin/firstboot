@@ -816,6 +816,11 @@ copy_first_esp_generation() {
 # snapper_id esp_dir
 ${SNAP_ID} /boot/aios-gen/${SNAP_ID}
 EOF
+  # Installer recovery reads this id; do not leave snapper-id none (HI-09).
+  printf '%s\n' "${SNAP_ID}" > "${TARGET}/srv/aios/state/snapper_pre" \
+    || die "write snapper_pre failed"
+  grep -qx "${SNAP_ID}" "${TARGET}/srv/aios/state/snapper_pre" \
+    || die "snapper_pre does not record ${SNAP_ID}"
   [ -f "${_gen}/vmlinuz-linux" ] && [ -f "${_gen}/vmlinuz-linux-lts" ] \
     && [ -f "${_gen}/initramfs-linux.img" ] && [ -f "${_gen}/initramfs-linux-lts.img" ] \
     || die "ESP generation ${SNAP_ID} missing a kernel or initramfs"

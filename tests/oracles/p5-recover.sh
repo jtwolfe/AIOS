@@ -9,6 +9,7 @@ MAIN="${ROOT}/installer/aios_installer/main.py"
 RECOVER="${ROOT}/installer/aios_installer/recover.py"
 HI="${ROOT}/docs/envelope/hard-invariants.md"
 ISO_INST="${ROOT}/payload/profile/airootfs/usr/lib/aios/installer"
+FIRSTBOOT="${ROOT}/payload/profile/airootfs/usr/lib/aios/bin/firstboot"
 HASHES="${ROOT}/payload/hashes.txt"
 ISO_HASHES="${ROOT}/payload/profile/airootfs/usr/lib/aios/hashes.txt"
 failed=0
@@ -29,6 +30,11 @@ grep -q 'AIOS_BOOTSTRAP' "${RECOVER}" || fail "recover.py must honor AIOS_BOOTST
 grep -q 'os.replace' "${RECOVER}" || fail "recover.py must atomic-write with os.replace"
 grep -q 'HI-09' "${MAIN}" || fail "main.py must quote HI-09 on recovery/reject"
 grep -q 'L-19' "${MAIN}" || fail "main.py must quote L-19 on reject"
+grep -q 'writes_frozen' "${MAIN}" || fail "persist must gate on writes_frozen (L-12)"
+grep -q 'persist failed' "${MAIN}" || fail "persist failure must set note_text"
+[ -f "${FIRSTBOOT}" ] || fail "missing firstboot"
+grep -q '/srv/aios/state/snapper_pre' "${FIRSTBOOT}" \
+  || fail "firstboot must write /srv/aios/state/snapper_pre (HI-09)"
 
 _prov=$(grep -RIn -- 'provider' "${ROOT}/installer" 2>/dev/null | head -n 1 || true)
 [ -z "${_prov}" ] || fail "installer names provider (HI-02): ${_prov}"
@@ -257,6 +263,133 @@ if printf '%s\n' "${_bad2}" | grep -q Traceback; then
 fi
 printf '%s\n' "${_bad2}" | grep -q 'view: questions' \
   || fail "array snapshot must fail closed to questions: ${_bad2}"
+
+# Typed-field mismatch: work_runtime: 1 / accepted: 1 fail closed (is True, not ==).
+BOOT_TYPED="${TMP}/typed"
+mkdir -p "${BOOT_TYPED}"
+python3 - "${BOOT_TYPED}/answers.json" <<'PY' || fail "failed to write typed snapshot"
+import json
+import sys
+
+doc = {
+    "purpose": "stale",
+    "work_runtime": 1,
+    "operator": None,
+    "operator_login": None,
+    "vetoes": {"never_do": None, "networks": None, "remotes": False},
+    "accepted": 1,
+    "decision": None,
+    "step": "accept",
+    "snapper_pre": 7,
+    "qindex": 2,
+}
+with open(sys.argv[1], "w", encoding="utf-8") as fh:
+    json.dump(doc, fh)
+PY
+_load_typed=$(
+  AIOS_BOOTSTRAP="${BOOT_TYPED}" python3 - "${ROOT}/installer/aios_installer" <<'PY'
+import os
+import sys
+
+sys.path.insert(0, sys.argv[1])
+import recover
+
+loaded = recover.load()
+if loaded is not None:
+    raise SystemExit("typed snapshot must not load: %r" % (loaded,))
+PY
+) || fail "recover.load of work_runtime:1 / accepted:1 must return None: ${_load_typed}"
+_typed=$(
+  AIOS_BOOTSTRAP="${BOOT_TYPED}" \
+    AIOS_SNAPPER_PRE="${SNAP}" \
+    AIOS_HI="${HI}" \
+    python3 -u "${MAIN}" <<'EOF'
+view recovery
+quit
+EOF
+) || true
+if printf '%s\n' "${_typed}" | grep -q Traceback; then
+  fail "typed snapshot traceback-exited: ${_typed}"
+fi
+printf '%s\n' "${_typed}" | grep -q 'view: questions' \
+  || fail "typed snapshot must fail closed to questions: ${_typed}"
+printf '%s\n' "${_typed}" | grep -q 'malformed' \
+  || fail "typed snapshot must note fail-closed: ${_typed}"
+printf '%s\n' "${_typed}" | grep -q 'purpose: stale' \
+  && fail "typed snapshot must not keep stale purpose: ${_typed}" || true
+printf '%s\n' "${_typed}" | grep -q 'work-runtime: true' \
+  && fail "work_runtime: 1 must not load as yes: ${_typed}" || true
+printf '%s\n' "${_typed}" | grep -q 'work-runtime: false' \
+  || fail "work_runtime: 1 must fail closed to false: ${_typed}"
+printf '%s\n' "${_typed}" | grep -q 'envelope-decision: accepted' \
+  && fail "accepted: 1 must not load as accepted: ${_typed}" || true
+python3 - "${BOOT_TYPED}/answers.json" <<'PY' || fail "typed snapshot persist after fail-closed"
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as fh:
+    data = json.load(fh)
+if data.get("work_runtime") is True:
+    raise SystemExit("work_runtime is True after fail-closed")
+if data.get("work_runtime") is not False:
+    raise SystemExit("work_runtime must be JSON false, got %r" % data.get("work_runtime"))
+if data.get("accepted") is True:
+    raise SystemExit("accepted is True after fail-closed")
+if data.get("accepted") is not False:
+    raise SystemExit("accepted must be JSON false, got %r" % data.get("accepted"))
+if data.get("purpose") == "stale":
+    raise SystemExit("stale purpose survived fail-closed")
+PY
+
+# Persist failure must surface (HI-09).
+printf x > "${TMP}/notdir"
+_pf=$(
+  AIOS_BOOTSTRAP="${TMP}/notdir/boot" \
+    AIOS_SNAPPER_PRE="${SNAP}" \
+    AIOS_HI="${HI}" \
+    python3 -u "${MAIN}" <<'EOF'
+answer purpose a lab vm
+quit
+EOF
+) || true
+printf '%s\n' "${_pf}" | grep -q 'persist failed' \
+  || fail "persist OSError must set note: ${_pf}"
+printf '%s\n' "${_pf}" | grep -q 'HI-09' \
+  || fail "persist failure must quote HI-09: ${_pf}"
+if printf '%s\n' "${_pf}" | grep -q Traceback; then
+  fail "persist failure traceback-exited: ${_pf}"
+fi
+
+# Brake freezes snapshot writes (L-12).
+BOOT_BR="${TMP}/brake-persist"
+mkdir -p "${BOOT_BR}"
+_brp=$(
+  AIOS_BOOTSTRAP="${BOOT_BR}" \
+    AIOS_SNAPPER_PRE="${SNAP}" \
+    AIOS_HI="${HI}" \
+    AIOS_BRAKE="${TMP}/brakeflag" \
+    python3 -u "${MAIN}" <<'EOF'
+answer purpose a lab vm
+brake
+answer purpose mutated
+quit
+EOF
+) || true
+printf '%s\n' "${_brp}" | grep -q 'writes: frozen' \
+  || fail "brake must freeze writes: ${_brp}"
+printf '%s\n' "${_brp}" | grep -q 'refused: writes frozen' \
+  || fail "answer after brake must refuse: ${_brp}"
+python3 - "${BOOT_BR}/answers.json" <<'PY' || fail "brake must not persist mutated purpose"
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as fh:
+    data = json.load(fh)
+if data.get("purpose") != "a lab vm":
+    raise SystemExit("purpose mutated while frozen: %r" % data.get("purpose"))
+if data.get("work_runtime") is True:
+    raise SystemExit("work_runtime became true while frozen")
+PY
 
 # ISO copy resumes the same snapshot bytes.
 BOOT_ISO="${TMP}/iso"

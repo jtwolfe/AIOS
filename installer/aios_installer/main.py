@@ -184,6 +184,8 @@ class Session:
             _line(out, line)
 
     def persist(self):
+        if self.writes_frozen:
+            return
         try:
             recover.save(
                 self.last_step,
@@ -192,7 +194,8 @@ class Session:
                 self.decision,
                 self.qindex,
             )
-        except (OSError, TypeError, ValueError):
+        except (OSError, TypeError, ValueError) as exc:
+            self.note_text = "persist failed: %s (HI-09)" % exc
             return
 
     def _restore(self):
@@ -299,6 +302,8 @@ class Session:
         self.note_text = "resume: last-step=%s" % target
 
     def skip(self, qid):
+        if self._frozen():
+            return
         qid = (qid or "").strip() or self.qid()
         if not qid:
             self.note_text = "skip: no current question"
@@ -315,6 +320,8 @@ class Session:
         self.persist()
 
     def answer(self, payload):
+        if self._frozen():
+            return
         payload = (payload or "").strip()
         qid = self.qid()
         text = payload

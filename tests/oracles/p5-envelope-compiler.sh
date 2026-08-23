@@ -250,6 +250,10 @@ cmp -s "${TMP}/false.out" "${TMP}/iso.out" \
   || fail "ISO compiler output differs from source compiler"
 
 # Envelope view shows the compiled document.
+LIVE_BIP="/srv/aios/state/bootstrap-in-progress"
+_live_existed=0
+[ -e "${LIVE_BIP}" ] && _live_existed=1
+mkdir -p "${TMP}/tui-boot"
 _tui=$(
   printf '%s\n' \
     'answer purpose a lab vm' \
@@ -257,7 +261,7 @@ _tui=$(
     'answer never-do format the disk' \
     'answer networks lan only' \
     'view envelope' \
-    'quit' | python3 -u "${MAIN}"
+    'quit' | AIOS_BOOTSTRAP="${TMP}/tui-boot" python3 -u "${MAIN}"
 ) || true
 printf '%s\n' "${_tui}" | grep -q 'view: envelope' \
   || fail "envelope view missing: ${_tui}"
@@ -281,6 +285,10 @@ if [ "${WR_BEFORE}" -eq 0 ] && [ -e /srv/aios/src/work-runtime ]; then
 fi
 _found=$(find "${TMP}" -name work-runtime -print 2>/dev/null || true)
 [ -z "${_found}" ] || fail "compiler created work-runtime under TMP: ${_found}"
+
+if [ "${_live_existed}" -eq 0 ] && [ -e "${LIVE_BIP}" ]; then
+  fail "oracle created ${LIVE_BIP} (HI-09)"
+fi
 
 (cd "${ROOT}" && grep -E '^[0-9a-f]{64} ' "${HASHES}" | sha256sum -c --strict - >/dev/null) \
   || fail "sha256sum -c payload/hashes.txt --strict"

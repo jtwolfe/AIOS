@@ -107,8 +107,14 @@ if grep -R -qi 'synthesi' "${ROOT}/installer" 2>/dev/null; then
     || fail "installer mentions synthesis without HI-15"
 fi
 
+TMP=$(mktemp -d)
+trap 'rm -rf "${TMP}"' EXIT
+LIVE_BIP="/srv/aios/state/bootstrap-in-progress"
+_live_existed=0
+[ -e "${LIVE_BIP}" ] && _live_existed=1
 drive() {
-  printf '%s\n' "$@" | python3 -u "${MAIN}"
+  _boot=$(mktemp -d "${TMP}/boot.XXXXXX")
+  printf '%s\n' "$@" | AIOS_BOOTSTRAP="${_boot}" python3 -u "${MAIN}"
 }
 
 _out=$(drive \
@@ -207,9 +213,9 @@ fi
 grep -q 'signal.SIG_IGN' "${MAIN}" \
   || fail "TTY must ignore SIGINT so readline is not interrupted (L-09)"
 
-TMP=$(mktemp -d)
-trap 'rm -rf "${TMP}"' EXIT
+mkdir -p "${TMP}/brake-boot"
 _br=$(
+  AIOS_BOOTSTRAP="${TMP}/brake-boot" \
   AIOS_BRAKE="${TMP}/brake" python3 -u "${MAIN}" <<'EOF'
 brake
 quit
@@ -220,7 +226,9 @@ printf '%s\n' "${_br}" | grep -q 'brake: on' \
   || fail "brake flag missing: ${_br}"
 
 printf x > "${TMP}/brake_notdir"
+mkdir -p "${TMP}/brake-fail-boot"
 _br_fail=$(
+  AIOS_BOOTSTRAP="${TMP}/brake-fail-boot" \
   AIOS_BRAKE="${TMP}/brake_notdir/nested" python3 -u "${MAIN}" <<'EOF'
 brake
 view envelope
@@ -236,7 +244,8 @@ printf '%s\n' "${_br_fail}" | grep -q 'brake failed' \
 printf '%s\n' "${_br_fail}" | grep -q 'envelope-decision: accepted' \
   || fail "failed brake must not freeze writes: ${_br_fail}"
 
-python3 - "${MAIN}" <<'PY' || fail "PTY Ctrl+D/Ctrl+C must keep the TUI up (L-09)"
+mkdir -p "${TMP}/pty-boot"
+python3 - "${MAIN}" "${TMP}/pty-boot" <<'PY' || fail "PTY Ctrl+D/Ctrl+C must keep the TUI up (L-09)"
 import os
 import pty
 import select
@@ -245,6 +254,7 @@ import sys
 import time
 
 main = sys.argv[1]
+boot = sys.argv[2]
 ROUNDS = 8
 
 
@@ -327,6 +337,7 @@ def wait_read_block(pid, timeout=3.0):
 
 pid, master = pty.fork()
 if pid == 0:
+    os.environ["AIOS_BOOTSTRAP"] = boot
     os.execv(sys.executable, [sys.executable, "-u", main])
     os._exit(127)
 
@@ -425,6 +436,10 @@ if died:
 if "Traceback" in text:
     raise SystemExit("traceback on TTY: %s" % text)
 PY
+
+if [ "${_live_existed}" -eq 0 ] && [ -e "${LIVE_BIP}" ]; then
+  fail "oracle created ${LIVE_BIP} (HI-09)"
+fi
 
 (cd "${ROOT}" && grep -E '^[0-9a-f]{64} ' "${HASHES}" | sha256sum -c --strict - >/dev/null) \
   || fail "sha256sum -c payload/hashes.txt --strict"

@@ -226,6 +226,42 @@ def _load_answers_mapping(data):
     return answers
 
 
+def _require_snapshot(data):
+    # Fail closed on typed-field mismatch. 1 is not JSON true (HI-15).
+    if not isinstance(data, dict):
+        raise ValueError("snapshot is not an object")
+    for key in ("purpose", "work_runtime", "operator", "vetoes", "accepted"):
+        if key not in data:
+            raise ValueError("snapshot missing %s" % key)
+    if not isinstance(data.get("work_runtime"), bool):
+        raise ValueError("work_runtime must be a JSON boolean")
+    if not isinstance(data.get("accepted"), bool):
+        raise ValueError("accepted must be a JSON boolean")
+    vetoes = data.get("vetoes")
+    if not isinstance(vetoes, dict):
+        raise ValueError("vetoes must be an object")
+    if "remotes" in vetoes and not isinstance(vetoes.get("remotes"), bool):
+        raise ValueError("vetoes.remotes must be a JSON boolean")
+    if "qindex" in data:
+        qindex = data.get("qindex")
+        if isinstance(qindex, bool) or not isinstance(qindex, int):
+            raise ValueError("qindex must be an int")
+    if "snapper_pre" in data and data.get("snapper_pre") is not None:
+        snap = data.get("snapper_pre")
+        if isinstance(snap, bool) or not isinstance(snap, int):
+            raise ValueError("snapper_pre must be an int")
+    if "decision" in data and data.get("decision") not in (
+        None,
+        "accepted",
+        "rejected",
+    ):
+        raise ValueError("decision invalid")
+    if "step" in data and not isinstance(data.get("step"), str):
+        raise ValueError("step must be a string")
+    if data.get("bots") is True:
+        raise ValueError("bots must not be true")
+
+
 def load():
     dest = bootstrap_dir()
     path = os.path.join(dest, "answers.json")
@@ -234,9 +270,10 @@ def load():
     try:
         with open(path, encoding="utf-8") as fh:
             data = json.load(fh)
-        if not isinstance(data, dict):
-            return None
+        _require_snapshot(data)
         answers = _load_answers_mapping(data)
+        if answers.get("work_runtime") is not data.get("work_runtime"):
+            raise ValueError("work_runtime identity mismatch")
         step = data.get("step") or data.get("last_step")
         if not step:
             file_step = _read_text(os.path.join(dest, "step"))
