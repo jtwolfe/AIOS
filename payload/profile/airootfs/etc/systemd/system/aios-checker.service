@@ -1,0 +1,17 @@
+[Unit]
+Description=AIOS independent checker
+After=local-fs.target
+# Live ISO has no /srv/aios/checker worktree; do not start there.
+ConditionPathExists=/srv/aios/checker/aios_checker/main.py
+
+[Service]
+Type=simple
+# HI-02: different process from the proposer; no model client (L-08).
+User=aios-checker
+Group=aios-checker
+WorkingDirectory=/srv/aios/checker
+ExecStart=/usr/bin/python3 /srv/aios/checker/aios_checker/main.py
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

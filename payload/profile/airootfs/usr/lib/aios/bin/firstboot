@@ -531,7 +531,8 @@ copy_payload_into_target() {
     "${TARGET}/usr/lib/tmpfiles.d" \
     "${TARGET}/etc/systemd/system" \
     "${TARGET}/srv/aios/envelope" \
-    "${TARGET}/srv/aios/seeds"
+    "${TARGET}/srv/aios/seeds" \
+    "${TARGET}/srv/aios/checker"
   copy_if_present "${AIOS_LIB}/bin/installer" "${TARGET}/usr/lib/aios/bin/installer"
   copy_if_present "${AIOS_LIB}/bin/enact" "${TARGET}/usr/lib/aios/bin/enact"
   copy_if_present "${PACSTRAP_LIST}" "${TARGET}/usr/lib/aios/pacstrap.x86_64"
@@ -539,15 +540,26 @@ copy_payload_into_target() {
   copy_if_present /usr/lib/tmpfiles.d/aios.conf "${TARGET}/usr/lib/tmpfiles.d/aios.conf"
   copy_if_present /etc/systemd/system/aios-installer.service \
     "${TARGET}/etc/systemd/system/aios-installer.service"
+  copy_if_present /etc/systemd/system/aios-checker.service \
+    "${TARGET}/etc/systemd/system/aios-checker.service"
   copy_if_present "${AIOS_LIB}/hard-invariants.md" \
     "${TARGET}/srv/aios/envelope/hard-invariants.md"
   copy_if_present "${AIOS_LIB}/envelope/hard-invariants.md" \
     "${TARGET}/srv/aios/envelope/hard-invariants.md"
+  # Checker source becomes the /srv/aios/checker worktree (HI-02). Not enabled on the live ISO.
+  [ -d "${AIOS_LIB}/checker/aios_checker" ] \
+    || die "payload checker source missing"
+  cp -a "${AIOS_LIB}/checker/." "${TARGET}/srv/aios/checker/" \
+    || die "copy checker source failed"
   materialise_seeds
   [ -x "${TARGET}/usr/lib/aios/bin/installer" ] \
     || die "installer missing on target"
   [ -f "${TARGET}/etc/systemd/system/aios-installer.service" ] \
     || die "aios-installer.service missing on target"
+  [ -f "${TARGET}/etc/systemd/system/aios-checker.service" ] \
+    || die "aios-checker.service missing on target"
+  [ -f "${TARGET}/srv/aios/checker/aios_checker/schema.py" ] \
+    || die "checker schema.py missing on target"
 }
 
 # pacstrap bind-mounts /run onto /mnt/run; teardown can drop nested L-07 mounts.
@@ -635,6 +647,9 @@ EOF
 
   systemctl --root="${TARGET}" enable aios-installer.service \
     || die "failed to enable aios-installer.service in the chroot"
+  # HI-06: checker stays enabled on the installed disk. Not enabled on the live ISO.
+  systemctl --root="${TARGET}" enable aios-checker.service \
+    || die "failed to enable aios-checker.service in the chroot"
   systemctl --root="${TARGET}" mask getty@tty1.service serial-getty@ttyS0.service \
     || die "failed to mask gettys (installer must own /dev/console)"
   systemctl --root="${TARGET}" enable systemd-networkd.service systemd-resolved.service \
@@ -644,6 +659,8 @@ EOF
   systemctl --root="${TARGET}" disable iwd.service 2>/dev/null || true
   systemctl --root="${TARGET}" is-enabled aios-installer.service >/dev/null \
     || die "aios-installer.service not enabled in the chroot"
+  systemctl --root="${TARGET}" is-enabled aios-checker.service >/dev/null \
+    || die "aios-checker.service not enabled in the chroot"
   _g1=$(systemctl --root="${TARGET}" is-enabled getty@tty1.service 2>/dev/null || true)
   _gs=$(systemctl --root="${TARGET}" is-enabled serial-getty@ttyS0.service 2>/dev/null || true)
   [ "${_g1}" = masked ] || die "getty@tty1.service is not masked on the target"
@@ -904,10 +921,14 @@ init_one_git() {
   [ ! -e "${_host_wt}/.git" ] || die "${_wt} is already a git repo"
   mkdir -p "${_host_wt}" || die "mkdir ${_wt} failed"
 
-  printf '# %s\n\n%s\n' "${_name}" "${_purpose}" > "${_host_wt}/README.md" \
-    || die "write ${_wt}/README.md failed"
-  printf '# Local git is the source of truth (HI-01).\n' > "${_host_wt}/.gitignore" \
-    || die "write ${_wt}/.gitignore failed"
+  if [ ! -f "${_host_wt}/README.md" ]; then
+    printf '# %s\n\n%s\n' "${_name}" "${_purpose}" > "${_host_wt}/README.md" \
+      || die "write ${_wt}/README.md failed"
+  fi
+  if [ ! -f "${_host_wt}/.gitignore" ]; then
+    printf '# Local git is the source of truth (HI-01).\n' > "${_host_wt}/.gitignore" \
+      || die "write ${_wt}/.gitignore failed"
+  fi
   if [ "${_name}" = envelope ]; then
     [ -f "${_host_wt}/hard-invariants.md" ] \
       || die "${_wt}/hard-invariants.md missing before git"
@@ -966,6 +987,8 @@ init_privileged_git() {
     || die "seeds/work-runtime missing (HI-17)"
   [ -d "${TARGET}/srv/aios/seeds/work-runtime-bots" ] \
     || die "seeds/work-runtime-bots missing (HI-17)"
+  [ -f "${TARGET}/srv/aios/checker/aios_checker/schema.py" ] \
+    || die "checker worktree missing schema.py"
   [ -f "${TARGET}/srv/aios/state/packages.txt" ] \
     || die "state worktree missing packages.txt"
   grep -qx linux "${TARGET}/srv/aios/state/packages.txt" \
@@ -983,6 +1006,8 @@ init_privileged_git() {
     || die "seeds.git missing work-runtime-bots (HI-17)"
   arch-chroot "${TARGET}" /usr/bin/git -C /srv/aios/git/envelope.git cat-file -e main:hard-invariants.md \
     || die "envelope.git missing hard-invariants.md (HI-17)"
+  arch-chroot "${TARGET}" /usr/bin/git -C /srv/aios/git/checker.git cat-file -e main:aios_checker/schema.py \
+    || die "checker.git missing aios_checker/schema.py"
   log "privileged git trees"
 }
 

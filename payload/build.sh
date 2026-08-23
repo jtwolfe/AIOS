@@ -219,6 +219,7 @@ check_hashes() {
     'payload/profile/airootfs/usr/lib/sysusers.d/aios.conf$' \
     'payload/profile/airootfs/usr/lib/tmpfiles.d/aios.conf$' \
     'payload/profile/airootfs/etc/systemd/system/aios-installer.service$' \
+    'payload/profile/airootfs/etc/systemd/system/aios-checker.service$' \
     'payload/profile/airootfs/usr/lib/aios/hard-invariants.md$' \
     'payload/profile/airootfs/usr/lib/aios/minisign.pub$' \
     'payload/profile/airootfs/usr/lib/aios/hashes.txt$' \
@@ -237,6 +238,8 @@ check_hashes() {
   done < <(cd "${REPO_ROOT}" && find \
       seed/work-runtime seed/work-runtime-bots \
       payload/profile/airootfs/srv/aios/seeds \
+      checker \
+      payload/profile/airootfs/usr/lib/aios/checker \
       -type f | sort)
   while read -r path; do
     [[ -z "${path}" ]] && continue
@@ -365,6 +368,15 @@ check_firstboot_payload() {
   [[ -f "${iso}/etc/systemd/system/aios-installer.service" ]] || die "missing aios-installer.service"
   [[ ! -e "${iso}/etc/systemd/system/multi-user.target.wants/aios-installer.service" ]] \
     || die "aios-installer.service must not be enabled on the live ISO"
+  [[ -f "${iso}/etc/systemd/system/aios-checker.service" ]] || die "missing aios-checker.service"
+  [[ ! -e "${iso}/etc/systemd/system/multi-user.target.wants/aios-checker.service" ]] \
+    || die "aios-checker.service must not be enabled on the live ISO"
+  [[ -f "${iso}/usr/lib/aios/checker/aios_checker/schema.py" ]] || die "missing checker schema.py"
+  [[ -d "${REPO_ROOT}/checker" ]] || die "missing checker/"
+  diff -qr "${REPO_ROOT}/checker" "${iso}/usr/lib/aios/checker" \
+    || die "ISO checker != checker/"
+  grep -q 'aios-checker.service' "${iso}/usr/lib/aios/bin/firstboot" \
+    || die "firstboot must copy aios-checker.service"
   [[ ! -e "${iso}/etc/systemd/system/aios-firstboot.service" ]] \
     || die "aios-firstboot.service is not a named unit (HI-12)"
   grep -q 'login-program /usr/lib/aios/bin/firstboot' \
@@ -422,6 +434,7 @@ check_firstboot_payload() {
   grep -Eq '  bin/enact$' "${iso_hashes}" || die "ISO hashes.txt must pin enact"
   grep -Eq '  minisign\.pub$' "${iso_hashes}" || die "ISO hashes.txt must pin minisign.pub"
   grep -Eq 'aios-installer\.service$' "${iso_hashes}" || die "ISO hashes.txt must pin installer unit"
+  grep -Eq 'aios-checker\.service$' "${iso_hashes}" || die "ISO hashes.txt must pin checker unit"
   grep -Eq 'sysusers\.d/aios\.conf$' "${iso_hashes}" || die "ISO hashes.txt must pin sysusers"
   grep -Eq 'tmpfiles\.d/aios\.conf$' "${iso_hashes}" || die "ISO hashes.txt must pin tmpfiles"
   grep -Fq 'getty@tty1.service.d/autologin.conf' "${iso_hashes}" \
@@ -437,6 +450,11 @@ check_firstboot_payload() {
     grep -Eq "^[0-9a-f]{64}  /${rel}$" "${iso_hashes}" \
       || die "ISO hashes.txt must pin /${rel}"
   done < <(cd "${iso}" && find srv/aios/seeds -type f | sort)
+  while IFS= read -r rel; do
+    [[ -z "${rel}" ]] && continue
+    grep -Eq "^[0-9a-f]{64}  ${rel}$" "${iso_hashes}" \
+      || die "ISO hashes.txt must pin ${rel}"
+  done < <(cd "${iso}/usr/lib/aios" && find checker -type f | sort)
   while IFS= read -r line || [[ -n "${line}" ]]; do
     [[ -z "${line}" || "${line}" == \#* ]] && continue
     hash=${line%% *}

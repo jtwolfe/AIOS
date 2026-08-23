@@ -35,6 +35,8 @@ need_file "${PACSTRAP}"
 need_file "${PACSTRAP_ISO}"
 need_file "${FIRSTBOOT}"
 need_file "${INSTALLER}"
+need_file "${AIROOTFS}/etc/systemd/system/aios-checker.service"
+need_file "${AIROOTFS}/usr/lib/aios/checker/aios_checker/schema.py"
 [ -d "${AIROOTFS}/etc/systemd/system" ] || fail "missing airootfs systemd/system"
 
 # No DE / display-manager names in the live ISO list or the installed set.
@@ -73,6 +75,17 @@ installer_wants=$(find "${AIROOTFS}/etc/systemd" \
   -print 2>/dev/null || true)
 if [ -n "${installer_wants}" ]; then
   fail "aios-installer.service must not be enabled on the live ISO: ${installer_wants}"
+fi
+
+# aios-checker.service is copied for the chroot; it is not enabled on the ISO.
+if [ -e "${AIROOTFS}/etc/systemd/system/multi-user.target.wants/aios-checker.service" ]; then
+  fail "aios-checker.service must not be in multi-user.target.wants"
+fi
+checker_wants=$(find "${AIROOTFS}/etc/systemd" \
+  \( -path '*.wants/aios-checker.service' -o -path '*.requires/aios-checker.service' \) \
+  -print 2>/dev/null || true)
+if [ -n "${checker_wants}" ]; then
+  fail "aios-checker.service must not be enabled on the live ISO: ${checker_wants}"
 fi
 
 # No aios-firstboot.service (HI-12: autologin execs the binary).

@@ -1,0 +1,53 @@
+# checker
+
+Independent validator for privileged proposals. systemd unit
+`aios-checker.service`, uid `aios-checker` (L-02). No model client
+(HI-02, L-08).
+
+A proposal is intent plus oracles. Empty oracle set → reject (HI-10).
+Missing evidence → reject (HI-08). Only this uid fast-forwards or
+squash-merges to `main` (HI-03, L-03).
+
+On the machine the live tree is `/srv/aios/checker`. Bare git is
+`/srv/aios/git/checker.git`, owned by `aios-checker`.
+
+The unit is shipped for the installed system. It is not enabled on the
+live ISO.
+
+## Schema
+
+`aios_checker/schema.py` loads `/srv/aios/state/proposals/<id>.json`.
+
+```
+{
+  "id": "uuid-v4",
+  "branch": "agent/<yyyy-mm-dd>-<slug>",
+  "repos": ["state"],
+  "intent": {
+    "source": "human | envelope-clause | machine-goal | work-intent",
+    "asked": "what was asked",
+    "clause": "envelope/clauses/….md or null"
+  },
+  "oracles": ["policy/….sh", "pacman -Qi …"],
+  "citations": ["https://wiki.archlinux.org/…"],
+  "evidence": {"ran": ["policy/….sh"], "snapper_pre": 184}
+}
+```
+
+## Merge gate
+
+`aios_checker/merge.py`: `assert_merge_permitted` / `merge_to_main`.
+Only uid `aios-checker` may fast-forward or squash-merge to `main`.
+
+## Driver
+
+```
+python3 /srv/aios/checker/aios_checker/main.py validate FILE.json
+python3 /srv/aios/checker/aios_checker/main.py merge REPO BRANCH [--mode ff-only|squash]
+```
+
+With no arguments the service watches `proposals/` and refuses documents
+that fail the schema. It does not merge until the declared oracles have
+been re-run.
+
+Exit 0 on pass, non-zero on fail. One-line reason on stderr.
