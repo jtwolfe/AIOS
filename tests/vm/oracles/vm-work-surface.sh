@@ -50,5 +50,4 @@ printf '%s\n' "${P814_TUI_OUT}" | grep -q 'skills refused in os session (L-14)' 
 printf '%s\n' "${P814_TUI_OUT}" | grep -q '^view: envelope$' \
   || die "OS envelope inspect must work: ${P814_TUI_OUT}"
 
-# p8-work-views.sh is copied from PR 39 (P8.15). This album asserts P8.3 L-14.
 p814_finish

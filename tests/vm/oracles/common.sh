@@ -19,6 +19,15 @@ work-disable
 bots-off
 bots-job'
 
+# P8.4–P8.10 host wraps. Album incomplete if any is missing.
+P814_WRAPS='wake
+skill
+connector
+provider
+worker
+routine
+bridge'
+
 die() {
   printf 'error: %s\n' "$*" >&2
   exit 1
@@ -168,6 +177,18 @@ p814_album_complete() {
     || { printf 'error: missing smoke.json\n' >&2; _missing=$((_missing + 1)); }
   [ -f "${_root}/tests/vm/fixtures/recover.json" ] \
     || { printf 'error: missing recover.json\n' >&2; _missing=$((_missing + 1)); }
+  for _w in ${P814_WRAPS}
+  do
+    _wrap="${_root}/tests/oracles/p8-${_w}.sh"
+    if [ ! -f "${_wrap}" ]; then
+      printf 'error: missing tests/oracles/p8-%s.sh (P8.14 incomplete)\n' \
+        "${_w}" >&2
+      _missing=$((_missing + 1))
+    elif [ ! -x "${_wrap}" ]; then
+      printf 'error: tests/oracles/p8-%s.sh must be executable\n' "${_w}" >&2
+      _missing=$((_missing + 1))
+    fi
+  done
   [ "${_missing}" -eq 0 ] || die "P8.14 album incomplete (${_missing} missing)"
 }
 
