@@ -11,7 +11,7 @@ f33f6243ae5f1ae0f0f706068c0889f4552f9df877a5d434c0b094601e57d1d6  payload/profil
 11e9e66eeb27a0a277607f5d2e8672e4400ac35060085f33760499ad11375c0f  payload/profile/airootfs/srv/aios/seeds/work-runtime-bots/boundaries/invariants.md
 3c1ed69a8b27424202de90e1c79ffa1dd9029de7b315e757b2f7428b13b242fd  payload/profile/airootfs/srv/aios/seeds/work-runtime-bots/skills/fleet.md
 2d10e6a61690ba7ca54878679cf1e89770c7465af5841e6ea277357c3c0c3063  payload/profile/airootfs/srv/aios/seeds/work-runtime-bots/skills/roster.md
-8943e0275c778492d605bcca3e12f3629ca88abdd0134b006cc0e3dd559be95e  payload/profile/airootfs/srv/aios/seeds/work-runtime/AGENTS.md
+1f8683d7d5828ce587c07eaaa3b8f7f9c25b363d94f51bba31fc7b2a4ad0790d  payload/profile/airootfs/srv/aios/seeds/work-runtime/AGENTS.md
 1f7286ca9b41beb2f6c1cd4d9dece89bd85148fcf2affc4cdb623c71f92a4269  payload/profile/airootfs/srv/aios/seeds/work-runtime/README.md
 daf7f2808ba380489357b680cb34a7695c5058cfa8d353d7a086362038e067f4  payload/profile/airootfs/srv/aios/seeds/work-runtime/boundaries/interfaces.md
 9086dd9c9984fc2aee9b10c6693a37ff472e0daf7d88edd3608fc2d9e963c37d  payload/profile/airootfs/srv/aios/seeds/work-runtime/boundaries/invariants.md
@@ -64,7 +64,7 @@ ef06e6305365d44648da2b320fc9760554d782f551a4d57b2b64c3172eff4e02  payload/profil
 a4033ffaf12797591f610df8fd35607c36767d48acc23501204aeded78d528a9  payload/profile/airootfs/usr/lib/aios/checker/policy/work-slice.sh
 546d914b824dadfa8726db967bddc6c07c4c241012a3275f84300d28f25abbf9  payload/profile/airootfs/usr/lib/aios/envelope/hard-invariants.md
 546d914b824dadfa8726db967bddc6c07c4c241012a3275f84300d28f25abbf9  payload/profile/airootfs/usr/lib/aios/hard-invariants.md
-542173066396bab2f5b32665f396c11e8d421a3cc3a22dabbee8b786b98ade50  payload/profile/airootfs/usr/lib/aios/hashes.txt
+1fadd452bafe984b10d3b9a5fd91b1022051193c77138897b1358458c2233f5d  payload/profile/airootfs/usr/lib/aios/hashes.txt
 9016e60116d7d4cb81db8e67a6e1cee82bfe021433b7febb36d176fa5fa3bdcb  payload/profile/airootfs/usr/lib/aios/minisign.pub
 33ec044a92385c806b950ab40674f1a5b374a388da79eb7a93d324ad753fa095  payload/profile/airootfs/usr/lib/aios/pacstrap.x86_64
 1dfab8088c3562fa1238017fb8a0a67af26846cca6b76a0dc7546d6290153da5  payload/profile/airootfs/usr/lib/sysusers.d/aios.conf
@@ -115,7 +115,7 @@ f33f6243ae5f1ae0f0f706068c0889f4552f9df877a5d434c0b094601e57d1d6  seed/work-runt
 11e9e66eeb27a0a277607f5d2e8672e4400ac35060085f33760499ad11375c0f  seed/work-runtime-bots/boundaries/invariants.md
 3c1ed69a8b27424202de90e1c79ffa1dd9029de7b315e757b2f7428b13b242fd  seed/work-runtime-bots/skills/fleet.md
 2d10e6a61690ba7ca54878679cf1e89770c7465af5841e6ea277357c3c0c3063  seed/work-runtime-bots/skills/roster.md
-8943e0275c778492d605bcca3e12f3629ca88abdd0134b006cc0e3dd559be95e  seed/work-runtime/AGENTS.md
+1f8683d7d5828ce587c07eaaa3b8f7f9c25b363d94f51bba31fc7b2a4ad0790d  seed/work-runtime/AGENTS.md
 1f7286ca9b41beb2f6c1cd4d9dece89bd85148fcf2affc4cdb623c71f92a4269  seed/work-runtime/README.md
 daf7f2808ba380489357b680cb34a7695c5058cfa8d353d7a086362038e067f4  seed/work-runtime/boundaries/interfaces.md
 9086dd9c9984fc2aee9b10c6693a37ff472e0daf7d88edd3608fc2d9e963c37d  seed/work-runtime/boundaries/invariants.md
@@ -189,8 +189,8 @@ ead3cc3cb403e623060323ba8e83c5fb6ab7d2961de9ef5de006fe2d308f2ef6  agent/aios_age
 ead3cc3cb403e623060323ba8e83c5fb6ab7d2961de9ef5de006fe2d308f2ef6  payload/profile/airootfs/usr/lib/aios/agent/aios_agent/rollback_gate.py
 c3ed09453aa2a1e14a63f3c29a039f97e4ad1aa920383d8b49d149d912cf7048  checker/policy/work-runtime-git.sh
 c3ed09453aa2a1e14a63f3c29a039f97e4ad1aa920383d8b49d149d912cf7048  payload/profile/airootfs/usr/lib/aios/checker/policy/work-runtime-git.sh
-7e2776361776c5a190aaad8e9d9f0b6fbcbdb87a10b0e224ca525bc8f6a6c41a  seed/work-runtime/main.py
-7e2776361776c5a190aaad8e9d9f0b6fbcbdb87a10b0e224ca525bc8f6a6c41a  payload/profile/airootfs/srv/aios/seeds/work-runtime/main.py
+797aea9ff72bd8048d76e2fac26e1a1c4535401b873ecbfee635ff08923f2836  seed/work-runtime/main.py
+797aea9ff72bd8048d76e2fac26e1a1c4535401b873ecbfee635ff08923f2836  payload/profile/airootfs/srv/aios/seeds/work-runtime/main.py
 22b7ac6e2d796bf0454f7bcd6edde1e1c3dd46559dbb455fe11a3c23d2cd0505  seed/work-runtime/provider.py
 22b7ac6e2d796bf0454f7bcd6edde1e1c3dd46559dbb455fe11a3c23d2cd0505  payload/profile/airootfs/srv/aios/seeds/work-runtime/provider.py
 737d9b21fd5a785ade61ce4844bace1a38f79b0d9e975beccf52b955cdb25c03  seed/work-runtime/skills.py
@@ -213,3 +213,9 @@ b79a3e719ba0afee7ba3f3e581ead7e14acddcd661c47700032c7fcf018d00ef  seed/work-runt
 313f0ad61c2ee27b019f5ba73c6ff8cd6814255579d1fdec47b856635a4e8e2a  payload/profile/airootfs/srv/aios/seeds/work-runtime/connectors.py
 0f88d6eab4a31a9f7e5fc83016a57c8e79bb846f3c6a14ccd30e4ff5e5a2c45d  seed/work-runtime/live.py
 0f88d6eab4a31a9f7e5fc83016a57c8e79bb846f3c6a14ccd30e4ff5e5a2c45d  payload/profile/airootfs/srv/aios/seeds/work-runtime/live.py
+5ea51b3b2c55e7749baa2f747b304ac6f98c4edabf83b8376d4dd1fd05686063  seed/work-runtime/workers.py
+5ea51b3b2c55e7749baa2f747b304ac6f98c4edabf83b8376d4dd1fd05686063  payload/profile/airootfs/srv/aios/seeds/work-runtime/workers.py
+e68c0dfc90d65dff0d0b7a64f598e034b41ad95a8bc050de520ced8352c8f8b1  seed/work-runtime/routines.py
+e68c0dfc90d65dff0d0b7a64f598e034b41ad95a8bc050de520ced8352c8f8b1  payload/profile/airootfs/srv/aios/seeds/work-runtime/routines.py
+5dbaf219bcbe28a0b8ed039d380fab45811de54b4b26a98cf6dae72eeba245e7  seed/work-runtime/bridge.py
+5dbaf219bcbe28a0b8ed039d380fab45811de54b4b26a98cf6dae72eeba245e7  payload/profile/airootfs/srv/aios/seeds/work-runtime/bridge.py

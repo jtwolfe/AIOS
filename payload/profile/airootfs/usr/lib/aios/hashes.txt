@@ -5,7 +5,7 @@
 4530657a8a23c3ba80990df82c9153ab60e4846f0f5de55f25a0a58ce014ba4b  /etc/systemd/system/aios-installer.service
 1d1231b10266a39094e2afb409327e2ab38be576fb9b1f7eb312489220ec239c  /etc/systemd/system/getty@tty1.service.d/autologin.conf
 5cf010d5425e024ceb5567066221f94d6fbd4baa9ad9bc8e7eddee1dee3d547f  /etc/systemd/system/serial-getty@ttyS0.service.d/autologin.conf
-8943e0275c778492d605bcca3e12f3629ca88abdd0134b006cc0e3dd559be95e  /srv/aios/seeds/work-runtime/AGENTS.md
+1f8683d7d5828ce587c07eaaa3b8f7f9c25b363d94f51bba31fc7b2a4ad0790d  /srv/aios/seeds/work-runtime/AGENTS.md
 ecdb0fa71faa5a0a74c8782ab0a01c66d87646327c3728e2041e2fcd334f897b  /srv/aios/seeds/work-runtime-bots/AGENTS.md
 11e9e66eeb27a0a277607f5d2e8672e4400ac35060085f33760499ad11375c0f  /srv/aios/seeds/work-runtime-bots/boundaries/invariants.md
 f33f6243ae5f1ae0f0f706068c0889f4552f9df877a5d434c0b094601e57d1d6  /srv/aios/seeds/work-runtime-bots/README.md
@@ -102,7 +102,7 @@ f4c4b6d04d00766230da67d9fa657403128dd01ccce4ec713384593ae1bd09ff  /usr/lib/syste
 460430dfbc9480c3494621607bb8169fba285ddc0069b57d53a475db8a9783c5  operator-client/tty/notify.py
 ead3cc3cb403e623060323ba8e83c5fb6ab7d2961de9ef5de006fe2d308f2ef6  agent/aios_agent/rollback_gate.py
 c3ed09453aa2a1e14a63f3c29a039f97e4ad1aa920383d8b49d149d912cf7048  checker/policy/work-runtime-git.sh
-7e2776361776c5a190aaad8e9d9f0b6fbcbdb87a10b0e224ca525bc8f6a6c41a  /srv/aios/seeds/work-runtime/main.py
+797aea9ff72bd8048d76e2fac26e1a1c4535401b873ecbfee635ff08923f2836  /srv/aios/seeds/work-runtime/main.py
 22b7ac6e2d796bf0454f7bcd6edde1e1c3dd46559dbb455fe11a3c23d2cd0505  /srv/aios/seeds/work-runtime/provider.py
 737d9b21fd5a785ade61ce4844bace1a38f79b0d9e975beccf52b955cdb25c03  /srv/aios/seeds/work-runtime/skills.py
 e281f5a7987d1f1fc3f3b25d1e15f6ada534edce1e07b420af2cc8f3f5d2b1dd  /srv/aios/seeds/work-runtime/wake.py
@@ -114,3 +114,6 @@ b79a3e719ba0afee7ba3f3e581ead7e14acddcd661c47700032c7fcf018d00ef  /srv/aios/seed
 1e62d2ea4c7b5f27d75731b01b057a8f42fd75849bfaa76ac26268ce468a1380  /srv/aios/seeds/work-runtime/.gitignore
 313f0ad61c2ee27b019f5ba73c6ff8cd6814255579d1fdec47b856635a4e8e2a  /srv/aios/seeds/work-runtime/connectors.py
 0f88d6eab4a31a9f7e5fc83016a57c8e79bb846f3c6a14ccd30e4ff5e5a2c45d  /srv/aios/seeds/work-runtime/live.py
+5ea51b3b2c55e7749baa2f747b304ac6f98c4edabf83b8376d4dd1fd05686063  /srv/aios/seeds/work-runtime/workers.py
+e68c0dfc90d65dff0d0b7a64f598e034b41ad95a8bc050de520ced8352c8f8b1  /srv/aios/seeds/work-runtime/routines.py
+5dbaf219bcbe28a0b8ed039d380fab45811de54b4b26a98cf6dae72eeba245e7  /srv/aios/seeds/work-runtime/bridge.py

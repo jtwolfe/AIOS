@@ -16,11 +16,8 @@ MAX_TOOL_ROUNDS = 8
 FOLLOW_WITHOUT_READ = (
     "following a skill without reading its body this turn fails"
 )
-_COMPACT_KEYS = (
-    "skill_read",
-    "skill_follow",
-    "send",
-    "question",
+COMPACT_TEXT = ("skill_read", "skill_follow", "send", "question")
+COMPACT_OBJ = (
     "connector_discover",
     "connector_call",
     "connector_connect",
@@ -28,8 +25,57 @@ _COMPACT_KEYS = (
     "browser",
     "fetch",
     "search",
+    "dispatch",
+    "check",
+    "stop",
+    "coding",
+    "worker_dispatch",
+    "worker_check",
+    "worker_stop",
+    "worker_branch",
+    "coding_on_a_branch",
+    "routine",
+    "routine_create",
+    "routine_expire",
+    "routine_disable",
+    "bridge_shell",
+    "bridge_read",
+    "bridge_copy",
+    "bridge_copy_to",
+    "bridge_copy_from",
+    "copy_to_workspace",
+    "copy_from_workspace",
+    "bridge_approve",
+    "bridge_deny",
+    "approve",
+    "deny",
 )
-_LINE_PREFIXES = tuple("%s:" % key for key in _COMPACT_KEYS)
+LINE_PREFIXES = (
+    "connector_discover:",
+    "connector_call:",
+    "connector_connect:",
+    "connector_install:",
+    "browser:",
+    "fetch:",
+    "search:",
+    "skill_read:",
+    "skill_follow:",
+    "send:",
+    "question:",
+    "dispatch:",
+    "check:",
+    "stop:",
+    "coding:",
+    "routine:",
+    "routine_create:",
+    "routine_expire:",
+    "routine_disable:",
+    "bridge_shell:",
+    "bridge_read:",
+    "bridge_copy:",
+    "bridge_approve:",
+    "bridge_deny:",
+)
 
 
 class WorkError(Exception):
@@ -110,6 +156,11 @@ def _tool_text(name, obj):
         text = obj.get("connector")
     return str(text or "")
 
+def _payload_text(value):
+    if isinstance(value, (dict, list)):
+        return json.dumps(value)
+    return str(value or "")
+
 
 def _actions_from_obj(obj):
     if not isinstance(obj, dict):
@@ -129,18 +180,10 @@ def _actions_from_obj(obj):
         compact.pop("send", None)
     out = []
     for key, value in compact.items():
-        if key not in _COMPACT_KEYS:
-            continue
-        if key == "connector_call" and isinstance(value, dict):
-            out.append((key, _tool_text(key, value)))
-            continue
-        if key == "connector_install" and isinstance(value, dict):
-            out.append((key, json.dumps(value)))
-            continue
-        if key in ("browser", "fetch", "search") and isinstance(value, dict):
-            out.append((key, _tool_text(key, value)))
-            continue
-        out.append((key, str(value or "")))
+        if key in COMPACT_TEXT or key in ("connector_discover", "connector_connect"):
+            out.append((key, str(value or "")))
+        elif key in COMPACT_OBJ:
+            out.append((key, _payload_text(value)))
     return out or None
 
 
@@ -161,13 +204,61 @@ def parse_actions(text):
     for line in raw.splitlines():
         stripped_line = line.strip()
         lower = stripped_line.lower()
-        for prefix in _LINE_PREFIXES:
+        for prefix in LINE_PREFIXES:
             if not lower.startswith(prefix):
                 continue
             rest = stripped_line[len(prefix) :].strip()
             actions.append((prefix[:-1], rest))
             break
     return actions
+
+
+def _load_spec(text):
+    raw = text if isinstance(text, str) else str(text or "")
+    stripped = raw.strip()
+    if not stripped:
+        return {}
+    if stripped[0] in "{[":
+        try:
+            obj = json.loads(stripped)
+        except ValueError:
+            obj = None
+        if isinstance(obj, dict):
+            return obj
+        if isinstance(obj, list):
+            return {"items": obj}
+    return {"id": stripped, "text": stripped}
+
+
+def _canon_tool(tool, spec):
+    aliases = {
+        "worker_dispatch": "dispatch",
+        "worker_check": "check",
+        "worker_stop": "stop",
+        "worker_branch": "coding",
+        "coding_on_a_branch": "coding",
+        "routine_create": "routine",
+        "routine_expire": "routine_disable",
+        "copy_to_workspace": "bridge_copy",
+        "copy_from_workspace": "bridge_copy",
+        "bridge_copy_to": "bridge_copy",
+        "bridge_copy_from": "bridge_copy",
+        "approve": "bridge_approve",
+        "deny": "bridge_deny",
+    }
+    if tool in ("copy_to_workspace", "bridge_copy_to"):
+        spec["direction"] = spec.get("direction") or "to_workspace"
+        spec["op"] = spec.get("op") or "copy_to_workspace"
+    elif tool in ("copy_from_workspace", "bridge_copy_from"):
+        spec["direction"] = spec.get("direction") or "from_workspace"
+        spec["op"] = spec.get("op") or "copy_from_workspace"
+    elif tool == "bridge_copy":
+        spec["op"] = spec.get("op") or "copy"
+    elif tool == "bridge_shell":
+        spec["op"] = spec.get("op") or "shell"
+    elif tool == "bridge_read":
+        spec["op"] = spec.get("op") or "read"
+    return aliases.get(tool, tool), spec
 
 
 def _messages_text(messages):
@@ -193,9 +284,10 @@ def _result(
     skills_followed=None,
     error=None,
     context="",
-    connect_card=None,
-    connectors_discovered=None,
-    connector_results=None,
+    workers=None,
+    routines=None,
+    bridge=None,
+    view=None,
 ):
     return {
         "asked": asked,
@@ -210,66 +302,32 @@ def _result(
         "outcome": outcome,
         "skills_read": list(skills_read or []),
         "skills_followed": list(skills_followed or []),
-        "connect_card": connect_card,
-        "connectors_discovered": list(connectors_discovered or []),
-        "connector_results": list(connector_results or []),
+        "workers": list(workers or []),
+        "routines": list(routines or []),
+        "bridge": bridge,
+        "view": view,
         "error": error,
     }
 
 
-def _json_obj(text):
-    raw = (text or "").strip()
-    if not raw:
-        return {}
-    try:
-        obj = json.loads(raw)
-    except ValueError:
-        return None
-    if isinstance(obj, dict):
-        return obj
-    return {}
-
-
-def _call_parts(text):
-    obj = _json_obj(text)
-    if obj:
-        return (
-            str(obj.get("connector") or obj.get("name") or ""),
-            str(obj.get("tool") or obj.get("call") or ""),
-            obj.get("arguments") if isinstance(obj.get("arguments"), dict) else {},
-        )
-    parts = (text or "").strip().split(None, 2)
-    name = parts[0] if parts else ""
-    tool = parts[1] if len(parts) > 1 else ""
-    args = {}
-    if len(parts) > 2:
-        parsed = _json_obj(parts[2])
-        if parsed:
-            args = parsed
-    return name, tool, args
-
-
-def _browser_parts(text):
-    obj = _json_obj(text)
-    if obj:
-        return (
-            str(obj.get("service") or obj.get("name") or ""),
-            str(obj.get("url") or ""),
-        )
-    raw = (text or "").strip()
-    if not raw:
-        return "", ""
-    if raw.startswith("http://") or raw.startswith("https://"):
-        return "", raw
-    parts = raw.split(None, 1)
-    return parts[0], parts[1] if len(parts) > 1 else ""
-
-
 def run_turn(asked):
     from connectors import ConnectorError, ConnectorSession, chat_secret_error
+    from bridge import (
+        BridgeError,
+        approve as bridge_approve,
+        deny as bridge_deny,
+        request as bridge_request,
+        view_for as bridge_view_for,
+    )
     from provider import ProviderError, load
+    from routines import RoutineError, create as routine_create
+    from routines import disable as routine_disable
     from skills import load_body
     from wake import INJECTS, WakeError, inject
+    from workers import WorkerError, check as worker_check
+    from workers import coding as worker_coding
+    from workers import dispatch as worker_dispatch
+    from workers import stop as worker_stop
 
     asked = asked if isinstance(asked, str) else str(asked or "")
     injects = list(INJECTS)
@@ -309,26 +367,17 @@ def run_turn(asked):
     error = None
     skills_read = []
     skills_followed = []
+    workers_out = []
+    routines_out = []
+    bridge_out = None
+    view = None
     read_set = set()
     bodies_in_context = set()
     last_reply = ""
     context = prompt
     session = ConnectorSession(root)
     connect_card = None
-
-    def _fail_fields():
-        return dict(
-            context=context,
-            model_text=last_reply,
-            delivered="\n".join(delivered),
-            ended="failed",
-            outcome="failed",
-            skills_read=skills_read,
-            skills_followed=skills_followed,
-            connect_card=connect_card,
-            connectors_discovered=sorted(session.discovered),
-            connector_results=session.results,
-        )
+    queued_ctx = []
 
     try:
         provider = load()
@@ -351,30 +400,51 @@ def run_turn(asked):
                 asked,
                 injects,
                 prompt,
+                context=context,
+                model_text=last_reply,
+                delivered="\n".join(delivered),
+                ended="failed",
+                outcome="failed",
                 error=str(exc),
-                **_fail_fields()
+                skills_read=skills_read,
+                skills_followed=skills_followed,
+                workers=workers_out,
+                routines=routines_out,
+                bridge=bridge_out,
+                view=view,
             )
         except Exception as exc:
             return _result(
                 asked,
                 injects,
                 prompt,
+                context=context,
+                model_text=last_reply,
+                delivered="\n".join(delivered),
+                ended="failed",
+                outcome="failed",
                 error=str(exc),
-                **_fail_fields()
+                skills_read=skills_read,
+                skills_followed=skills_followed,
+                workers=workers_out,
+                routines=routines_out,
+                bridge=bridge_out,
+                view=view,
             )
         last_reply = reply if isinstance(reply, str) else str(reply or "")
         actions = parse_actions(last_reply)
         if not actions:
-            if not delivered and question is None and connect_card is None:
+            if not delivered and question is None:
                 ended = "idle"
                 outcome = "idle"
             break
 
         queued = []
-        queued_ctx = []
         stop = False
         for name, text in actions:
             tool = (name or "").strip().lower()
+            spec = _load_spec(text)
+            tool, spec = _canon_tool(tool, spec)
             if tool in PRIVILEGED_TOOLS:
                 error = "work agents never enact privileged change (HI-13)"
                 ended = "failed"
@@ -413,30 +483,158 @@ def run_turn(asked):
                     skills_followed.append(skill.name)
                 continue
             if tool == "send":
-                secret = chat_secret_error(text)
-                if secret:
-                    error = secret
-                    ended = "failed"
-                    outcome = "failed"
-                    stop = True
-                    break
                 delivered.append(text)
                 ended = "sent"
                 outcome = "sent"
                 continue
             if tool == "question":
-                secret = chat_secret_error(text)
-                if secret:
-                    error = secret
-                    ended = "failed"
-                    outcome = "failed"
-                    stop = True
-                    break
                 question = text
                 ended = "question"
                 outcome = "wait"
                 stop = True
                 break
+            if tool == "dispatch":
+                try:
+                    worker = worker_dispatch(root, spec)
+                except WorkerError as exc:
+                    error = str(exc)
+                    ended = "failed"
+                    outcome = "failed"
+                    stop = True
+                    break
+                workers_out.append(worker)
+                if worker.get("status") == "done":
+                    if not worker.get("result"):
+                        error = "results are sent, not only acknowledged"
+                        ended = "failed"
+                        outcome = "failed"
+                        stop = True
+                        break
+                    delivered.append(str(worker["result"]))
+                    ended = "sent"
+                    outcome = "sent"
+                else:
+                    ended = "running"
+                    outcome = "ok"
+                continue
+            if tool == "check":
+                try:
+                    worker = worker_check(root, spec)
+                except WorkerError as exc:
+                    error = str(exc)
+                    ended = "failed"
+                    outcome = "failed"
+                    stop = True
+                    break
+                workers_out.append(worker)
+                ended = ended if ended != "idle" else "ok"
+                outcome = outcome if outcome != "idle" else "ok"
+                continue
+            if tool == "stop":
+                try:
+                    worker = worker_stop(root, spec)
+                except WorkerError as exc:
+                    error = str(exc)
+                    ended = "failed"
+                    outcome = "failed"
+                    stop = True
+                    break
+                workers_out.append(worker)
+                ended = "stopped"
+                outcome = "ok"
+                continue
+            if tool == "coding":
+                try:
+                    worker = worker_coding(root, spec)
+                except WorkerError as exc:
+                    error = str(exc)
+                    ended = "failed"
+                    outcome = "failed"
+                    stop = True
+                    break
+                workers_out.append(worker)
+                delivered.append(str(worker.get("result") or ""))
+                ended = "sent"
+                outcome = "sent"
+                continue
+            if tool == "routine":
+                try:
+                    routine = routine_create(root, spec)
+                except RoutineError as exc:
+                    error = str(exc)
+                    ended = "failed"
+                    outcome = "failed"
+                    stop = True
+                    break
+                routines_out.append(routine)
+                ended = "ok"
+                outcome = "ok"
+                continue
+            if tool == "routine_disable":
+                try:
+                    routine = routine_disable(root, spec)
+                except RoutineError as exc:
+                    error = str(exc)
+                    ended = "failed"
+                    outcome = "failed"
+                    stop = True
+                    break
+                routines_out.append(routine)
+                ended = "ok"
+                outcome = "ok"
+                continue
+            if tool in ("bridge_copy", "bridge_shell", "bridge_read"):
+                try:
+                    record = bridge_request(root, spec)
+                except BridgeError as exc:
+                    error = str(exc)
+                    ended = "failed"
+                    outcome = "failed"
+                    stop = True
+                    break
+                view = "bridge"
+                bridge_out = bridge_view_for(record)
+                ended = "pending"
+                outcome = "wait"
+                continue
+            if tool == "bridge_approve":
+                try:
+                    record = bridge_approve(root, spec)
+                except BridgeError as exc:
+                    error = str(exc)
+                    ended = "failed"
+                    outcome = "failed"
+                    stop = True
+                    break
+                view = "bridge"
+                bridge_out = bridge_view_for(record, reveal=True)
+                if record.get("op") == "read" and record.get("body"):
+                    delivered.append(record["body"])
+                    ended = "sent"
+                    outcome = "sent"
+                elif record.get("op") == "shell":
+                    delivered.append(str(record.get("stdout") or ""))
+                    ended = "sent"
+                    outcome = "sent"
+                else:
+                    ended = "approved"
+                    outcome = "approved"
+                continue
+            if tool == "bridge_deny":
+                try:
+                    record = bridge_deny(root, spec)
+                except BridgeError as exc:
+                    error = str(exc)
+                    ended = "failed"
+                    outcome = "failed"
+                    stop = True
+                    break
+                view = "bridge"
+                bridge_out = bridge_view_for(record)
+                ended = "denied"
+                outcome = "denied"
+                continue
+
             if tool == "connector_discover":
                 try:
                     schema = session.discover(text)
@@ -449,7 +647,13 @@ def run_turn(asked):
                 queued_ctx.append("connector schema %s:\n%s" % (text.strip(), schema))
                 continue
             if tool == "connector_call":
-                conn_name, call_name, args = _call_parts(text)
+                try:
+                    obj = json.loads(text) if text.strip().startswith("{") else {}
+                except ValueError:
+                    obj = {}
+                conn_name = str(obj.get("connector") or "")
+                call_name = str(obj.get("tool") or "")
+                args = obj.get("arguments") if isinstance(obj.get("arguments"), dict) else {}
                 try:
                     result = session.call(conn_name, call_name, args)
                 except ConnectorError as exc:
@@ -486,9 +690,8 @@ def run_turn(asked):
                     break
                 continue
             if tool in ("browser", "fetch", "search"):
-                service, url = _browser_parts(text)
                 try:
-                    result = session.browser(service, url)
+                    result = session.browser("", text)
                 except ConnectorError as exc:
                     error = str(exc)
                     ended = "failed"
@@ -512,6 +715,7 @@ def run_turn(asked):
                 parts.append("skill body %s:\n%s" % (skill.name, skill.body))
                 bodies_in_context.add(skill.name)
             parts.extend(queued_ctx)
+            queued_ctx = []
             messages.append({"role": "user", "content": "\n\n".join(parts)})
             context = _messages_text(messages)
             if question or error or delivered:
@@ -519,7 +723,7 @@ def run_turn(asked):
             continue
         break
     else:
-        error = "tool rounds exceeded this turn"
+        error = "skill read exceeded this-turn rounds"
         ended = "failed"
         outcome = "failed"
 
@@ -535,9 +739,10 @@ def run_turn(asked):
         outcome=outcome,
         skills_read=skills_read,
         skills_followed=skills_followed,
-        connect_card=connect_card,
-        connectors_discovered=sorted(session.discovered),
-        connector_results=session.results,
+        workers=workers_out,
+        routines=routines_out,
+        bridge=bridge_out,
+        view=view,
         error=error,
     )
 
@@ -563,61 +768,8 @@ def cmd_turn(argv):
     return 0
 
 
-def _provider_fail(exc):
-    sys.stderr.write("denied: %s\n" % exc)
-    sys.stderr.flush()
-    return 1
-
-
-def cmd_provider(argv):
-    from provider import OS_TOKEN_PATH, WORK_TOKEN_PATH, ProviderError, load
-
-    if not argv:
-        sys.stderr.write(
-            "usage: main.py provider path | provider os-path | provider fixture complete FILE [TEXT] | provider live login\n"
-        )
-        return 2
-    if argv[0] == "path":
-        sys.stdout.write("%s\n" % WORK_TOKEN_PATH)
-        sys.stdout.flush()
-        return 0
-    if argv[0] == "os-path":
-        sys.stdout.write("%s\n" % OS_TOKEN_PATH)
-        sys.stdout.flush()
-        return 0
-    if argv[0] == "live" and (len(argv) < 2 or argv[1] != "login"):
-        return _provider_fail("never a pasted API key (L-17)")
-    if argv[0] == "live" and argv[1] == "login":
-        if len(argv) != 2:
-            return _provider_fail("never a pasted API key (L-17)")
-        try:
-            load("live").login()
-        except ProviderError as exc:
-            return _provider_fail(exc)
-        sys.stdout.write("ok: login\n")
-        sys.stdout.flush()
-        return 0
-    if argv[0] == "fixture" and len(argv) >= 2 and argv[1] == "complete":
-        if len(argv) < 3:
-            sys.stderr.write(
-                "usage: main.py provider fixture complete FILE [TEXT]\n"
-            )
-            return 2
-        text = " ".join(argv[3:]) if len(argv) > 3 else ""
-        try:
-            out = load("fixture", fixture_path=argv[2]).complete(text)
-        except ProviderError as exc:
-            return _provider_fail(exc)
-        sys.stdout.write("%s\n" % out)
-        sys.stdout.flush()
-        return 0
-    return _provider_fail("unknown provider action")
-
-
 def _usage():
-    sys.stderr.write(
-        "usage: main.py [turn [TEXT] | provider path | provider live login]\n"
-    )
+    sys.stderr.write("usage: main.py [turn [TEXT]]\n")
     return 2
 
 
@@ -632,8 +784,6 @@ def main(argv=None):
             return 0
     if argv[0] == "turn":
         return cmd_turn(argv[1:])
-    if argv[0] == "provider":
-        return cmd_provider(argv[1:])
     return _usage()
 
 
