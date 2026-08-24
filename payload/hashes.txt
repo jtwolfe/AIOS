@@ -20,7 +20,7 @@ f8445fa0af1eca344c0032d5becfc01c5361709198814360cf9d21be4cc8919b  payload/profil
 048b6a234e5f39b25e6daf1b447a103abd347f7dc10ad7e0d7c1c05d9f2c4358  payload/profile/airootfs/srv/aios/seeds/work-runtime/skills/connectors.md
 645de55fbadbbda5069821a2652b100cf145c7c82ef0774de1007d550627df2a  payload/profile/airootfs/srv/aios/seeds/work-runtime/skills/handoff.md
 8d60d430d485dce9e9c78d6fc94e079ca76700c3743f8a90e51d6a52c45f97ad  payload/profile/airootfs/srv/aios/seeds/work-runtime/skills/wake.md
-b25857e28b361e9c1018203b49957016cd899ebd18c1b54424cdb96ddc22589f  payload/profile/airootfs/usr/lib/aios/bin/enact
+f099733204f98dcce41a5a340de9db311fc6b0c6c9c2f0660c0abe16805dbb33  payload/profile/airootfs/usr/lib/aios/bin/enact
 40e950813f665bc36eb806a48713fae7d6fff8999c95819f4aa8b5598c08f813  payload/profile/airootfs/usr/lib/aios/bin/firstboot
 f082fa11dbad8c3363e0872b36431069eb33d140f5c23f3813aa00f10ef060b6  payload/profile/airootfs/usr/lib/aios/bin/installer
 f149a45300c941cf8ba3a3bffa38ff5ce83e94bc8e9743f3aeb881d3465d32b0  payload/profile/airootfs/usr/lib/aios/checker/AGENTS.md
@@ -64,7 +64,7 @@ ef06e6305365d44648da2b320fc9760554d782f551a4d57b2b64c3172eff4e02  payload/profil
 a4033ffaf12797591f610df8fd35607c36767d48acc23501204aeded78d528a9  payload/profile/airootfs/usr/lib/aios/checker/policy/work-slice.sh
 546d914b824dadfa8726db967bddc6c07c4c241012a3275f84300d28f25abbf9  payload/profile/airootfs/usr/lib/aios/envelope/hard-invariants.md
 546d914b824dadfa8726db967bddc6c07c4c241012a3275f84300d28f25abbf9  payload/profile/airootfs/usr/lib/aios/hard-invariants.md
-405ba68fc20ce478b6af29bc653d0c4ff56d1b0bb9c049e5aedece0e74a7e700  payload/profile/airootfs/usr/lib/aios/hashes.txt
+871a6d9b3fe1d7fff55461ba215020fe6f62a80d692a72af7ba04a526e07ee01  payload/profile/airootfs/usr/lib/aios/hashes.txt
 9016e60116d7d4cb81db8e67a6e1cee82bfe021433b7febb36d176fa5fa3bdcb  payload/profile/airootfs/usr/lib/aios/minisign.pub
 33ec044a92385c806b950ab40674f1a5b374a388da79eb7a93d324ad753fa095  payload/profile/airootfs/usr/lib/aios/pacstrap.x86_64
 1dfab8088c3562fa1238017fb8a0a67af26846cca6b76a0dc7546d6290153da5  payload/profile/airootfs/usr/lib/sysusers.d/aios.conf

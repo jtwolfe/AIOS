@@ -85,6 +85,10 @@ grep -q 'envelope.git' "${ENACT}" \
   || fail "enact disable must land the clause in envelope.git (HI-01)"
 grep -q 'aios-agent:aios-agent' "${ENACT}" \
   || fail "enact disable must chown the clause to aios-agent"
+grep -q 'runuser -u aios-checker' "${ENACT}" \
+  || fail "enact live envelope pin must update-ref as aios-checker (HI-03)"
+grep -q 'symbolic-ref --short HEAD' "${ENACT}" \
+  || fail "enact envelope worktree ff must gate on HEAD=main"
 _patch=$(sed -n '/^patch_work_runtime_enabled()/,/^materialise_work_tree()/p' "${ENACT}")
 printf '%s\n' "${_patch}" | grep -q 'seeds/work-runtime' \
   && fail "disable must not copy work seed docs into the OS envelope" || true
@@ -149,7 +153,7 @@ printf '%s\n' '{"accepted":true,"work_runtime":true}' \
 init_envelope_git() {
   _env=$1
   _bare=$2
-  mkdir -p "${_env}" "${_bare%/*}"
+  mkdir -p "${_env}" "${_bare%/*}" "${_bare}/hooks"
   git -C "${_env}" init -b main >/dev/null
   git -C "${_env}" config user.name aios
   git -C "${_env}" config user.email aios@localhost
@@ -160,6 +164,45 @@ init_envelope_git() {
   git init --bare -b main "${_bare}" >/dev/null
   git -C "${_env}" remote add origin "${_bare}"
   git -C "${_env}" push -u origin main >/dev/null
+  # Real common.sh; destroot uid is not aios-checker. Stub rejects root
+  # update-ref of main with the live HI-03 message.
+  cp -a "${ROOT}/checker/hooks/common.sh" "${_bare}/hooks/common.sh"
+  cp -a "${ROOT}/checker/hooks/reference-transaction" \
+    "${_bare}/hooks/reference-transaction"
+  # Destroot uid is not aios-checker; wrap the real hook so only uid 0
+  # is gated (the live failure). Other uids still land the pin.
+  mv "${_bare}/hooks/reference-transaction" \
+    "${_bare}/hooks/reference-transaction.real"
+  cat > "${_bare}/hooks/reference-transaction" <<'EOF'
+#!/bin/sh
+set -eu
+HOOK_HOME=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd) \
+  || { printf '%s\n' "cannot resolve hook dir (HI-03)" >&2; exit 1; }
+# shellcheck disable=SC1091
+. "${HOOK_HOME}/common.sh"
+[ "$#" -ge 1 ] || deny "reference-transaction requires a state (HI-03)"
+case "$1" in
+  committed|aborted)
+    exit 0
+    ;;
+  preparing|prepared)
+    ;;
+  *)
+    deny "unknown reference-transaction state (HI-03)"
+    ;;
+esac
+_uid=$(id -u)
+if [ "${_uid}" -eq 0 ]; then
+  exec "${HOOK_HOME}/reference-transaction.real" "$@"
+fi
+while read -r old new ref extra || [ -n "${old:-}" ]; do
+  :
+done
+exit 0
+EOF
+  chmod 0644 "${_bare}/hooks/common.sh"
+  chmod 0755 "${_bare}/hooks/reference-transaction" \
+    "${_bare}/hooks/reference-transaction.real"
 }
 
 init_envelope_git \
@@ -225,6 +268,28 @@ _untracked=$(git --git-dir="${DEST}/srv/aios/git/envelope.git" \
 _clause_uid=$(stat -c '%u' "${DEST}/srv/aios/envelope/work-runtime.md")
 [ "${_clause_uid}" != 0 ] \
   || fail "destroot clause is root-owned (L-03)"
+grep -q 'proposer cannot update main (HI-03)' \
+  "${DEST}/srv/aios/git/envelope.git/hooks/common.sh" \
+  || fail "destroot envelope.git missing real common.sh HI-03 gate"
+[ -x "${DEST}/srv/aios/git/envelope.git/hooks/reference-transaction" ] \
+  || fail "destroot envelope.git missing reference-transaction hook"
+[ -x "${DEST}/srv/aios/git/envelope.git/hooks/reference-transaction.real" ] \
+  || fail "destroot envelope.git missing real reference-transaction"
+
+git -C "${DEST}/srv/aios/envelope" checkout -b agent/2026-08-24-disable >/dev/null
+_br=$(git -C "${DEST}/srv/aios/envelope" symbolic-ref --short HEAD)
+[ "${_br}" = agent/2026-08-24-disable ] \
+  || fail "could not move envelope worktree to agent/*: ${_br}"
+if ! PATH="${ORACLE_PATH}" AIOS_ROOT="${DEST}" "${ENACT}" disable work-runtime \
+  >"${TMP}/dis-agent.out" 2>"${TMP}/dis-agent.err"; then
+  fail "disable on agent/* worktree failed: $(cat "${TMP}/dis-agent.err")"
+fi
+_br2=$(git -C "${DEST}/srv/aios/envelope" symbolic-ref --short HEAD)
+[ "${_br2}" = agent/2026-08-24-disable ] \
+  || fail "disable ff-moved envelope off agent/*: ${_br2}"
+if ! git --git-dir="${DEST}/srv/aios/git/envelope.git" cat-file -e main:work-runtime.md; then
+  fail "agent/* disable dropped main:work-runtime.md"
+fi
 if git --git-dir="${DEST}/srv/aios/git/envelope.git" \
   --work-tree="${DEST}/srv/aios/envelope" ls-files --others | grep -q .; then
   fail "envelope.git ls-files --others not empty after disable"
