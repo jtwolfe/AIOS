@@ -488,6 +488,10 @@ class Session:
         self._device_code = ""
         self._login_provider = None
         self._secrets = []
+        self.rollback_state = ""
+        self.rollback_n = ""
+        self.rollback_error = ""
+        self.rollback_entry = ""
 
     def catalog(self):
         if self.mode == "work":
@@ -514,6 +518,8 @@ class Session:
                 self._login_tick_inject()
             elif self._login_provider is None:
                 self._login_tick_rendezvous()
+        elif self.view == "snapper":
+            self._rollback_load()
         self._emit(out, "-- AIOS --")
         self._emit(out, "mode: %s" % self.mode)
         self._emit(out, "view: %s" % self.view)
@@ -602,6 +608,13 @@ class Session:
             )
         else:
             self._emit(out, "rollback: select N (L-19); not undochange")
+        state = self.rollback_state or "idle"
+        ident = self.rollback_n or "-"
+        self._emit(out, "rollback-status: %s %s" % (state, ident))
+        if self.rollback_entry and state == "prepared":
+            self._emit(out, "rollback-entry: %s" % self.rollback_entry)
+        if state in ("prepared", "promoted", "refused"):
+            self._emit(out, self._rollback_note(ident))
         text = _snapper_text()
         if not text.strip():
             self._emit(out, "(empty)")
@@ -758,6 +771,51 @@ class Session:
     def _rollback_request_path(self):
         return _path("AIOS_ROLLBACK_REQUEST", ROLLBACK_REQUEST)
 
+    def _rollback_status_path(self):
+        return _path("AIOS_ROLLBACK_STATUS", ROLLBACK_STATUS)
+
+    def _rollback_note(self, ident=""):
+        n = self.rollback_n or ident
+        state = self.rollback_state
+        if state == "prepared" and n:
+            return "reboot into @.restore-%s (L-19)" % n
+        if state == "promoted":
+            return "promoted; reboot into @ (L-19)"
+        if state == "refused":
+            err = self.rollback_error or n or "refused"
+            return "rollback refused: %s (L-19)" % err
+        if ident:
+            return "rollback %s requested (L-19, HI-06); not undochange" % ident
+        return "rollback: select N (L-19)"
+
+    def _rollback_load(self):
+        path = self._rollback_status_path()
+        try:
+            with open(path, encoding="utf-8") as fh:
+                raw = fh.read()
+        except OSError:
+            return
+        if not raw.strip():
+            return
+        try:
+            data = json.loads(raw)
+        except ValueError:
+            return
+        if not isinstance(data, dict):
+            return
+        state = (data.get("state") or "").strip().lower()
+        n = str(data.get("n") or "").strip()
+        err = str(data.get("error") or "").strip()
+        entry = str(data.get("entry") or "").strip()
+        if state:
+            self.rollback_state = state
+        if n:
+            self.rollback_n = n
+        if state == "refused":
+            self.rollback_error = err
+        if entry:
+            self.rollback_entry = entry
+
     def rollback(self, arg=""):
         # Operator is unprivileged: file a request; aios-agent runs enact (L-04).
         ident = _parse_rollback_n(arg)
@@ -787,10 +845,8 @@ class Session:
         except OSError as exc:
             self.note_text = "rollback rendezvous missing: %s (L-19)" % exc
             return
-        self.note_text = (
-            "rollback %s requested (L-19, HI-06); not undochange; reboot after enact"
-            % ident
-        )
+        self.rollback_n = ident
+        self.note_text = "rollback %s requested (L-19, HI-06); not undochange" % ident
 
     def _forget_device(self):
         if self._device_code and self._device_code not in self._secrets:

@@ -104,6 +104,59 @@ def _write_status(payload):
     _write_inplace(status_path(), body, 0o640)
 
 
+def _read_status():
+    path = status_path()
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            raw = fh.read()
+    except OSError:
+        return {}
+    if not raw.strip():
+        return {}
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return data
+
+
+def _btrfs_mnt():
+    root = _aios_root()
+    if root:
+        return root + "/run/aios-btrfs"
+    return "/run/aios-btrfs"
+
+
+def _broken_record():
+    root = _aios_root()
+    path = (root + "/srv/aios/state/broken-subvol") if root else "/srv/aios/state/broken-subvol"
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return fh.read().strip()
+    except OSError:
+        return ""
+
+
+def _status_promoted(n):
+    data = _read_status()
+    state = (data.get("state") or "").strip().lower()
+    return state == "promoted" and str(data.get("n") or "") == str(n)
+
+
+def _fs_promoted(n):
+    n = str(n)
+    if _broken_record() == "@.broken-%s" % n:
+        restore = os.path.join(_btrfs_mnt(), "@.restore-%s" % n)
+        if not os.path.exists(restore):
+            return True
+    mnt = _btrfs_mnt()
+    broken = os.path.join(mnt, "@.broken-%s" % n)
+    restore = os.path.join(mnt, "@.restore-%s" % n)
+    return os.path.exists(broken) and not os.path.exists(restore)
+
+
 def parse_n(text):
     line = (text or "").strip()
     if not line:
@@ -183,6 +236,12 @@ def tick_rollback():
     if n is None:
         boot_n = _cmdline_restore_n()
         if boot_n is None:
+            return
+        # After promote, cmdline still names @.restore-N until the next reboot.
+        if _status_promoted(boot_n):
+            return
+        if _fs_promoted(boot_n):
+            _write_status({"state": "promoted", "n": boot_n})
             return
         rc, out, err = _run_enact(boot_n, promote=True)
         if rc != 0:

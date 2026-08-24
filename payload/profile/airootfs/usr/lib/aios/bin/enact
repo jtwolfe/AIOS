@@ -837,6 +837,13 @@ promote_restore() {
   _at="${BTRFS_MNT}/@"
   _rest="${BTRFS_MNT}/@.restore-${_n}"
   _brok="${BTRFS_MNT}/@.broken-${_n}"
+  # Idempotent after a successful promote: cmdline still names @.restore-N
+  # until the next reboot (L-19 step 5). Do not die or spam refuse.
+  if [ -e "${_brok}" ] && [ ! -e "${_rest}" ]; then
+    [ -e "${_at}" ] || die "missing @ after promote (L-19)"
+    log "already promoted @.restore-${_n} -> @ (L-19)"
+    return 0
+  fi
   [ -e "${_rest}" ] || die "missing @.restore-${_n}; not on restore clone (L-19)"
   [ ! -e "${_brok}" ] || die "@.broken-${_n} already exists"
   [ -e "${_at}" ] || die "missing @ to rename"

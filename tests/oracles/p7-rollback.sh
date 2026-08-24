@@ -246,6 +246,13 @@ grep -q '^default aios-linux.conf$' "${DEST}/boot/loader/loader.conf" \
 grep -q 'k1-vmlinuz-linux' "${DEST}/boot/vmlinuz-linux" \
   || fail "promote must restore ESP live vmlinuz from aios-gen/1"
 
+PATH="${ORACLE_PATH}" AIOS_ROOT="${DEST}" AIOS_CMDLINE='root=UUID=11111111-1111-1111-1111-111111111111 rootflags=subvol=@.restore-1 rw console=tty0' \
+  "${ENACT}" rollback 1 promote >"${TMP}/promote2.out" 2>"${TMP}/err2" || true
+grep -q 'promoted @.restore-1' "${TMP}/promote2.out" \
+  || fail "second promote must be idempotent: $(cat "${TMP}/promote2.out") err=$(cat "${TMP}/err2")"
+grep -q 'already promoted' "${TMP}/err2" \
+  || fail "second promote must log already promoted: $(cat "${TMP}/err2")"
+
 # Serial console writes aios-rollback-serial.conf.
 rm -rf "${DEST}/run/aios-btrfs/@.restore-1" "${DEST}/run/aios-btrfs/@.broken-1"
 mkdir -p "${DEST}/run/aios-btrfs/@"
@@ -308,6 +315,48 @@ grep -q '"state":"prepared"' "${DEST}/run/aios/rollback-status" \
   || fail "agent tick did not write rollback.conf"
 _req=$(cat "${DEST}/run/aios/rollback-request")
 [ -z "${_req}" ] || fail "agent tick must clear rollback-request"
+
+_prep_tui=$(
+  printf '%s\n' 'view snapper' 'quit' | \
+    AIOS_BRAKE="${TMP}/unused-brake" \
+    AIOS_ROOT="${DEST}" \
+    AIOS_ESP_GENERATIONS="${DEST}/srv/aios/state/esp-generations" \
+    python3 -u "${MAIN}"
+) || true
+printf '%s\n' "${_prep_tui}" | grep -q 'rollback-status: prepared 1' \
+  || fail "TUI must show prepared status: ${_prep_tui}"
+printf '%s\n' "${_prep_tui}" | grep -q 'reboot into @.restore-1 (L-19)' \
+  || fail "TUI must show restore reboot when prepared: ${_prep_tui}"
+printf '%s\n' "${_prep_tui}" | grep -q 'rollback-entry: aios-rollback.conf' \
+  || fail "TUI must show rollback entry when prepared: ${_prep_tui}"
+
+# After restore-boot, two ticks must stay promoted (cmdline still names @.restore-N).
+: > "${DEST}/run/aios/rollback-request"
+PATH="${ORACLE_PATH}" \
+  AIOS_ROOT="${DEST}" \
+  AIOS_ENACT="${ENACT}" \
+  AIOS_CMDLINE='root=UUID=11111111-1111-1111-1111-111111111111 rootflags=subvol=@.restore-1 rw console=tty0' \
+  PYTHONPATH="${ROOT}/agent/aios_agent" \
+  python3 -c 'from rollback_gate import tick_rollback
+tick_rollback()
+tick_rollback()' || fail "double tick_rollback on restore cmdline failed"
+grep -q '"state":"promoted"' "${DEST}/run/aios/rollback-status" \
+  || fail "double tick status not promoted: $(cat "${DEST}/run/aios/rollback-status")"
+if grep -q '"state":"refused"' "${DEST}/run/aios/rollback-status"
+then
+  fail "second tick overwrote promoted to refused: $(cat "${DEST}/run/aios/rollback-status")"
+fi
+_prom_tui=$(
+  printf '%s\n' 'view snapper' 'quit' | \
+    AIOS_BRAKE="${TMP}/unused-brake" \
+    AIOS_ROOT="${DEST}" \
+    AIOS_ESP_GENERATIONS="${DEST}/srv/aios/state/esp-generations" \
+    python3 -u "${MAIN}"
+) || true
+printf '%s\n' "${_prom_tui}" | grep -q 'rollback-status: promoted 1' \
+  || fail "TUI must show promoted status: ${_prom_tui}"
+printf '%s\n' "${_prom_tui}" | grep -q 'promoted; reboot into @ (L-19)' \
+  || fail "TUI must show @ reboot when promoted: ${_prom_tui}"
 
 # vm-boot-seatbelt fail closed without ISO (do not skip green).
 _iso_n=0
