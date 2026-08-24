@@ -213,8 +213,6 @@ cmd_boot_seatbelt() {
   printf 'ok: vm-boot-seatbelt harness (pre-boot minisign). Rollback boot not claimed.\n'
 }
 
-# P8.14 / P9.4: named work/bots surfaces. Host oracles drive fixtures.
-# QEMU only if AIOS_VM_BOOT=1; then fail closed without ISO (do not skip green).
 cmd_album() {
   _name=$1
   if [ "${AIOS_VM_BOOT:-0}" = 1 ]; then

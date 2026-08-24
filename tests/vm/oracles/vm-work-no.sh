@@ -7,7 +7,6 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 . "${SCRIPT_DIR}/common.sh"
 
 guest_oracle() {
-  # HI-15: skip is not a yes; no work units; tree absent or inert.
   [ ! -f /etc/systemd/system/aios-work-runtime.service ] \
     || die "guest has system aios-work-runtime.service (L-23)"
   _en=$(systemctl --user -M aios-work@ is-enabled aios-work-runtime.service \
@@ -52,6 +51,7 @@ PY
 
 _work=$(
   AIOS_ANSWERS="${P814_BOOT}/answers.json" AIOS_BRAKE="${P814_BRAKE}" \
+    AIOS_ROOT="${P814_DEST}" \
     python3 -u "${TUI}" work
 ) && _wrc=0 || _wrc=$?
 [ "${_wrc}" != 0 ] || die "aios work must be refused with bit off: ${_work}"

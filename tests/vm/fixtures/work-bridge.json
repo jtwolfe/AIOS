@@ -20,6 +20,11 @@
     "view accept",
     "accept"
   ],
+  "fixture_turns": {
+    "responses": [
+      {"bridge": {"op": "copy", "path": "~/src/secret", "approved": false}}
+    ]
+  },
   "work_commands": [
     "view bridge",
     "send copy ~/src/secret into the workspace without approval",

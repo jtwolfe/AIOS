@@ -8,7 +8,6 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 . "${SCRIPT_DIR}/common.sh"
 
 guest_oracle() {
-  # HI-17: synthesis is local seeds. HI-15: only after an explicit yes.
   git -C /srv/aios/src/work-runtime rev-parse --is-inside-work-tree >/dev/null \
     || die "guest missing work-runtime git (HI-17)"
   [ -f /srv/aios/src/work-runtime/AGENTS.md ] \

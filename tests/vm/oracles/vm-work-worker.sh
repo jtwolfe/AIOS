@@ -7,8 +7,34 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 . "${SCRIPT_DIR}/common.sh"
 
 guest_oracle() {
-  [ ! -x /usr/lib/aios/bin/enact ] || true
-  printf 'ok: vm-work-worker (guest). HI-13.\n'
+  command -v systemd-run >/dev/null 2>&1 \
+    || die "systemd-run missing; worker cannot-enact must fail closed"
+  id -u aios-work >/dev/null 2>&1 \
+    || die "aios-work uid missing; worker cannot-enact must fail closed"
+  [ -e /usr/lib/aios/bin/enact ] || die "missing /usr/lib/aios/bin/enact"
+  [ -f /etc/systemd/system/aios-work.slice ] \
+    || die "live aios-work.slice missing; worker cannot-enact must fail closed"
+  [ -d /srv/aios/src/work-runtime ] \
+    || die "guest missing work-runtime (worker surface)"
+  _probe=aios-work-worker-probe.service
+  systemctl reset-failed "${_probe}" >/dev/null 2>&1 || true
+  if ! systemd-run --quiet --service-type=oneshot --remain-after-exit \
+    --uid=aios-work --gid=aios-work \
+    --slice=aios-work.slice \
+    --unit="${_probe}" \
+    /usr/bin/true; then
+    systemctl reset-failed "${_probe}" >/dev/null 2>&1 || true
+    die "could not start aios-work slice probe (worker)"
+  fi
+  systemctl stop "${_probe}" >/dev/null 2>&1 || true
+  systemctl reset-failed "${_probe}" >/dev/null 2>&1 || true
+  _xout=$(systemd-run --quiet --wait --pipe --collect \
+    --uid=aios-work --gid=aios-work \
+    --slice=aios-work.slice \
+    --unit=aios-work-worker-x.service \
+    /usr/bin/test -x /usr/lib/aios/bin/enact 2>&1) && _xrc=0 || _xrc=$?
+  [ "${_xrc}" != 0 ] || die "worker slice can execute enact: ${_xout}"
+  printf 'ok: vm-work-worker (guest).\n'
 }
 
 if p814_is_guest; then
@@ -19,19 +45,9 @@ fi
 
 p814_begin work-worker
 p814_payload_no_src
-grep -q 'Workers have no user-visible voice' "${SEED}/AGENTS.md" \
-  || die "AGENTS.md must forbid worker voice"
-grep -q 'No user voice' "${SEED}/boundaries/interfaces.md" \
-  || die "interfaces.md must say workers have no user voice"
-grep -q 'The work runtime does not enact privileged change' \
-  "${SEED}/boundaries/interfaces.md" \
-  || die "interfaces.md must forbid enact"
-
 p814_drive_installer
 p814_drive_tui work work_commands
 printf '%s\n' "${P814_TUI_OUT}" | grep -q 'enact refused in work session (L-14)' \
   || die "worker turn must not enact: ${P814_TUI_OUT}"
-
-p814_wrap_p8 worker
-p814_wrap_p8 workers
+p814_must_close worker workers
 p814_finish

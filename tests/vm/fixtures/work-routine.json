@@ -20,6 +20,11 @@
     "view accept",
     "accept"
   ],
+  "fixture_turns": {
+    "responses": [
+      {"routine": {"cron": "0 * * * *", "listeners": ["fs.notify"]}}
+    ]
+  },
   "work_commands": [
     "view store",
     "send create a routine that is cron and listeners",

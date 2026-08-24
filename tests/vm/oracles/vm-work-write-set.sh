@@ -8,7 +8,6 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 . "${SCRIPT_DIR}/common.sh"
 
 guest_oracle() {
-  # L-15: /tmp /var/tmp /srv/aios/src/work-runtime. Not /home. Not ~/src.
   UNIT=/usr/lib/systemd/user/aios-work-runtime.service
   [ -f "${UNIT}" ] || die "guest missing user unit (L-23)"
   grep -qx 'ReadWritePaths=/tmp /var/tmp /srv/aios/src/work-runtime' "${UNIT}" \

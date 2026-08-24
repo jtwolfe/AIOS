@@ -1,6 +1,5 @@
 #!/bin/sh
-# P8.14 / P8.3: L-14 surface split. Work turn has no privileged tools.
-# OS turn is not in the slice.
+# P8.14 / P8.3: work turn has no privileged tools; OS turn is not in the slice.
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -8,10 +7,20 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 . "${SCRIPT_DIR}/common.sh"
 
 guest_oracle() {
-  # L-14: work session refuses OS tools; OS session is not aios-work.slice.
   [ -f /usr/lib/aios/operator-client/tty/aios.py ] \
     || die "guest missing operator-client"
-  printf 'ok: vm-work-surface (guest). L-14.\n'
+  _ans=/srv/aios/state/bootstrap-in-progress/answers.json
+  [ -f "${_ans}" ] || die "guest missing answers.json; L-14 cannot fail closed"
+  _out=$(
+    printf '%s\n' 'view packages' 'enact' 'quit' \
+      | AIOS_ANSWERS="${_ans}" AIOS_BRAKE=/tmp/aios-vm-surface-brake \
+        python3 -u /usr/lib/aios/operator-client/tty/aios.py work
+  ) || true
+  printf '%s\n' "${_out}" | grep -q 'packages refused in work session (L-14)' \
+    || die "guest work session must refuse packages (L-14): ${_out}"
+  printf '%s\n' "${_out}" | grep -q 'enact refused in work session (L-14)' \
+    || die "guest work session must refuse enact (L-14): ${_out}"
+  printf 'ok: vm-work-surface (guest).\n'
 }
 
 if p814_is_guest; then
@@ -22,9 +31,6 @@ fi
 
 p814_begin work-surface
 p814_payload_no_src
-grep -q 'WORK_CATALOG' "${TUI}" || die "aios.py missing WORK_CATALOG"
-grep -q 'L-14' "${TUI}" || die "aios.py must quote L-14"
-
 p814_drive_installer
 p814_drive_tui work work_commands
 printf '%s\n' "${P814_TUI_OUT}" | grep -q '^mode: work$' \
@@ -44,5 +50,5 @@ printf '%s\n' "${P814_TUI_OUT}" | grep -q 'skills refused in os session (L-14)' 
 printf '%s\n' "${P814_TUI_OUT}" | grep -q '^view: envelope$' \
   || die "OS envelope inspect must work: ${P814_TUI_OUT}"
 
-p814_wrap_p8 surface
+p814_wrap_host_if_present "${P814_ROOT}/tests/oracles/p8-work-views.sh"
 p814_finish
