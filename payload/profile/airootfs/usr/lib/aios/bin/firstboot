@@ -533,6 +533,7 @@ copy_payload_into_target() {
     "${TARGET}/usr/lib/sysusers.d" \
     "${TARGET}/usr/lib/tmpfiles.d" \
     "${TARGET}/etc/systemd/system" \
+    "${TARGET}/usr/lib/systemd/system/aios-work-.service.d" \
     "${TARGET}/srv/aios/envelope" \
     "${TARGET}/srv/aios/seeds" \
     "${TARGET}/srv/aios/checker" \
@@ -551,6 +552,10 @@ copy_payload_into_target() {
     "${TARGET}/etc/systemd/system/aios-agent.service"
   copy_if_present /etc/systemd/system/aios-intent.socket \
     "${TARGET}/etc/systemd/system/aios-intent.socket"
+  copy_if_present /etc/systemd/system/aios-work.slice \
+    "${TARGET}/etc/systemd/system/aios-work.slice"
+  copy_if_present /usr/lib/systemd/system/aios-work-.service.d/10-floor.conf \
+    "${TARGET}/usr/lib/systemd/system/aios-work-.service.d/10-floor.conf"
   copy_if_present "${AIOS_LIB}/intent/schema.json" \
     "${TARGET}/usr/lib/aios/intent/schema.json"
   copy_if_present "${AIOS_LIB}/intent/README.md" \
@@ -602,6 +607,10 @@ copy_payload_into_target() {
     || die "aios-agent.service missing on target"
   [ -f "${TARGET}/etc/systemd/system/aios-intent.socket" ] \
     || die "aios-intent.socket missing on target"
+  [ -f "${TARGET}/etc/systemd/system/aios-work.slice" ] \
+    || die "aios-work.slice missing on target"
+  [ -f "${TARGET}/usr/lib/systemd/system/aios-work-.service.d/10-floor.conf" ] \
+    || die "aios-work floor drop-in missing on target"
   [ -f "${TARGET}/usr/lib/aios/intent/schema.json" ] \
     || die "intent schema.json missing on target"
   [ -f "${TARGET}/etc/sudoers.d/aios-checker-snapper" ] \

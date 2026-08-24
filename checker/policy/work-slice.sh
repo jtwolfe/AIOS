@@ -7,6 +7,36 @@ fail() {
   exit 1
 }
 
+# AIOS_POLICY_ROOT prefixes unit paths. Host oracles must set it.
+_root=${AIOS_POLICY_ROOT-}
+p() {
+  printf '%s%s' "${_root}" "$1"
+}
+
+_slice=$(p /etc/systemd/system/aios-work.slice)
+_floor=$(p /usr/lib/systemd/system/aios-work-.service.d/10-floor.conf)
+if [ -n "${_root}" ]; then
+  [ -f "${_slice}" ] || fail "aios-work.slice missing under AIOS_POLICY_ROOT"
+  [ -f "${_floor}" ] || fail "aios-work floor drop-in missing under AIOS_POLICY_ROOT"
+fi
+# P6 slice: if present it must actually deny. Absence is not a green skip of a fake unit.
+if [ -f "${_slice}" ]; then
+  grep -q '^\[Slice\]' "${_slice}" \
+    || fail "aios-work.slice has no [Slice] section"
+fi
+if [ -f "${_floor}" ]; then
+  grep -q 'InaccessiblePaths=.*envelope' "${_floor}" \
+    || fail "floor drop-in does not hide envelope"
+  grep -q 'InaccessiblePaths=.*state' "${_floor}" \
+    || fail "floor drop-in does not hide state"
+  grep -q 'InaccessiblePaths=.*enact' "${_floor}" \
+    || fail "floor drop-in does not hide enact"
+fi
+
+if [ -n "${_root}" ]; then
+  exit 0
+fi
+
 need_uid() {
   command -v id >/dev/null 2>&1 || fail "id missing"
   id -u "$1" >/dev/null 2>&1 || fail "sysuser $1 missing (L-02)"
@@ -74,12 +104,6 @@ if [ -f /etc/sudoers.d/aios-work ]; then
 fi
 if [ -f /etc/sudoers ] && grep -Eq '^[[:space:]]*aios-work' /etc/sudoers 2>/dev/null; then
   fail "aios-work is in sudoers (HI-13)"
-fi
-
-# P6 slice: if present it must actually deny. Absence is not a green skip of a fake unit.
-if [ -f /etc/systemd/system/aios-work.slice ]; then
-  grep -q '^\[Slice\]' /etc/systemd/system/aios-work.slice \
-    || fail "aios-work.slice has no [Slice] section"
 fi
 
 if [ -S /run/aios/intent.sock ]; then

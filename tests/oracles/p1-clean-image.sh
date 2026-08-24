@@ -58,6 +58,8 @@ need_file "${AIROOTFS}/usr/lib/aios/agent/aios_agent/goals.py"
 need_file "${AIROOTFS}/usr/lib/aios/agent/aios_agent/intent_consume.py"
 need_file "${AIROOTFS}/usr/lib/aios/intent/schema.json"
 need_file "${AIROOTFS}/etc/systemd/system/aios-intent.socket"
+need_file "${AIROOTFS}/etc/systemd/system/aios-work.slice"
+need_file "${AIROOTFS}/usr/lib/systemd/system/aios-work-.service.d/10-floor.conf"
 need_file "${AIROOTFS}/usr/lib/aios/installer/aios_installer/main.py"
 need_file "${AIROOTFS}/usr/lib/aios/installer/aios_installer/questions.py"
 need_file "${AIROOTFS}/usr/lib/aios/installer/aios_installer/compiler.py"
@@ -303,6 +305,8 @@ fi
 
 if ! "${SCRIPT_DIR}/p7-summon-brake.sh"; then
   fail "p7-summon-brake"
+if ! "${SCRIPT_DIR}/p6-work-slice.sh"; then
+  fail "p6-work-slice"
 fi
 
 if ! "${SCRIPT_DIR}/p9-vm-harness.sh"; then

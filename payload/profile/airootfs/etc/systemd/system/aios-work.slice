@@ -1,0 +1,6 @@
+# /etc/systemd/system/aios-work.slice
+[Unit]
+Description=AIOS unprivileged work
+[Slice]
+MemoryMax=2G
+CPUQuota=200%

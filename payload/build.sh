@@ -223,6 +223,8 @@ check_hashes() {
     'payload/profile/airootfs/etc/systemd/system/aios-checker.service$' \
     'payload/profile/airootfs/etc/systemd/system/aios-agent.service$' \
     'payload/profile/airootfs/etc/systemd/system/aios-intent.socket$' \
+    'payload/profile/airootfs/etc/systemd/system/aios-work.slice$' \
+    'aios-work-.service.d/10-floor.conf$' \
     'payload/profile/airootfs/etc/sudoers.d/aios-checker-snapper$' \
     'payload/profile/airootfs/etc/sudoers.d/aios-agent-enact$' \
     'payload/profile/airootfs/usr/lib/aios/hard-invariants.md$' \
@@ -434,6 +436,20 @@ check_firstboot_payload() {
   grep -qx 'Accept=no' \
     "${iso}/etc/systemd/system/aios-intent.socket" \
     || die "aios-intent.socket Accept must be no"
+  [[ -f "${iso}/etc/systemd/system/aios-work.slice" ]] || die "missing aios-work.slice"
+  grep -qx 'MemoryMax=2G' "${iso}/etc/systemd/system/aios-work.slice" \
+    || die "aios-work.slice MemoryMax must be 2G (L-06)"
+  grep -qx 'CPUQuota=200%' "${iso}/etc/systemd/system/aios-work.slice" \
+    || die "aios-work.slice CPUQuota must be 200% (L-06)"
+  [[ -f "${iso}/usr/lib/systemd/system/aios-work-.service.d/10-floor.conf" ]] \
+    || die "missing aios-work floor drop-in"
+  [[ ! -e "${iso}/usr/lib/systemd/user/aios-work-runtime.service" ]] \
+    || die "aios-work-runtime.service user unit must not ship (L-23)"
+  [[ ! -e "${iso}/etc/systemd/system/aios-work-runtime.service" ]] \
+    || die "aios-work-runtime.service must not be a system unit (L-23)"
+  [[ ! -e "${iso}/usr/lib/systemd/system/aios-work-runtime.service" ]] \
+    || die "aios-work-runtime.service must not be a system unit (L-23)"
+  [[ ! -e "${iso}/srv/aios/src" ]] || die "/srv/aios/src must not exist (HI-15)"
   [[ -f "${iso}/usr/lib/aios/intent/schema.json" ]] || die "missing intent schema.json"
   [[ -f "${iso}/usr/lib/aios/agent/aios_agent/intent_consume.py" ]] \
     || die "missing agent intent_consume.py"
@@ -455,6 +471,12 @@ check_firstboot_payload() {
     || die "firstboot must copy aios-intent.socket"
   grep -q 'enable aios-intent.socket' "${iso}/usr/lib/aios/bin/firstboot" \
     || die "firstboot must enable aios-intent.socket on the installed disk"
+  grep -q 'aios-work.slice' "${iso}/usr/lib/aios/bin/firstboot" \
+    || die "firstboot must copy aios-work.slice"
+  grep -q 'aios-work-.service.d/10-floor.conf' "${iso}/usr/lib/aios/bin/firstboot" \
+    || die "firstboot must copy aios-work floor drop-in"
+  grep -q 'enable aios-work' "${iso}/usr/lib/aios/bin/firstboot" \
+    && die "firstboot must not enable work units"
   [[ -f "${iso}/etc/sudoers.d/aios-checker-snapper" ]] \
     || die "missing aios-checker snapper sudoers"
   grep -q 'NOPASSWD: /usr/bin/snapper --no-dbus -c root list' \
@@ -541,6 +563,9 @@ check_firstboot_payload() {
   grep -Eq 'aios-installer\.service$' "${iso_hashes}" || die "ISO hashes.txt must pin installer unit"
   grep -Eq 'aios-checker\.service$' "${iso_hashes}" || die "ISO hashes.txt must pin checker unit"
   grep -Eq 'aios-agent\.service$' "${iso_hashes}" || die "ISO hashes.txt must pin agent unit"
+  grep -Eq 'aios-work\.slice$' "${iso_hashes}" || die "ISO hashes.txt must pin aios-work.slice"
+  grep -Fq 'aios-work-.service.d/10-floor.conf' "${iso_hashes}" \
+    || die "ISO hashes.txt must pin aios-work floor drop-in"
   grep -Fq 'sudoers.d/aios-checker-snapper' "${iso_hashes}" \
     || die "ISO hashes.txt must pin aios-checker snapper sudoers"
   grep -Fq 'sudoers.d/aios-agent-enact' "${iso_hashes}" \
