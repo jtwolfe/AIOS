@@ -17,8 +17,8 @@ UNIT="${ROOT}/payload/profile/airootfs/etc/systemd/system/aios-agent.service"
 GOALS="${ROOT}/agent/aios_agent/goals.py"
 INST_MAIN="${ROOT}/installer/aios_installer/main.py"
 TMPFILES="${ROOT}/payload/profile/airootfs/usr/lib/tmpfiles.d/aios.conf"
-STAMP=/srv/aios/state/brake.d/stamp
 DROP=/srv/aios/state/brake.d
+STAMP=${DROP}/stamp
 failed=0
 PYTHONDONTWRITEBYTECODE=1
 export PYTHONDONTWRITEBYTECODE
@@ -64,16 +64,22 @@ grep -qx "BRAKE=${STAMP}" "${ENACT}" \
   || fail "enact BRAKE must be ${STAMP}"
 grep -qx "ConditionPathExists=!${STAMP}" "${UNIT}" \
   || fail "aios-agent.service must ConditionPathExists !${STAMP}"
-grep -q 'brake.d' "${TMPFILES}" \
-  || fail "tmpfiles must create brake.d (L-12)"
-grep -q '0700 root root' "${TMPFILES}" \
-  || fail "tmpfiles brake.d must start 0700 root"
-grep -q 'brake.d' "${FIRSTBOOT}" \
-  || fail "firstboot must restore brake.d after chown -R state"
-grep -q 'chmod 0700' "${FIRSTBOOT}" \
+grep -Fq "${DROP}" "${TMPFILES}" \
+  || fail "tmpfiles must name ${DROP} (L-12)"
+grep -qx "d ${DROP} - - - -" "${TMPFILES}" \
+  || fail "tmpfiles must not set mode/owner on brake.d (1731 must survive boot)"
+if grep -F "${DROP}" "${TMPFILES}" | grep -Eq '0700|root root'
+then
+  fail "tmpfiles must not reset brake.d to 0700 root:root"
+fi
+grep -Fq "${DROP}" "${FIRSTBOOT}" \
+  || fail "firstboot must restore ${DROP} after chown -R state"
+grep -Fq "chmod 0700 \"\${TARGET}${DROP}\"" "${FIRSTBOOT}" \
   || fail "firstboot must chmod 0700 brake.d (not 0777 state)"
 grep -q "'/brake.d/'" "${FIRSTBOOT}" \
   || fail "firstboot must gitignore /brake.d/ (HI-09)"
+grep -Fq "${DROP}" "${LOGIN}" \
+  || fail "login.py must grant ${DROP}"
 grep -q '0o1731' "${LOGIN}" \
   || fail "login.py must chmod brake drop 1731"
 grep -q '_grant_brake_drop' "${LOGIN}" \

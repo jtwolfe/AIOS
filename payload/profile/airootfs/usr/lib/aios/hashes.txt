@@ -20,7 +20,7 @@ f8445fa0af1eca344c0032d5becfc01c5361709198814360cf9d21be4cc8919b  /srv/aios/seed
 645de55fbadbbda5069821a2652b100cf145c7c82ef0774de1007d550627df2a  /srv/aios/seeds/work-runtime/skills/handoff.md
 8d60d430d485dce9e9c78d6fc94e079ca76700c3743f8a90e51d6a52c45f97ad  /srv/aios/seeds/work-runtime/skills/wake.md
 1dfab8088c3562fa1238017fb8a0a67af26846cca6b76a0dc7546d6290153da5  /usr/lib/sysusers.d/aios.conf
-d709c5516612ec2100643c406a33c25ffa6d83f7a8f42c4dc324cd6dd79228a1  /usr/lib/tmpfiles.d/aios.conf
+d78f5dd144e19017e641abd4ed4601648b888daf69edf269a2088c7d31b60e32  /usr/lib/tmpfiles.d/aios.conf
 e53d9fdffb9808a3826df3daec4ac16eb6b3761c76533262d7410c1bc01aca60  bin/enact
 60236d68fa4be4b0e150ce98c2dc94bf44e6c28ae36bef14b2f55b1466bdfa7f  bin/firstboot
 15c84dd09bfdd20d04c324a4ef7aabb11ff7798842f4ffb09903037af02cddec  agent/AGENTS.md
