@@ -39,6 +39,10 @@ grep -q 'login-request' "${MAIN}" \
   || fail "aios.py must file login-request (L-16)"
 grep -q 'tick_login' "${GATE}" \
   || fail "login_gate.py must tick live login for the unit"
+grep -q 'os.replace(' "${GATE}" \
+  && fail "login_gate must not os.replace rendezvous inodes" || true
+grep -q '_write_inplace' "${GATE}" \
+  || fail "login_gate must write rendezvous in place"
 python3 - "${MAIN}" <<'PY' || fail "production start must not construct LiveProvider"
 import ast
 import sys
@@ -269,6 +273,27 @@ rm -f "${TOKEN}"
 : > "${STU}"
 chmod 0660 "${REQ}"
 chmod 0640 "${STU}"
+python3 - "${REQ}" "${STU}" <<'PY' || fail "could not set rendezvous mode/group"
+import os
+import sys
+
+req, stu = sys.argv[1], sys.argv[2]
+uid = os.getuid()
+cur = os.stat(req).st_gid
+alts = [g for g in os.getgroups() if g != cur]
+want = alts[0] if alts else cur
+try:
+    os.chown(req, uid, want)
+    os.chown(stu, uid, want)
+except OSError:
+    want = cur
+os.chmod(req, 0o660)
+os.chmod(stu, 0o640)
+if (os.stat(req).st_mode & 0o777) != 0o660:
+    raise SystemExit("request not 0660")
+if (os.stat(stu).st_mode & 0o777) != 0o640:
+    raise SystemExit("status not 0640")
+PY
 
 prod() {
   printf '%s\n' "$@" | \
@@ -303,10 +328,22 @@ grep -qx 'start' "${REQ}" \
   || fail "production start must write login-request"
 [ ! -f "${TOKEN}" ] || fail "production TUI wrote os.token (L-16)"
 
+_req_ino=$(stat -c '%i %g %a' "${REQ}")
+_stu_ino=$(stat -c '%i %g %a' "${STU}")
 agent_tick "${HTTP}" || fail "agent tick failed"
 [ -f "${TOKEN}" ] || fail "agent tick did not write token"
 _mode=$(stat -c '%a' "${TOKEN}")
 [ "${_mode}" = 600 ] || fail "agent token mode is ${_mode}, not 0600"
+_rmode=$(stat -c '%a' "${REQ}")
+_smode=$(stat -c '%a' "${STU}")
+[ "${_rmode}" = 660 ] \
+  || fail "login-request mode after tick is ${_rmode}, not 0660"
+[ "${_smode}" = 640 ] \
+  || fail "login-status mode after tick is ${_smode}, not 0640"
+[ "$(stat -c '%i %g %a' "${REQ}")" = "${_req_ino}" ] \
+  || fail "login-request inode/group dropped after tick"
+[ "$(stat -c '%i %g %a' "${STU}")" = "${_stu_ino}" ] \
+  || fail "login-status inode/group dropped after tick"
 if grep -E 'test-access-token|test-refresh-token|hidden-device' "${STU}"
 then
   fail "login-status leaked a secret"

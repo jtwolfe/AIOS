@@ -59,22 +59,35 @@ def _read_request():
     return line[0].lower()
 
 
-def _write_request(text):
-    path = request_path()
-    payload = "" if not text else "%s\n" % text
-    tmp = "%s.tmp" % path
+def _write_inplace(path, payload, mode):
+    # Truncate the accept-created inode. A umask tmpfile swap would
+    # drop 0660/0640 and the operator group (L-16, L-17).
+    prior = None
     try:
-        with open(tmp, "w", encoding="utf-8") as fh:
-            fh.write(payload)
-            fh.flush()
-            os.fsync(fh.fileno())
-        os.replace(tmp, path)
+        prior = os.stat(path)
     except OSError:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
+        prior = None
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    fd = os.open(path, flags, mode)
+    try:
+        os.fchmod(fd, mode)
+        if prior is not None:
+            try:
+                os.fchown(fd, prior.st_uid, prior.st_gid)
+            except OSError:
+                pass
+        data = payload.encode("utf-8")
+        while data:
+            n = os.write(fd, data)
+            data = data[n:]
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _write_request(text):
+    payload = "" if not text else "%s\n" % text
+    _write_inplace(request_path(), payload, 0o660)
 
 
 def _write_status(payload):
@@ -92,25 +105,8 @@ def _write_status(payload):
         if key in ("access_token", "refresh_token", "device_code"):
             continue
         keep[key] = text
-    path = status_path()
-    tmp = "%s.tmp" % path
     body = json.dumps(keep, separators=(",", ":")) + "\n"
-    try:
-        with open(tmp, "w", encoding="utf-8") as fh:
-            fh.write(body)
-            fh.flush()
-            os.fsync(fh.fileno())
-        os.replace(tmp, path)
-        try:
-            os.chmod(path, 0o640)
-        except OSError:
-            pass
-    except OSError:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
+    _write_inplace(status_path(), body, 0o640)
 
 
 def _clear_inflight():

@@ -209,6 +209,22 @@ def _installer_dir():
     return candidates[0]
 
 
+def _write_login_request(path, text):
+    # Truncate the accept-created 0660 inode. Do not os.replace.
+    payload = text if text.endswith("\n") else "%s\n" % text
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    fd = os.open(path, flags, 0o660)
+    try:
+        os.fchmod(fd, 0o660)
+        data = payload.encode("utf-8")
+        while data:
+            n = os.write(fd, data)
+            data = data[n:]
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
 def _clickable(out, url):
     try:
         tty = out.isatty()
@@ -760,9 +776,7 @@ class Session:
             parent = os.path.dirname(path)
             if parent and not os.path.isdir(parent):
                 raise OSError("login rendezvous missing")
-            with open(path, "w", encoding="utf-8") as fh:
-                fh.write("start\n")
-                fh.flush()
+            _write_login_request(path, "start")
         except OSError as exc:
             self.login_status = "refused"
             self.note_text = "login rendezvous missing: %s (L-17)" % exc
@@ -834,9 +848,7 @@ class Session:
             return
         path = self._login_request_path()
         try:
-            with open(path, "w", encoding="utf-8") as fh:
-                fh.write("cancel\n")
-                fh.flush()
+            _write_login_request(path, "cancel")
         except OSError as exc:
             self.note_text = "login rendezvous missing: %s (L-17)" % exc
             return
