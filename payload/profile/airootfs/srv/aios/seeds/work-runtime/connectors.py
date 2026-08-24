@@ -47,11 +47,10 @@ _CHAT_SECRETS = (
     "api_key=",
     "authorization: bearer ",
     "xai_api_key",
-    '"access_token"',
-    '"refresh_token"',
-    '"api_key"',
-    '"authorization"',
-    "bearer ",
+    '"access_token":',
+    '"refresh_token":',
+    '"api_key":',
+    '"authorization":',
 )
 _TOKEN_KEYS = ("access_token", "refresh_token", "api_key", "authorization")
 _NAME_OK = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")

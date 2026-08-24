@@ -112,5 +112,5 @@ b79a3e719ba0afee7ba3f3e581ead7e14acddcd661c47700032c7fcf018d00ef  /srv/aios/seed
 11bcdb294f146c4d89576edd115a0e27bc5883438c85c7c2e8e53c2a7d4715d8  checker/policy/work-runtime-store.sh
 6a1bec19e84ad19fcc79cd1bf50f14c2279ede20d2bc9c4783745c7616bbd2b4  checker/policy/work-runtime-bit.sh
 1e62d2ea4c7b5f27d75731b01b057a8f42fd75849bfaa76ac26268ce468a1380  /srv/aios/seeds/work-runtime/.gitignore
-a1ceb7d4824bd06256bcc3ee68f23dcb00eb7caeecbfdc34698a36fbf841cce2  /srv/aios/seeds/work-runtime/connectors.py
+313f0ad61c2ee27b019f5ba73c6ff8cd6814255579d1fdec47b856635a4e8e2a  /srv/aios/seeds/work-runtime/connectors.py
 0f88d6eab4a31a9f7e5fc83016a57c8e79bb846f3c6a14ccd30e4ff5e5a2c45d  /srv/aios/seeds/work-runtime/live.py

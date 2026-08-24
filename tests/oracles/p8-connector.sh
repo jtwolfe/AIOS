@@ -189,6 +189,18 @@ if "discover schema, then call" not in (d.get("error") or ""):
     raise SystemExit("error %s" % d.get("error"))
 ' || fail "call without discover must fail: ${_first}"
 
+_eng=$(run_turn "${TMP}/send.json" "what is a bearer token?") || true
+printf '%s\n' "${_eng}" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+if d.get("error"):
+    raise SystemExit("error %s" % d.get("error"))
+if d.get("outcome") == "failed":
+    raise SystemExit("ordinary English failed P8.6")
+if d.get("delivered") != "ok":
+    raise SystemExit("delivered %s" % d.get("delivered"))
+' || fail "ordinary English bearer must not fail P8.6: ${_eng}"
+
 _tok=$(run_turn "${TMP}/send.json" "please store access_token=pasted-secret-value") || true
 printf '%s\n' "${_tok}" | python3 -c '
 import json, sys
