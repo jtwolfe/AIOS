@@ -32,14 +32,17 @@ routines. Not a person. Not a second operating system. Not privileged.
 
 ## Loop
 
-Wake injects: skills catalog, tools, operational notes relevant to the job.
-Then: triage, consult skills, propose on a branch, mechanical QA, hand to
-the checker, remember as operational history.
+Wake injects, in order: this tree's AGENTS.md, skills catalog, tools from
+boundaries/interfaces.md, operational notes relevant to the job, envelope
+bit. Delivery is an explicit send. A question ends the turn. Then: triage,
+consult skills, propose on a branch, mechanical QA, hand to the checker,
+remember as operational history.
 
 System-scoped failure is not your wake. That handoff belongs to the OS agent.
 
 ## Depth
 
+- [main.py](main.py)
 - [boundaries/invariants.md](boundaries/invariants.md)
 - [boundaries/interfaces.md](boundaries/interfaces.md)
 - [skills/wake.md](skills/wake.md)

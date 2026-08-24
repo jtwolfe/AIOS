@@ -174,6 +174,8 @@ git -C "${DEST}/srv/aios/src/work-runtime" rev-parse --is-inside-work-tree >/dev
   || fail "destroot work-runtime is not a git repo"
 [ -f "${DEST}/srv/aios/src/work-runtime/AGENTS.md" ] \
   || fail "destroot work-runtime missing AGENTS.md"
+[ -f "${DEST}/srv/aios/src/work-runtime/main.py" ] \
+  || fail "destroot work-runtime missing main.py"
 [ ! -e "${DEST}/srv/aios/src/work-runtime-bots" ] \
   || fail "P8.1 synthesised bots (HI-15)"
 [ -L "${DEST}/etc/systemd/user/default.target.wants/aios-work-runtime.service" ] \

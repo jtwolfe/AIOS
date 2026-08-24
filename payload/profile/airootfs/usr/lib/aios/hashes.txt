@@ -5,7 +5,7 @@
 4530657a8a23c3ba80990df82c9153ab60e4846f0f5de55f25a0a58ce014ba4b  /etc/systemd/system/aios-installer.service
 1d1231b10266a39094e2afb409327e2ab38be576fb9b1f7eb312489220ec239c  /etc/systemd/system/getty@tty1.service.d/autologin.conf
 5cf010d5425e024ceb5567066221f94d6fbd4baa9ad9bc8e7eddee1dee3d547f  /etc/systemd/system/serial-getty@ttyS0.service.d/autologin.conf
-db0101af17464467f70a12bb18069044dccc722954ba5807303b6358d9430230  /srv/aios/seeds/work-runtime/AGENTS.md
+6850b45dbf81d1ce93b9978d178caeb2de57968ce6c73e06f4321412647dc55d  /srv/aios/seeds/work-runtime/AGENTS.md
 ecdb0fa71faa5a0a74c8782ab0a01c66d87646327c3728e2041e2fcd334f897b  /srv/aios/seeds/work-runtime-bots/AGENTS.md
 11e9e66eeb27a0a277607f5d2e8672e4400ac35060085f33760499ad11375c0f  /srv/aios/seeds/work-runtime-bots/boundaries/invariants.md
 f33f6243ae5f1ae0f0f706068c0889f4552f9df877a5d434c0b094601e57d1d6  /srv/aios/seeds/work-runtime-bots/README.md
@@ -14,7 +14,7 @@ f33f6243ae5f1ae0f0f706068c0889f4552f9df877a5d434c0b094601e57d1d6  /srv/aios/seed
 daf7f2808ba380489357b680cb34a7695c5058cfa8d353d7a086362038e067f4  /srv/aios/seeds/work-runtime/boundaries/interfaces.md
 a6ece76f8124aa597b5dcc1de200d88f6d313ecacbde68a03b7af8c868974c03  /srv/aios/seeds/work-runtime/boundaries/invariants.md
 7bd1d47030e7cf8183d096e391765e54438b1f31505765d85503cb7c690cf1db  /srv/aios/seeds/work-runtime/envelope/work-runtime.md
-211a223e5343c3f2ab9bbde77278607f69e5cac2e573ac778d5b4e263c8f8661  /srv/aios/seeds/work-runtime/README.md
+f4e9ac1077013db6c6d9c3c5792dc7341b06229f2b38420fd7273aa453ac91ba  /srv/aios/seeds/work-runtime/README.md
 f8445fa0af1eca344c0032d5becfc01c5361709198814360cf9d21be4cc8919b  /srv/aios/seeds/work-runtime/skills/bridge.md
 048b6a234e5f39b25e6daf1b447a103abd347f7dc10ad7e0d7c1c05d9f2c4358  /srv/aios/seeds/work-runtime/skills/connectors.md
 645de55fbadbbda5069821a2652b100cf145c7c82ef0774de1007d550627df2a  /srv/aios/seeds/work-runtime/skills/handoff.md
@@ -102,3 +102,7 @@ f4c4b6d04d00766230da67d9fa657403128dd01ccce4ec713384593ae1bd09ff  /usr/lib/syste
 460430dfbc9480c3494621607bb8169fba285ddc0069b57d53a475db8a9783c5  operator-client/tty/notify.py
 ead3cc3cb403e623060323ba8e83c5fb6ab7d2961de9ef5de006fe2d308f2ef6  agent/aios_agent/rollback_gate.py
 a1ed294e109bc17e332625f4217d863a0ae83caecbf7b006a9d3133ff3a72638  checker/policy/work-runtime-git.sh
+2b12979cb22eb476189e2fa89b18ee422e20b52d2c8f339f5404d9ea89a0eaf6  /srv/aios/seeds/work-runtime/main.py
+866d09935145d3bb74352ff84b30fde9b14c95a07f787c14c61cba9d71aa9ab0  /srv/aios/seeds/work-runtime/provider.py
+e035f83cd6c6e3e65b9db5129e269478d29c5093a657b5980dcc08a6ab441c24  /srv/aios/seeds/work-runtime/skills.py
+b084ecfd21c550481e834c12796c26460b49521bb190135643ab565a5bc0ad59  /srv/aios/seeds/work-runtime/wake.py
