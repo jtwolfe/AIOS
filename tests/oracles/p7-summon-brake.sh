@@ -268,11 +268,11 @@ printf '%s\n' "${_vb}" | grep -q 'chrome action' \
 printf '%s\n' "${_vb}" | grep -q '^view: brake$' \
   && fail "view brake must not become the view: ${_vb}" || true
 
-_stub=$(drive 'view notify' 'quit') || true
+_stub=$(drive 'view envelope' 'quit') || true
 printf '%s\n' "${_stub}" | grep -q 'not this PR' \
   || fail "unimplemented OS view must say not this PR: ${_stub}"
-printf '%s\n' "${_stub}" | grep -q '^view: notify$' \
-  || fail "notify view id must be reachable as a stub: ${_stub}"
+printf '%s\n' "${_stub}" | grep -q '^view: envelope$' \
+  || fail "envelope view id must be reachable as a stub: ${_stub}"
 
 _st=$(AIOS_BRAKE="${_brfile}" python3 -u "${MAIN}" status) || true
 printf '%s\n' "${_st}" | grep -q '^mode: os$' \

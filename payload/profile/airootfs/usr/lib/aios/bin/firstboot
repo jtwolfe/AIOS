@@ -584,6 +584,8 @@ copy_payload_into_target() {
     || die "copy installer source failed"
   [ -f "${AIOS_LIB}/operator-client/tty/aios.py" ] \
     || die "payload operator-client source missing"
+  [ -f "${AIOS_LIB}/operator-client/tty/notify.py" ] \
+    || die "payload operator-client notify.py missing"
   cp -a "${AIOS_LIB}/operator-client/." "${TARGET}/usr/lib/aios/operator-client/" \
     || die "copy operator-client source failed"
   materialise_seeds
@@ -595,6 +597,8 @@ copy_payload_into_target() {
     || die "aios missing on target"
   [ -f "${TARGET}/usr/lib/aios/operator-client/tty/aios.py" ] \
     || die "operator-client aios.py missing on target"
+  [ -f "${TARGET}/usr/lib/aios/operator-client/tty/notify.py" ] \
+    || die "operator-client notify.py missing on target"
   chmod 0755 "${TARGET}/usr/lib/aios/bin/aios" \
     || die "chmod bin/aios failed"
   [ -x "${TARGET}/usr/lib/aios/bin/enact" ] \

@@ -38,6 +38,7 @@ need_file "${FIRSTBOOT}"
 need_file "${INSTALLER}"
 need_file "${AIOSBIN}"
 need_file "${AIROOTFS}/usr/lib/aios/operator-client/tty/aios.py"
+need_file "${AIROOTFS}/usr/lib/aios/operator-client/tty/notify.py"
 CHECKER_UNIT="${AIROOTFS}/etc/systemd/system/aios-checker.service"
 AGENT_UNIT="${AIROOTFS}/etc/systemd/system/aios-agent.service"
 ENACT="${AIROOTFS}/usr/lib/aios/bin/enact"
@@ -309,6 +310,8 @@ fi
 
 if ! "${SCRIPT_DIR}/p6-work-slice.sh"; then
   fail "p6-work-slice"
+if ! "${SCRIPT_DIR}/p7-notify.sh"; then
+  fail "p7-notify"
 fi
 
 if ! "${SCRIPT_DIR}/p9-vm-harness.sh"; then

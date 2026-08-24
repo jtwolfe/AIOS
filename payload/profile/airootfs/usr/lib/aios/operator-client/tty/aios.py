@@ -1,10 +1,12 @@
 #!/usr/bin/python3
-"""OS operator client (P7.1, P7.3, L-18, L-12). Unprivileged. One binary."""
+"""OS operator client (P7.1, P7.2, P7.3, L-18, L-12, HI-14). Unprivileged. One binary."""
 
 import os
 import signal
 import sys
 import time
+
+import notify
 
 # L-18 OS catalog. brake is a chrome action, not a view id (L-12).
 VIEWS = (
@@ -39,6 +41,7 @@ WORK_REFUSED = (
 ACTIONS = {
     "chrome": ("view", "brake", "send", "mode"),
     "conversation": ("send", "view", "brake", "mode"),
+    "notify": ("open", "view", "brake", "mode"),
 }
 
 _SHORT_VIEW = {
@@ -146,6 +149,8 @@ class Session:
             self._chrome(out)
         elif self.view == "conversation":
             self._conversation(out)
+        elif self.view == "notify":
+            self._notify(out)
         else:
             self._stub(out)
         _line(out, "--")
@@ -164,6 +169,19 @@ class Session:
         else:
             for item in self.transcript[-20:]:
                 _line(out, "  %s" % item)
+
+    def _notify(self, out):
+        for line in notify.render_lines(notify.load_payloads()):
+            _line(out, line)
+
+    def open_handoff(self):
+        payloads = notify.load_payloads()
+        if not payloads:
+            self.note_text = "no HI-14 payload"
+            return
+        self.transcript.append(notify.conversation_line(payloads[0]))
+        self.view = "conversation"
+        self.note_text = "opened notify into conversation (HI-14)"
 
     def _stub(self, out):
         _line(out, "not this PR")
@@ -256,6 +274,12 @@ class Session:
 
         if cmd in ("brake", "b") and not arg:
             self.brake()
+            return None
+        if cmd == "open":
+            if self.view != "notify":
+                self.note_text = "open is a notify action (HI-14)"
+                return None
+            self.open_handoff()
             return None
         if cmd == "send":
             self.send(arg)
