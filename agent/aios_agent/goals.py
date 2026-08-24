@@ -79,6 +79,7 @@ _KIND_ORACLES = {
         "policy/hi-17-seeds-local.sh",
         "policy/work-runtime-git.sh",
         "policy/work-runtime-store.sh",
+        "policy/work-runtime-bots-git.sh",
         "policy/hi-15-work-default-off.sh",
         "policy/hi-13-work-slice.sh",
         "policy/hi-16-os-privilege.sh",
@@ -404,7 +405,7 @@ def work_runtime_yes(answers=None, clause=None):
 
 
 def bots_yes(answers=None, clause=None, work_clause=None):
-    """Second bit. Default off. answers.json bots is never a yes (P8.13)."""
+    """Second bit. Default off. Envelope clause only."""
     if not work_runtime_yes(answers=answers, clause=work_clause):
         return False
     clause = _envelope_bots(clause)

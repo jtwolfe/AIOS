@@ -52,8 +52,7 @@ work_runtime_inert_git() {
   [ "${_wr_inside}" = true ]
 }
 
-# bots_compute_yes PREFIX
-# Envelope clause only. answers.json bots is never a yes. Sets BOTS_YES=0|1.
+# bots_compute_yes PREFIX. Envelope clause only. Sets BOTS_YES=0|1.
 bots_compute_yes() {
   _bt_pfx=${1-}
   BOTS_YES=0

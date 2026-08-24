@@ -36,7 +36,7 @@ log() {
 }
 
 usage() {
-  printf 'usage: enact {syu|snapper-pre|snapper-post|bootctl|unit|rollback|synthesise|disable} ...\n' >&2
+  printf 'usage: enact {syu|snapper-pre|snapper-post|bootctl|unit|rollback|synthesise|disable|enable} ...\n' >&2
   exit 2
 }
 
@@ -602,7 +602,14 @@ envelope_update_ref_main() {
 
 # Mechanical aios pin on envelope.git main, like state (HI-01, HI-03).
 record_envelope_clause() {
-  [ -f "${ENVELOPE}/work-runtime.md" ] || die "missing ${ENVELOPE}/work-runtime.md"
+  _msg=${1-}
+  [ -n "${_msg}" ] || _msg="feat(envelope): disable work-runtime
+
+enabled: false (HI-15)."
+  _files=
+  [ -f "${ENVELOPE}/work-runtime.md" ] && _files="${_files} work-runtime.md"
+  [ -f "${ENVELOPE}/work-runtime-bots.md" ] && _files="${_files} work-runtime-bots.md"
+  [ -n "${_files}" ] || die "missing envelope clause"
   clear_git_env
   if [ ! -d "${ENVELOPE_BARE}/objects" ]; then
     if [ -n "${DESTROOT}" ]; then
@@ -632,8 +639,9 @@ record_envelope_clause() {
     || die "rev-parse envelope main failed"
   git_envelope read-tree "${_parent}" \
     || die "git read-tree envelope main failed"
-  git_envelope add -- work-runtime.md \
-    || die "git add work-runtime.md failed"
+  # shellcheck disable=SC2086
+  git_envelope add -- ${_files} \
+    || die "git add envelope clause failed"
   if git_envelope diff --cached --quiet; then
     rm -f "${ENVELOPE_INDEX}"
     ENVELOPE_INDEX=
@@ -642,9 +650,7 @@ record_envelope_clause() {
   else
     _tree=$(git_envelope write-tree) || die "git write-tree envelope failed"
     _commit=$(git_envelope commit-tree "${_tree}" -p "${_parent}" \
-      -m "feat(envelope): disable work-runtime
-
-enabled: false (HI-15).") \
+      -m "${_msg}") \
       || die "git commit-tree envelope failed"
     rm -f "${ENVELOPE_INDEX}"
     unset GIT_INDEX_FILE
@@ -666,8 +672,9 @@ enabled: false (HI-15).") \
       _br=$(git -c safe.directory="${ENVELOPE}" -C "${ENVELOPE}" \
         symbolic-ref --short HEAD 2>/dev/null || true)
       if [ "${_br}" = main ]; then
-        git -c safe.directory="${ENVELOPE}" -C "${ENVELOPE}" add -- work-runtime.md \
-          || die "git add envelope work-runtime.md failed"
+        # shellcheck disable=SC2086
+        git -c safe.directory="${ENVELOPE}" -C "${ENVELOPE}" add -- ${_files} \
+          || die "git add envelope clause failed"
         git -c safe.directory="${ENVELOPE}" \
           -c user.name=aios -c user.email=aios@localhost \
           -C "${ENVELOPE}" merge --ff-only origin/main \
@@ -682,8 +689,10 @@ enabled: false (HI-15).") \
         || die "chown ${ENVELOPE_BARE} failed (L-03)"
     fi
     id -u aios-agent >/dev/null 2>&1 || die "aios-agent missing (L-03)"
-    chown aios-agent:aios-agent "${ENVELOPE}/work-runtime.md" \
-      || die "chown work-runtime.md failed (L-03)"
+    if [ -f "${ENVELOPE}/work-runtime.md" ]; then
+      chown aios-agent:aios-agent "${ENVELOPE}/work-runtime.md" \
+        || die "chown work-runtime.md failed (L-03)"
+    fi
     if [ -f "${ENVELOPE}/work-runtime-bots.md" ]; then
       chown aios-agent:aios-agent "${ENVELOPE}/work-runtime-bots.md" \
         || die "chown work-runtime-bots.md failed (L-03)"
@@ -757,7 +766,45 @@ patch_work_runtime_enabled() {
     ' "${_clause}" > "${_tmp}" || die "patch ${_clause} failed"
     mv -f "${_tmp}" "${_clause}" || die "replace ${_clause} failed"
   fi
-  record_envelope_clause
+  record_envelope_clause "feat(envelope): disable work-runtime
+
+enabled: false (HI-15)."
+}
+
+patch_bots_enabled() {
+  _want=$1
+  case "${_want}" in
+    true|false) ;;
+    *) die "bots enabled value not allowlisted: ${_want}" ;;
+  esac
+  mkdir -p "${ENVELOPE}" || die "mkdir ${ENVELOPE} failed"
+  _clause="${ENVELOPE}/work-runtime-bots.md"
+  if [ ! -f "${_clause}" ]; then
+    printf '%s\n' "# Clause: work-runtime-bots" "enabled: ${_want}" \
+      > "${_clause}" || die "write ${_clause} failed"
+  else
+    _tmp="${_clause}.tmp.$$"
+    awk -v want="${_want}" '
+      BEGIN { done = 0 }
+      /^[[:space:]]*enabled[[:space:]]*[:=][[:space:]]*(true|yes|1|false|no|0)[[:space:]]*$/ {
+        if (!done) printf "enabled: %s\n", want
+        done = 1
+        next
+      }
+      { print }
+      END { if (!done) printf "enabled: %s\n", want }
+    ' "${_clause}" > "${_tmp}" || die "patch ${_clause} failed"
+    mv -f "${_tmp}" "${_clause}" || die "replace ${_clause} failed"
+  fi
+  if [ "${_want}" = true ]; then
+    record_envelope_clause "feat(envelope): enable work-runtime-bots
+
+enabled: true (P8.13)."
+  else
+    record_envelope_clause "feat(envelope): disable work-runtime-bots
+
+enabled: false (HI-15)."
+  fi
 }
 
 materialise_work_tree() {
@@ -865,10 +912,6 @@ enable_bots_user_unit() {
   fi
   /usr/bin/systemctl --user -M aios-work@ enable "${_unit}" \
     || die "systemctl --user -M aios-work@ enable ${_unit} failed"
-  if [ -d "${_tree}" ] && [ -f "${_tree}/main.py" ]; then
-    /usr/bin/systemctl --user -M aios-work@ start "${_unit}" \
-      || die "systemctl --user -M aios-work@ start ${_unit} failed"
-  fi
 }
 
 enable_work_user_unit() {
@@ -904,6 +947,21 @@ disable_work_user_unit() {
   fi
   rm -f "${_wants}/${_unit}"
   rm -f "${_wants}/${_bots}"
+}
+
+cmd_enable() {
+  [ "$#" -eq 1 ] || die "enable takes work-runtime-bots"
+  _target=$1
+  [ "${_target}" = work-runtime-bots ] \
+    || die "not allowlisted: enable ${_target} (HI-15)"
+  work_runtime_yes \
+    || die "bots stay off until work-runtime is yes (HI-15)"
+  patch_bots_enabled true
+  if [ -n "${DESTROOT}" ]; then
+    printf 'enabled %s\n' "${ENVELOPE}/work-runtime-bots.md"
+    return 0
+  fi
+  printf 'enabled /srv/aios/envelope/work-runtime-bots.md\n'
 }
 
 cmd_disable() {
@@ -1344,7 +1402,7 @@ main() {
     -S*|pacman)
       die "partial pacman is not allowlisted (L-04); use enact syu"
       ;;
-    syu|snapper-pre|snapper-post|bootctl|unit|rollback|synthesise|synthesize|disable) ;;
+    syu|snapper-pre|snapper-post|bootctl|unit|rollback|synthesise|synthesize|disable|enable) ;;
     *)
       die "not allowlisted: $1"
       ;;
@@ -1377,6 +1435,21 @@ main() {
     require_not_frozen
     require_accept_stamp
     cmd_synthesise "$@"
+    return
+  fi
+  if [ "${_cmd}" = enable ]; then
+    bind_destroot
+    _en_target=${1:-}
+    [ "${_en_target}" = work-runtime-bots ] \
+      || die "not allowlisted: enable ${_en_target} (HI-15)"
+    work_runtime_yes \
+      || die "bots stay off until work-runtime is yes (HI-15)"
+    if [ -z "${AIOS_ROOT-}" ]; then
+      require_root
+    fi
+    require_not_frozen
+    require_accept_stamp
+    cmd_enable "$@"
     return
   fi
   if [ "${_cmd}" = disable ]; then

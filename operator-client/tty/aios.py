@@ -67,7 +67,9 @@ BOTS_REFUSED = (
     "refused: bots (HI-15); second bit is off until the OS envelope "
     "view records an explicit yes after work-runtime is already yes"
 )
+_WORK_PRIVILEGED = ("enact", "accept", "reject", "rollback")
 BOTS_REQUEST = "/run/aios/bots-request"
+ENVELOPE_WORK = "/srv/aios/envelope/work-runtime.md"
 ENVELOPE_BOTS = "/srv/aios/envelope/work-runtime-bots.md"
 BOTS_SRC = "/srv/aios/src/work-runtime-bots"
 _BOTS_ENABLED = re.compile(r"^\s*enabled\s*[:=]\s*(true|yes|1)\s*$")
@@ -827,6 +829,7 @@ class Session:
         accepted = os.path.isfile(stamp)
         self._emit(out, "envelope-inspect: compiled HI + derived (L-18)")
         self._emit(out, "envelope-accepted: %s" % ("yes" if accepted else "no"))
+        self._emit(out, "bots-bit: %s" % ("yes" if bots_on() else "off"))
         for line in _envelope_text().splitlines():
             self._emit(out, line)
 
@@ -1436,6 +1439,29 @@ class Session:
         if self.login_status == "waiting":
             self.note_text = "login: waiting (L-17)"
 
+    def bots_action(self, arg=""):
+        if self.mode == "work":
+            self.note_text = "bots refused in work session (L-14)"
+            return
+        if not work_runtime_on():
+            self.note_text = "bots refused: work-runtime is not yes (HI-15)"
+            return
+        token = (arg or "").strip().lower()
+        if token in ("", "status"):
+            self.note_text = "bots-bit: %s" % ("yes" if bots_on() else "off")
+            return
+        if token in ("no", "n", "skip"):
+            self.note_text = "bots: not-yes (HI-15)"
+            return
+        if token not in ("yes", "y"):
+            self.note_text = "bots: skip is not a yes (HI-15)"
+            return
+        try:
+            _write_login_request(_bots_request_path(), "yes")
+        except OSError as exc:
+            self.note_text = "bots rendezvous missing: %s" % exc
+            return
+        self.note_text = "bots yes requested"
     def mode_switch(self, target):
         target = (target or "").strip().lower()
         if not target or target == MODE or target == "os":

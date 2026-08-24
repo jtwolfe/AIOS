@@ -48,6 +48,12 @@ def serve():
             tick_rollback()
         except Exception:
             pass
+        try:
+            from bots_gate import tick_bots
+
+            tick_bots()
+        except Exception:
+            pass
         if sock is None:
             try:
                 from login_gate import drain_slice

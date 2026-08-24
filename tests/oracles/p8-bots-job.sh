@@ -9,6 +9,7 @@ ENACT="${ROOT}/payload/profile/airootfs/usr/lib/aios/bin/enact"
 MAIN="${ROOT}/agent/aios_agent/main.py"
 GOALS="${ROOT}/agent/aios_agent/goals.py"
 DENY="${ROOT}/agent/aios_agent/deny.py"
+GATE="${ROOT}/agent/aios_agent/bots_gate.py"
 TUI="${ROOT}/operator-client/tty/aios.py"
 ISO_OC="${ROOT}/payload/profile/airootfs/usr/lib/aios/operator-client"
 POLICY="${ROOT}/checker/policy"
@@ -59,6 +60,8 @@ cmp -s "${DENY}" "${ISO_AGENT}/aios_agent/deny.py" \
   || fail "deny.py dual-tree mismatch"
 cmp -s "${TUI}" "${ISO_OC}/tty/aios.py" \
   || fail "aios.py dual-tree mismatch"
+cmp -s "${GATE}" "${ISO_AGENT}/aios_agent/bots_gate.py" \
+  || fail "bots_gate.py dual-tree mismatch"
 cmp -s "${POLICY}/work-runtime-bots-git.sh" "${ISO_POLICY}/work-runtime-bots-git.sh" \
   || fail "work-runtime-bots-git.sh dual-tree mismatch"
 diff -qr -x __pycache__ -x '*.pyc' "${BOTS_SEED}" "${ISO_BOTS}" \
@@ -85,7 +88,7 @@ grep -q 'last_evidence' "${BOTS_SEED}/main.py" \
 
 _pyct=$(mktemp -d)
 cp -a "${BOTS_SEED}/main.py" "${_pyct}/main.py"
-python3 -m py_compile "${GOALS}" "${DENY}" "${MAIN}" "${TUI}" "${_pyct}/main.py" \
+python3 -m py_compile "${GOALS}" "${DENY}" "${MAIN}" "${GATE}" "${TUI}" "${_pyct}/main.py" \
   || fail "py_compile failed"
 rm -rf "${_pyct}"
 sh -n "${ENACT}" || fail "sh -n enact"
@@ -101,12 +104,67 @@ mkdir -p \
   "${DEST}/run/aios"
 : > "${DEST}/etc/aios/envelope-accepted"
 chmod 0644 "${DEST}/etc/aios/envelope-accepted"
+: > "${DEST}/run/aios/bots-request"
+chmod 0660 "${DEST}/run/aios/bots-request"
 cp -a "${SEED}" "${DEST}/srv/aios/seeds/work-runtime"
 cp -a "${BOTS_SEED}" "${DEST}/srv/aios/seeds/work-runtime-bots"
 printf '%s\n' '{"accepted":true,"work_runtime":true}' \
   > "${DEST}/srv/aios/state/bootstrap-in-progress/answers.json"
-printf '%s\n' '# Clause: work-runtime-bots' 'enabled: true' \
-  > "${DEST}/srv/aios/envelope/work-runtime-bots.md"
+
+init_envelope_git() {
+  _env=$1
+  _bare=$2
+  mkdir -p "${_env}" "${_bare%/*}" "${_bare}/hooks"
+  git -C "${_env}" init -b main >/dev/null
+  git -C "${_env}" config user.name aios
+  git -C "${_env}" config user.email aios@localhost
+  printf '%s\n' '# Hard invariants' > "${_env}/hard-invariants.md"
+  git -C "${_env}" add hard-invariants.md
+  git -C "${_env}" -c user.name=aios -c user.email=aios@localhost \
+    commit -m 'chore(envelope): initialise tree' >/dev/null
+  git init --bare -b main "${_bare}" >/dev/null
+  git -C "${_env}" remote add origin "${_bare}"
+  git -C "${_env}" push -u origin main >/dev/null
+  cp -a "${ROOT}/checker/hooks/common.sh" "${_bare}/hooks/common.sh"
+  cp -a "${ROOT}/checker/hooks/reference-transaction" \
+    "${_bare}/hooks/reference-transaction"
+  mv "${_bare}/hooks/reference-transaction" \
+    "${_bare}/hooks/reference-transaction.real"
+  cat > "${_bare}/hooks/reference-transaction" <<'EOF'
+#!/bin/sh
+set -eu
+HOOK_HOME=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd) \
+  || { printf '%s\n' "cannot resolve hook dir (HI-03)" >&2; exit 1; }
+# shellcheck disable=SC1091
+. "${HOOK_HOME}/common.sh"
+[ "$#" -ge 1 ] || deny "reference-transaction requires a state (HI-03)"
+case "$1" in
+  committed|aborted)
+    exit 0
+    ;;
+  preparing|prepared)
+    ;;
+  *)
+    deny "unknown reference-transaction state (HI-03)"
+    ;;
+esac
+_uid=$(id -u)
+if [ "${_uid}" -eq 0 ]; then
+  exec "${HOOK_HOME}/reference-transaction.real" "$@"
+fi
+while read -r old new ref extra || [ -n "${old:-}" ]; do
+  :
+done
+exit 0
+EOF
+  chmod 0644 "${_bare}/hooks/common.sh"
+  chmod 0755 "${_bare}/hooks/reference-transaction" \
+    "${_bare}/hooks/reference-transaction.real"
+}
+
+init_envelope_git \
+  "${DEST}/srv/aios/envelope" \
+  "${DEST}/srv/aios/git/envelope.git"
 
 BIN="${TMP}/bin"
 mkdir -p "${BIN}"
@@ -125,6 +183,40 @@ if ! PATH="${ORACLE_PATH}" AIOS_ROOT="${DEST}" "${ENACT}" synthesise work-runtim
   >"${TMP}/wr.out" 2>"${TMP}/wr.err"; then
   fail "destroot synthesise work-runtime failed: $(cat "${TMP}/wr.err")"
 fi
+_tui_yes=$(
+  printf '%s\n' 'view envelope' 'bots yes' 'quit' \
+    | AIOS_ANSWERS="${DEST}/srv/aios/state/bootstrap-in-progress/answers.json" \
+      AIOS_BRAKE="${TMP}/unused-brake" \
+      AIOS_ROOT="${DEST}" python3 -u "${TUI}"
+) || true
+grep -qx yes "${DEST}/run/aios/bots-request" \
+  || fail "TUI bots yes must write destroot request: ${_tui_yes}"
+PATH="${ORACLE_PATH}" \
+  AIOS_ROOT="${DEST}" \
+  AIOS_ENACT="${ENACT}" \
+  PYTHONPATH="${ROOT}/agent/aios_agent" \
+  python3 -c 'from bots_gate import tick_bots
+tick_bots()' || fail "tick_bots failed: $(cat "${DEST}/run/aios/bots-request" 2>/dev/null || true)"
+_req=$(cat "${DEST}/run/aios/bots-request")
+[ -z "${_req}" ] || fail "tick_bots must clear bots-request"
+grep -Eq '^[[:space:]]*enabled[[:space:]]*[:=][[:space:]]*(true|yes|1)[[:space:]]*$' \
+  "${DEST}/srv/aios/envelope/work-runtime-bots.md" \
+  || fail "tick_bots did not patch envelope enabled: true"
+if ! git --git-dir="${DEST}/srv/aios/git/envelope.git" cat-file -e main:work-runtime-bots.md; then
+  fail "enable did not commit work-runtime-bots.md on envelope.git main"
+fi
+_yes=$(
+  AIOS_ANSWERS="${DEST}/srv/aios/state/bootstrap-in-progress/answers.json" \
+    AIOS_ENVELOPE_WORK="${DEST}/srv/aios/envelope/missing.md" \
+    AIOS_ENVELOPE_BOTS="${DEST}/srv/aios/envelope/work-runtime-bots.md" \
+    python3 - "${ROOT}/agent/aios_agent" <<'PY'
+import sys
+sys.path.insert(0, sys.argv[1])
+from goals import bots_yes
+print("yes" if bots_yes() else "no")
+PY
+)
+[ "${_yes}" = yes ] || fail "bots_yes must be true after envelope patch: ${_yes}"
 if ! PATH="${ORACLE_PATH}" AIOS_ROOT="${DEST}" "${ENACT}" synthesise work-runtime-bots \
   >"${TMP}/bots.out" 2>"${TMP}/bots.err"; then
   fail "destroot synthesise bots failed: $(cat "${TMP}/bots.err")"
@@ -222,7 +314,7 @@ printf '%s\n' '{"work_runtime":true}' > "${TMP}/on.json"
 _tui=$(
   printf '%s\n' 'view roster' 'view job' 'quit' \
     | AIOS_ANSWERS="${TMP}/on.json" \
-      AIOS_ENVELOPE_BOTS="${DEST}/srv/aios/envelope/work-runtime-bots.md" \
+      AIOS_ROOT="${DEST}" \
       AIOS_BOTS_SRC="${TREE}" \
       AIOS_BRAKE="${TMP}/unused-brake" \
       python3 -u "${TUI}" work
@@ -285,11 +377,26 @@ _idle=$(
 printf '%s\n' "${_idle}" | grep -q '"status": "idle"' \
   || fail "empty tick after bots git must idle: ${_idle}"
 
-env -u AIOS_ROOT env -u AIOS_POLICY_ROOT \
-  "${ENACT}" synthesise work-runtime-bots >/dev/null 2>"${TMP}/unset.err" || true
+NOSTAMP="${TMP}/nostamp"
+mkdir -p \
+  "${NOSTAMP}/srv/aios/envelope" \
+  "${NOSTAMP}/srv/aios/state/bootstrap-in-progress" \
+  "${NOSTAMP}/srv/aios/seeds"
+printf '%s\n' '{"accepted":true,"work_runtime":true}' \
+  > "${NOSTAMP}/srv/aios/state/bootstrap-in-progress/answers.json"
+printf '%s\n' '# Clause: work-runtime-bots' 'enabled: true' \
+  > "${NOSTAMP}/srv/aios/envelope/work-runtime-bots.md"
+PATH="${ORACLE_PATH}" AIOS_ROOT="${NOSTAMP}" \
+  "${ENACT}" synthesise work-runtime-bots >/dev/null 2>"${TMP}/nostamp.err" || true
+grep -q 'envelope accept' "${TMP}/nostamp.err" \
+  || fail "synthesise without accept stamp must refuse: $(cat "${TMP}/nostamp.err")"
+[ ! -e "${NOSTAMP}/srv/aios/src" ] \
+  || fail "no-stamp synthesise created destroot src"
 if [ "${WR_BEFORE}" -eq 0 ] && [ -e /srv/aios/src ]; then
-  fail "unset AIOS_ROOT enact created /srv/aios/src"
+  fail "no-stamp enact created /srv/aios/src"
 fi
+grep -Fq 'agent/aios_agent/bots_gate.py' "${HASHES}" \
+  || fail "payload/hashes.txt must pin bots_gate.py"
 
 grep -Fq 'seed/work-runtime-bots/main.py' "${HASHES}" \
   || fail "payload/hashes.txt must pin bots main.py"

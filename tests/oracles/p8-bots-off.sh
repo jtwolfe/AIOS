@@ -9,8 +9,11 @@ ENACT="${ROOT}/payload/profile/airootfs/usr/lib/aios/bin/enact"
 MAIN="${ROOT}/agent/aios_agent/main.py"
 GOALS="${ROOT}/agent/aios_agent/goals.py"
 DENY="${ROOT}/agent/aios_agent/deny.py"
+GATE="${ROOT}/agent/aios_agent/bots_gate.py"
+LOGIN="${ROOT}/installer/aios_installer/login.py"
 TUI="${ROOT}/operator-client/tty/aios.py"
 ISO_OC="${ROOT}/payload/profile/airootfs/usr/lib/aios/operator-client"
+ISO_LOGIN="${ROOT}/payload/profile/airootfs/usr/lib/aios/installer/aios_installer/login.py"
 FIRSTBOOT="${ROOT}/payload/profile/airootfs/usr/lib/aios/bin/firstboot"
 POLICY="${ROOT}/checker/policy"
 ISO_POLICY="${ROOT}/payload/profile/airootfs/usr/lib/aios/checker/policy"
@@ -54,6 +57,7 @@ trap cleanup EXIT
 
 [ -x "${ENACT}" ] || fail "missing executable ${ENACT}"
 [ -f "${GOALS}" ] || fail "missing goals.py"
+[ -f "${GATE}" ] || fail "missing bots_gate.py"
 [ -f "${TUI}" ] || fail "missing aios.py"
 [ -f "${BOTS_UNIT}" ] || fail "missing bots user unit (L-23; vendor file may exist when bit is off)"
 [ -x "${POLICY}/work-runtime-bots-git.sh" ] || fail "missing work-runtime-bots-git.sh"
@@ -65,6 +69,10 @@ cmp -s "${DENY}" "${ISO_AGENT}/aios_agent/deny.py" \
   || fail "deny.py dual-tree mismatch"
 cmp -s "${TUI}" "${ISO_OC}/tty/aios.py" \
   || fail "aios.py dual-tree mismatch"
+cmp -s "${GATE}" "${ISO_AGENT}/aios_agent/bots_gate.py" \
+  || fail "bots_gate.py dual-tree mismatch"
+cmp -s "${LOGIN}" "${ISO_LOGIN}" \
+  || fail "login.py dual-tree mismatch"
 cmp -s "${POLICY}/work-runtime-bots-git.sh" "${ISO_POLICY}/work-runtime-bots-git.sh" \
   || fail "work-runtime-bots-git.sh dual-tree mismatch"
 cmp -s "${POLICY}/work-runtime-bit.sh" "${ISO_POLICY}/work-runtime-bit.sh" \
@@ -88,11 +96,19 @@ grep -q 'aios-work-runtime-bots user unit missing on target' "${FIRSTBOOT}" \
 if grep -q 'enable aios-work' "${FIRSTBOOT}"; then
   fail "firstboot must not enable work units"
 fi
-grep -q 'never a third bootstrap question' "${TUI}" \
-  || fail "TUI must say bots is never a third bootstrap question"
-grep -q 'BOTS_REFUSED' "${TUI}" || fail "TUI missing BOTS_REFUSED"
+grep -q 'bots-request' "${LOGIN}" \
+  || fail "accept must create /run/aios/bots-request"
+grep -q 'tick_bots' "${ROOT}/agent/aios_agent/main.py" \
+  || fail "agent serve must tick_bots"
+grep -q '"enable", "work-runtime-bots"' "${GATE}" \
+  || fail "bots_gate must enact enable work-runtime-bots"
+if grep -E '^\s*"bots"' "${ROOT}/installer/aios_installer/questions.py"; then
+  fail "installer questions must not ask bots"
+fi
+grep -q 'policy/work-runtime-bots-git.sh' "${GOALS}" \
+  || fail "work-runtime oracles must include work-runtime-bots-git.sh"
 
-python3 -m py_compile "${GOALS}" "${DENY}" "${MAIN}" "${TUI}" \
+python3 -m py_compile "${GOALS}" "${DENY}" "${MAIN}" "${GATE}" "${TUI}" \
   || fail "py_compile failed"
 sh -n "${ENACT}" || fail "sh -n enact"
 sh -n "${POLICY}/work-runtime-bots-git.sh" || fail "sh -n work-runtime-bots-git.sh"
@@ -108,6 +124,8 @@ mkdir -p \
   "${DEST}/run/aios"
 : > "${DEST}/etc/aios/envelope-accepted"
 chmod 0644 "${DEST}/etc/aios/envelope-accepted"
+: > "${DEST}/run/aios/bots-request"
+chmod 0660 "${DEST}/run/aios/bots-request"
 cp -a "${SEED}" "${DEST}/srv/aios/seeds/work-runtime"
 cp -a "${ROOT}/seed/work-runtime-bots" "${DEST}/srv/aios/seeds/work-runtime-bots"
 printf '%s\n' '{"accepted":true,"work_runtime":true}' \
@@ -169,6 +187,7 @@ printf '%s\n' "${_d_bots}" | grep -q 'HI-15' \
   || fail "deny synthesise bots with JSON bots true must HI-15: ${_d_bots}"
 
 printf '%s\n' '{"work_runtime":false}' > "${TMP}/off.json"
+: > "${DEST}/run/aios/bots-request"
 _env=$(
   printf '%s\n' 'view envelope' 'bots yes' 'quit' \
     | AIOS_ANSWERS="${TMP}/off.json" AIOS_BRAKE="${TMP}/unused-brake" \
@@ -176,14 +195,16 @@ _env=$(
 ) || true
 printf '%s\n' "${_env}" | grep -q 'HI-15' \
   || fail "envelope bots yes without work-runtime must quote HI-15: ${_env}"
-printf '%s\n' "${_env}" | grep -q 'never a third bootstrap question' \
-  || fail "envelope bots action must say never a third bootstrap question: ${_env}"
+_req0=$(cat "${DEST}/run/aios/bots-request")
+[ -z "${_req0}" ] || fail "bots yes without work-runtime must not write request"
+[ ! -f "${DEST}/srv/aios/envelope/work-runtime-bots.md" ] \
+  || fail "bots yes without work-runtime wrote a clause"
 
 printf '%s\n' '{"work_runtime":true}' > "${TMP}/on.json"
 _rost=$(
   printf '%s\n' 'view roster' 'view job' 'quit' \
     | AIOS_ANSWERS="${TMP}/on.json" AIOS_BRAKE="${TMP}/unused-brake" \
-      python3 -u "${TUI}" work
+      AIOS_ROOT="${DEST}" python3 -u "${TUI}" work
 ) || true
 printf '%s\n' "${_rost}" | grep -q 'HI-15' \
   || fail "roster with bots bit off must quote HI-15: ${_rost}"
@@ -193,14 +214,15 @@ printf '%s\n' "${_rost}" | grep -q '^view: roster$' \
 _req=$(
   printf '%s\n' 'view envelope' 'bots yes' 'quit' \
     | AIOS_ANSWERS="${TMP}/on.json" AIOS_BRAKE="${TMP}/unused-brake" \
-      AIOS_BOTS_REQUEST="${TMP}/bots-request" python3 -u "${TUI}"
+      AIOS_ROOT="${DEST}" python3 -u "${TUI}"
 ) || true
-[ -f "${TMP}/bots-request" ] || fail "bots yes with work-runtime must write request: ${_req}"
-grep -qx yes "${TMP}/bots-request" \
-  || fail "bots request must be yes: $(cat "${TMP}/bots-request" 2>/dev/null || true)"
-printf '%s\n' "${_req}" | grep -q 'envelope action' \
-  || fail "bots yes must name envelope action: ${_req}"
+grep -qx yes "${DEST}/run/aios/bots-request" \
+  || fail "bots yes with work-runtime must write destroot request: ${_req}"
+[ ! -f "${DEST}/srv/aios/envelope/work-runtime-bots.md" ] \
+  || fail "TUI must not write the envelope clause"
 
+grep -Fq 'agent/aios_agent/bots_gate.py' "${HASHES}" \
+  || fail "payload/hashes.txt must pin bots_gate.py"
 grep -Fq 'checker/policy/work-runtime-bots-git.sh' "${HASHES}" \
   || fail "payload/hashes.txt must pin work-runtime-bots-git.sh"
 grep -Fq 'aios-work-runtime-bots.service' "${HASHES}" \

@@ -121,4 +121,13 @@ def check(kind, *args):
         if target != "work-runtime":
             raise Denied("not allowlisted: disable %s (HI-15)" % target)
         return
+    if kind == "enable":
+        from goals import work_runtime_yes
+
+        target = args[0] if args else ""
+        if target != "work-runtime-bots":
+            raise Denied("not allowlisted: enable %s (HI-15)" % target)
+        if not work_runtime_yes():
+            raise Denied("bots stay off until work-runtime is yes (HI-15)")
+        return
     raise Denied("unknown action not allowlisted: %s" % kind)

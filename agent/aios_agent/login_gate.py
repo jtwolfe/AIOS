@@ -228,6 +228,12 @@ def drain_slice(budget):
             tick_rollback()
         except Exception:
             pass
+        try:
+            from bots_gate import tick_bots
+
+            tick_bots()
+        except Exception:
+            pass
         remain = stop - time.time()
         if remain <= 0:
             break
