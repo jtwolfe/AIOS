@@ -5,7 +5,7 @@ set -eu
 PATH="/usr/bin:/usr/sbin:/bin:/sbin"
 export PATH
 
-BRAKE=/srv/aios/state/brake
+BRAKE=/srv/aios/state/brake.d/stamp
 # Root-owned; not in an aios-agent worktree (L-20). P5 writes this at accept.
 ACCEPT_STAMP=/etc/aios/envelope-accepted
 STATE=/srv/aios/state

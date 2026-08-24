@@ -89,6 +89,7 @@ need_line "${AGENT_UNIT}" \
 need_line "${AGENT_UNIT}" \
   "ConditionPathExists=!/srv/aios/state/brake"
 need_line "${AGENT_UNIT}" "Sockets=aios-intent.socket"
+  "ConditionPathExists=!/srv/aios/state/brake.d/stamp"
 grep -q 'cannot merge to main (HI-03)' "${AIROOTFS}/usr/lib/aios/agent/aios_agent/deny.py" \
   || fail "agent deny-list missing HI-03 merge-to-main"
 grep -q 'HI-06' "${AIROOTFS}/usr/lib/aios/agent/aios_agent/deny.py" \

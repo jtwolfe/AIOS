@@ -43,5 +43,7 @@ python3 installer/aios_installer/main.py
 Piped stdin is a fixture. On a TTY, Ctrl+D and Ctrl+C keep the console
 until accept; after accept the unit leaves so operator getty can own
 it (L-09). Brake writes
-`/srv/aios/state/brake` (or `AIOS_BRAKE`) and keeps this process up
-(L-12). The brake flag is on only if that file exists.
+`/srv/aios/state/brake.d/stamp` (or `AIOS_BRAKE`) and keeps this process
+up (L-12). The brake flag is on only if that file exists. Accept grants
+a 1731 drop directory for the operator; `/srv/aios/state` stays
+aios-agent owned (HI-16).

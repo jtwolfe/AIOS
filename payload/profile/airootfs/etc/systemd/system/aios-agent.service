@@ -6,7 +6,7 @@ ConditionPathExists=/srv/aios/agent/aios_agent/main.py
 # L-20: installer writes this root-owned stamp at accept. Not agent-writable JSON.
 ConditionPathExists=/etc/aios/envelope-accepted
 # L-12: brake freezes the proposer until the human clears it.
-ConditionPathExists=!/srv/aios/state/brake
+ConditionPathExists=!/srv/aios/state/brake.d/stamp
 
 [Service]
 Type=simple

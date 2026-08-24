@@ -24,8 +24,10 @@ Work runtime stays default off (HI-15).
    installed graphical client later, not this OS contract.
 3. Work summon is refused while HI-15 is default off. Do not open work
    tools. Do not synthesise `/srv/aios/src/work-runtime`.
-4. Emergency brake writes `/srv/aios/state/brake` (or `AIOS_BRAKE`).
-   Freeze privileged writes. TUI stays. Human-only. No enact sudo.
+4. Emergency brake writes `/srv/aios/state/brake.d/stamp` (or
+   `AIOS_BRAKE`). Accept grants a 1731 drop dir; do not chmod
+   `/srv/aios/state` 0777 (HI-16). Freeze privileged writes. TUI stays.
+   Human-only. No enact sudo.
 5. `mode installer` is refused. This is not firstboot (L-09).
 6. No sysupgrade. No curl. Live login is L-17 after envelope accept.
 7. Never commit to `main`. Never force-push (HI-03).

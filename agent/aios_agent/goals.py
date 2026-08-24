@@ -15,7 +15,7 @@ MAX_EVENTS = 1
 
 GOALS_PATH = "/srv/aios/state/goals.json"
 NOTIFY_DIR = "/srv/aios/state/notify"
-BRAKE_PATH = "/srv/aios/state/brake"
+BRAKE_PATH = "/srv/aios/state/brake.d/stamp"
 ANSWERS_PATH = "/srv/aios/state/bootstrap-in-progress/answers.json"
 ENVELOPE_WORK = "/srv/aios/envelope/work-runtime.md"
 

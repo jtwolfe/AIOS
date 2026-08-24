@@ -30,7 +30,7 @@ WORK_VIEWS = (
 )
 
 MODE = "os"
-BRAKE_PATH = "/srv/aios/state/brake"
+BRAKE_PATH = "/srv/aios/state/brake.d/stamp"
 WORK_REFUSED = (
     "refused: work (HI-15); work runtime is off until bootstrap "
     "records an explicit yes"
@@ -52,11 +52,6 @@ _SHORT_VIEW = {
     "l": "login",
 }
 
-_STUB_VIEWS = frozenset(
-    ("envelope", "intents", "notify", "snapper", "packages", "login")
-)
-
-
 def _line(out, text=""):
     out.write("%s\n" % text)
     out.flush()
@@ -71,11 +66,13 @@ def _brake_on():
 
 
 def write_brake():
-    # L-12: stamp the path aios-agent.service already names. No enact sudo.
     path = _brake_path()
     parent = os.path.dirname(path)
     if parent:
-        os.makedirs(parent, exist_ok=True)
+        if os.environ.get("AIOS_BRAKE"):
+            os.makedirs(parent, exist_ok=True)
+        elif not os.path.isdir(parent):
+            raise OSError("brake drop missing (L-12)")
     with open(path, "w", encoding="utf-8") as fh:
         fh.write("braked\n")
     if not os.path.isfile(path):

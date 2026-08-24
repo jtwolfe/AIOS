@@ -10,6 +10,9 @@ import questions
 UID_MIN = 1000
 UID_MAX = 60000
 NOLOGIN = frozenset(("nologin", "false", "true"))
+# Stamp file. Drop dir is 1731 root:operator so the human can create it (L-12, L-13).
+BRAKE_PATH = "/srv/aios/state/brake.d/stamp"
+BRAKE_DROP_MODE = 0o1731
 
 
 def dest_root():
@@ -34,7 +37,7 @@ def _writes_frozen():
     # Oracles set AIOS_ROOT; do not read the workstation brake file.
     if os.environ.get("AIOS_ROOT"):
         return False
-    return os.path.isfile("/srv/aios/state/brake")
+    return os.path.isfile(BRAKE_PATH)
 
 
 def enact(name):
@@ -46,6 +49,7 @@ def enact(name):
     if root != "/":
         os.makedirs(root, exist_ok=True)
     _create_user(root, name)
+    _grant_brake_drop(root, name)
     _write_autologin(root, name)
     _write_operator_stamp(root, name)
     _release_console(root)
@@ -356,6 +360,26 @@ def stat_mode(path, default):
 
 def stat_perm(mode):
     return mode & 0o7777
+
+
+def _grant_brake_drop(root, name):
+    # L-12: operator creates the stamp; aios-agent only stats it (HI-16).
+    fields = _passwd_record(root, name)
+    gid = _gid_of(fields) if fields is not None else None
+    if gid is None:
+        raise OSError("operator gid missing for brake drop (L-12)")
+    drop = _under(root, "srv", "aios", "state", "brake.d")
+    os.makedirs(drop, exist_ok=True)
+    os.chmod(drop, BRAKE_DROP_MODE)
+    got = os.stat(drop).st_mode & 0o7777
+    if got != BRAKE_DROP_MODE:
+        raise OSError("brake drop mode %o want 1731 (L-12)" % got)
+    if root == "/" and not os.environ.get("AIOS_ROOT"):
+        try:
+            os.chown(drop, 0, gid)
+        except OSError as exc:
+            raise OSError("brake drop chown failed (L-12): %s" % exc)
+    # Do not chmod /srv/aios/state (HI-16).
 
 
 def _create_user(root, name):

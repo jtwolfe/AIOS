@@ -410,7 +410,7 @@ check_firstboot_payload() {
   grep -qx 'ConditionPathExists=/etc/aios/envelope-accepted' \
     "${iso}/etc/systemd/system/aios-agent.service" \
     || die "aios-agent.service must ConditionPathExists the accept stamp (L-20)"
-  grep -qx 'ConditionPathExists=!/srv/aios/state/brake' \
+  grep -qx 'ConditionPathExists=!/srv/aios/state/brake.d/stamp' \
     "${iso}/etc/systemd/system/aios-agent.service" \
     || die "aios-agent.service must ConditionPathExists the brake (L-12)"
   grep -qx 'Sockets=aios-intent.socket' \

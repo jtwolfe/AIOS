@@ -11,7 +11,17 @@ ISO_BIN="${ROOT}/payload/profile/airootfs/usr/lib/aios/bin/aios"
 FIRSTBOOT="${ROOT}/payload/profile/airootfs/usr/lib/aios/bin/firstboot"
 HASHES="${ROOT}/payload/hashes.txt"
 ISO_HASHES="${ROOT}/payload/profile/airootfs/usr/lib/aios/hashes.txt"
+LOGIN="${ROOT}/installer/aios_installer/login.py"
+ENACT="${ROOT}/payload/profile/airootfs/usr/lib/aios/bin/enact"
+UNIT="${ROOT}/payload/profile/airootfs/etc/systemd/system/aios-agent.service"
+GOALS="${ROOT}/agent/aios_agent/goals.py"
+INST_MAIN="${ROOT}/installer/aios_installer/main.py"
+TMPFILES="${ROOT}/payload/profile/airootfs/usr/lib/tmpfiles.d/aios.conf"
+STAMP=/srv/aios/state/brake.d/stamp
+DROP=/srv/aios/state/brake.d
 failed=0
+PYTHONDONTWRITEBYTECODE=1
+export PYTHONDONTWRITEBYTECODE
 
 fail() {
   printf 'error: %s\n' "$*" >&2
@@ -42,6 +52,38 @@ grep -q 'L-12' "${MAIN}" || fail "aios.py must quote L-12"
 grep -q 'HI-15' "${MAIN}" || fail "aios.py must quote HI-15"
 grep -q 'P7.1' "${MAIN}" || fail "aios.py must quote P7.1"
 
+grep -q "BRAKE_PATH = \"${STAMP}\"" "${MAIN}" \
+  || fail "aios.py BRAKE_PATH must be ${STAMP}"
+grep -q "BRAKE_PATH = \"${STAMP}\"" "${INST_MAIN}" \
+  || fail "installer main.py BRAKE_PATH must be ${STAMP}"
+grep -q "BRAKE_PATH = \"${STAMP}\"" "${LOGIN}" \
+  || fail "login.py BRAKE_PATH must be ${STAMP}"
+grep -q "BRAKE_PATH = \"${STAMP}\"" "${GOALS}" \
+  || fail "goals.py BRAKE_PATH must be ${STAMP}"
+grep -qx "BRAKE=${STAMP}" "${ENACT}" \
+  || fail "enact BRAKE must be ${STAMP}"
+grep -qx "ConditionPathExists=!${STAMP}" "${UNIT}" \
+  || fail "aios-agent.service must ConditionPathExists !${STAMP}"
+grep -q 'brake.d' "${TMPFILES}" \
+  || fail "tmpfiles must create brake.d (L-12)"
+grep -q '0700 root root' "${TMPFILES}" \
+  || fail "tmpfiles brake.d must start 0700 root"
+grep -q 'brake.d' "${FIRSTBOOT}" \
+  || fail "firstboot must restore brake.d after chown -R state"
+grep -q 'chmod 0700' "${FIRSTBOOT}" \
+  || fail "firstboot must chmod 0700 brake.d (not 0777 state)"
+grep -q "'/brake.d/'" "${FIRSTBOOT}" \
+  || fail "firstboot must gitignore /brake.d/ (HI-09)"
+grep -q '0o1731' "${LOGIN}" \
+  || fail "login.py must chmod brake drop 1731"
+grep -q '_grant_brake_drop' "${LOGIN}" \
+  || fail "login.py must grant the brake drop at accept"
+if grep -En 'chmod[[:space:]]+0777[[:space:]].*state|chmod\(.*0o777' \
+  "${LOGIN}" "${FIRSTBOOT}" "${TMPFILES}" 2>/dev/null
+then
+  fail "must not chmod 0777 /srv/aios/state (HI-16)"
+fi
+
 python3 - "${MAIN}" <<'PY' || fail "brake must not be an L-18 view id"
 import ast
 import sys
@@ -64,11 +106,13 @@ if "conversation" not in views:
     raise SystemExit("conversation missing from VIEWS")
 PY
 
-python3 -m py_compile "${MAIN}" || fail "py_compile aios.py failed"
 _pyct=$(mktemp -d)
-cp -a "${ISO_OC}/tty/aios.py" "${_pyct}/aios.py" \
+cp -a "${MAIN}" "${_pyct}/aios.py" \
+  || fail "copy aios.py for py_compile"
+python3 -m py_compile "${_pyct}/aios.py" || fail "py_compile aios.py failed"
+cp -a "${ISO_OC}/tty/aios.py" "${_pyct}/iso-aios.py" \
   || fail "copy ISO aios.py for py_compile"
-python3 -m py_compile "${_pyct}/aios.py" || fail "ISO py_compile failed"
+python3 -m py_compile "${_pyct}/iso-aios.py" || fail "ISO py_compile failed"
 rm -rf "${_pyct}"
 
 sh -n "${ISO_BIN}" || fail "sh -n bin/aios"
@@ -131,9 +175,12 @@ grep -Eq '^[0-9a-f]{64}  operator-client/tty/aios.py$' "${ISO_HASHES}" \
 
 TMP=$(mktemp -d)
 trap 'rm -rf "${TMP}"' EXIT
-LIVE_BRAKE="/srv/aios/state/brake"
+LIVE_BRAKE="${STAMP}"
+LIVE_OLD="/srv/aios/state/brake"
 _live_existed=0
+_live_old=0
 [ -e "${LIVE_BRAKE}" ] && _live_existed=1
+[ -e "${LIVE_OLD}" ] && _live_old=1
 
 drive() {
   printf '%s\n' "$@" | AIOS_BRAKE="${TMP}/unused-brake" python3 -u "${MAIN}"
@@ -251,7 +298,12 @@ grep -q 'signal.SIG_IGN' "${MAIN}" \
   || fail "TTY must ignore SIGINT so readline is not interrupted (L-09)"
 
 if [ "${_live_existed}" -eq 0 ] && [ -e "${LIVE_BRAKE}" ]; then
+  rm -f "${LIVE_BRAKE}"
   fail "oracle created ${LIVE_BRAKE}"
+fi
+if [ "${_live_old}" -eq 0 ] && [ -e "${LIVE_OLD}" ]; then
+  rm -f "${LIVE_OLD}"
+  fail "oracle created ${LIVE_OLD}"
 fi
 
 (cd "${ROOT}" && grep -E '^[0-9a-f]{64} ' "${HASHES}" | sha256sum -c --strict - >/dev/null) \

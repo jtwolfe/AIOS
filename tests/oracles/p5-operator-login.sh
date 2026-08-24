@@ -150,6 +150,16 @@ expect_alice() {
   grep -E 'nologin' "${_tree}/etc/passwd" | grep -E '^alice:' >/dev/null \
     && fail "${_label}: alice must be a human login, not nologin" || true
   [ -d "${_tree}/home/alice" ] || fail "${_label}: missing home/alice"
+  _drop="${_tree}/srv/aios/state/brake.d"
+  [ -d "${_drop}" ] || fail "${_label}: missing brake drop dir (L-12)"
+  _dmode=$(stat -c '%a' "${_drop}")
+  [ "${_dmode}" = 1731 ] \
+    || fail "${_label}: brake drop must be 1731, got ${_dmode}"
+  _state=$(dirname "${_drop}")
+  _smode=$(stat -c '%a' "${_state}")
+  case "${_smode}" in
+    *777*) fail "${_label}: must not chmod 0777 /srv/aios/state" ;;
+  esac
   _tty1="${_tree}/etc/systemd/system/getty@tty1.service.d/autologin.conf"
   _ser="${_tree}/etc/systemd/system/serial-getty@ttyS0.service.d/autologin.conf"
   [ -f "${_tty1}" ] || fail "${_label}: missing tty1 autologin drop-in"

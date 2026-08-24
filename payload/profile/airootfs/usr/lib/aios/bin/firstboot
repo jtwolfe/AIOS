@@ -1071,6 +1071,7 @@ init_one_git() {
         '# Local git is the source of truth (HI-01).' \
         '# L-16: live OS token is operator-local, never a git object.' \
         '/provider/' \
+        '/brake.d/' \
         > "${_host_wt}/.gitignore" \
         || die "write ${_wt}/.gitignore failed"
     else
@@ -1081,6 +1082,8 @@ init_one_git() {
   if [ "${_name}" = state ]; then
     grep -qx '/provider/' "${_host_wt}/.gitignore" \
       || die "state .gitignore must ignore /provider/ (L-16)"
+    grep -qx '/brake.d/' "${_host_wt}/.gitignore" \
+      || die "state .gitignore must ignore /brake.d/ (L-12, HI-09)"
   fi
   if [ "${_name}" = envelope ]; then
     [ -f "${_host_wt}/hard-invariants.md" ] \
@@ -1131,6 +1134,12 @@ init_privileged_git() {
     arch-chroot "${TARGET}" /usr/bin/chown -R aios-agent:aios-agent "/srv/aios/${_name}" \
       || die "chown /srv/aios/${_name} failed"
   done
+  # L-12: drop dir stays root-owned; chown -R state would give it to aios-agent.
+  mkdir -p "${TARGET}/srv/aios/state/brake.d" || die "mkdir brake.d failed"
+  chown root:root "${TARGET}/srv/aios/state/brake.d" \
+    || die "chown brake.d failed"
+  chmod 0700 "${TARGET}/srv/aios/state/brake.d" \
+    || die "chmod brake.d failed"
   [ -f "${TARGET}/srv/aios/envelope/hard-invariants.md" ] \
     || die "envelope worktree missing hard-invariants.md"
   [ -d "${TARGET}/srv/aios/seeds/work-runtime" ] \

@@ -22,7 +22,7 @@ VIEWS = (
 )
 
 MODE = "installer"
-BRAKE_PATH = "/srv/aios/state/brake"
+BRAKE_PATH = "/srv/aios/state/brake.d/stamp"
 
 ACTIONS = {
     "chrome": ("view", "brake", "send", "mode"),
