@@ -1,0 +1,39 @@
+{
+  "name": "vm-work-connector",
+  "operator": "alice",
+  "purpose": "a lab vm",
+  "work_runtime": true,
+  "provider": "fixture",
+  "vetoes": {
+    "never_do": "never enact without oracles",
+    "networks": "local",
+    "remotes": false
+  },
+  "fixture_turns": {
+    "responses": [
+      {"send": "token-in-chat must fail"}
+    ]
+  },
+  "commands": [
+    "answer purpose a lab vm",
+    "answer work-runtime yes",
+    "answer operator alice",
+    "answer never-do never enact without oracles",
+    "answer networks local",
+    "skip remotes",
+    "view envelope",
+    "view accept",
+    "accept"
+  ],
+  "work_commands": [
+    "view connectors",
+    "send here is a pasted token for the connector",
+    "quit"
+  ],
+  "expect": [
+    "token-in-chat fails",
+    "OS key unreadable",
+    "MCP preferred",
+    "L-16"
+  ]
+}

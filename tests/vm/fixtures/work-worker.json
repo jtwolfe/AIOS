@@ -1,0 +1,40 @@
+{
+  "name": "vm-work-worker",
+  "operator": "alice",
+  "purpose": "a lab vm",
+  "work_runtime": true,
+  "provider": "fixture",
+  "vetoes": {
+    "never_do": "never enact without oracles",
+    "networks": "local",
+    "remotes": false
+  },
+  "fixture_turns": {
+    "responses": [
+      {"send": "worker-result"}
+    ]
+  },
+  "commands": [
+    "answer purpose a lab vm",
+    "answer work-runtime yes",
+    "answer operator alice",
+    "answer never-do never enact without oracles",
+    "answer networks local",
+    "skip remotes",
+    "view envelope",
+    "view accept",
+    "accept"
+  ],
+  "work_commands": [
+    "view conversation",
+    "send dispatch a worker",
+    "enact",
+    "quit"
+  ],
+  "expect": [
+    "no user-visible voice",
+    "result sent",
+    "cannot enact",
+    "HI-13"
+  ]
+}

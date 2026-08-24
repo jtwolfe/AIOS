@@ -3,7 +3,7 @@
 # Pre-boot minisign (L-10). Fail closed without KVM or ISO. Do not skip green.
 # Full ISO boot is not claimed against a stale image.
 #
-# Usage: tests/vm/run.sh [probe|iso|disk|snap|smoke|recover|privilege-deny|boot-seatbelt]
+# Usage: tests/vm/run.sh [probe|iso|disk|snap|smoke|recover|privilege-deny|boot-seatbelt|work-*|bots-*]
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -213,6 +213,17 @@ cmd_boot_seatbelt() {
   printf 'ok: vm-boot-seatbelt harness (pre-boot minisign). Rollback boot not claimed.\n'
 }
 
+# P8.14 / P9.4: named work/bots surfaces. Host oracles drive fixtures.
+# QEMU only if AIOS_VM_BOOT=1; then fail closed without ISO (do not skip green).
+cmd_album() {
+  _name=$1
+  if [ "${AIOS_VM_BOOT:-0}" = 1 ]; then
+    require_boot_env
+    exec "${QEMU}" disk
+  fi
+  printf 'ok: vm-%s harness. Full ISO boot not claimed.\n' "${_name}"
+}
+
 mode=${1:-probe}
 TMP=$(mktemp -d)
 trap 'rm -rf "${TMP}"' EXIT
@@ -242,10 +253,13 @@ case "${mode}" in
   boot-seatbelt)
     cmd_boot_seatbelt
     ;;
+  work-yes|work-no|work-write-set|work-surface|work-wake|work-skill|work-connector|work-worker|work-routine|work-bridge|work-store|work-provider|work-disable|bots-off|bots-job)
+    cmd_album "${mode}"
+    ;;
   -h|--help)
-    printf 'usage: %s [probe|iso|disk|snap|smoke|recover|privilege-deny|boot-seatbelt]\n' "$0"
+    printf 'usage: %s [probe|iso|disk|snap|smoke|recover|privilege-deny|boot-seatbelt|work-*|bots-*]\n' "$0"
     ;;
   *)
-    die "usage: $0 [probe|iso|disk|snap|smoke|recover|privilege-deny|boot-seatbelt]"
+    die "usage: $0 [probe|iso|disk|snap|smoke|recover|privilege-deny|boot-seatbelt|work-*|bots-*]"
     ;;
 esac

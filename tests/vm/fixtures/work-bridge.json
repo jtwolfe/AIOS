@@ -1,0 +1,33 @@
+{
+  "name": "vm-work-bridge",
+  "operator": "alice",
+  "purpose": "a lab vm",
+  "work_runtime": true,
+  "provider": "fixture",
+  "vetoes": {
+    "never_do": "never enact without oracles",
+    "networks": "local",
+    "remotes": false
+  },
+  "commands": [
+    "answer purpose a lab vm",
+    "answer work-runtime yes",
+    "answer operator alice",
+    "answer never-do never enact without oracles",
+    "answer networks local",
+    "skip remotes",
+    "view envelope",
+    "view accept",
+    "accept"
+  ],
+  "work_commands": [
+    "view bridge",
+    "send copy ~/src/secret into the workspace without approval",
+    "quit"
+  ],
+  "expect": [
+    "private path blocked until approval",
+    "verbatim copy",
+    "not a mount"
+  ]
+}

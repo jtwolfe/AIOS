@@ -1,0 +1,45 @@
+{
+  "name": "vm-bots-job",
+  "operator": "alice",
+  "purpose": "a lab vm",
+  "work_runtime": true,
+  "provider": "fixture",
+  "vetoes": {
+    "never_do": "never enact without oracles",
+    "networks": "local",
+    "remotes": false
+  },
+  "job": {
+    "path": "/srv/aios/src/work-runtime-bots/jobs/build-guests.md",
+    "slice": "aios-work.slice",
+    "skill": "skills/fleet.md"
+  },
+  "commands": [
+    "answer purpose a lab vm",
+    "answer work-runtime yes",
+    "answer operator alice",
+    "answer never-do never enact without oracles",
+    "answer networks local",
+    "skip remotes",
+    "view envelope",
+    "view accept",
+    "accept"
+  ],
+  "os_commands": [
+    "view envelope",
+    "bots yes",
+    "quit"
+  ],
+  "work_commands": [
+    "view roster",
+    "view job",
+    "quit"
+  ],
+  "expect": [
+    "job is path+slice+skill",
+    "not selves",
+    "virsh from the slice fails",
+    "VM start is an intent",
+    "no avatar"
+  ]
+}

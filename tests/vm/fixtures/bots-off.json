@@ -1,0 +1,37 @@
+{
+  "name": "vm-bots-off",
+  "operator": "alice",
+  "purpose": "a lab vm",
+  "work_runtime": true,
+  "provider": "fixture",
+  "vetoes": {
+    "never_do": "never enact without oracles",
+    "networks": "local",
+    "remotes": false
+  },
+  "commands": [
+    "answer purpose a lab vm",
+    "answer work-runtime yes",
+    "answer operator alice",
+    "answer never-do never enact without oracles",
+    "answer networks local",
+    "skip remotes",
+    "view envelope",
+    "view accept",
+    "accept"
+  ],
+  "os_commands": [
+    "view envelope",
+    "quit"
+  ],
+  "work_commands": [
+    "view roster",
+    "view job",
+    "quit"
+  ],
+  "expect": [
+    "work-runtime yes does not start bots units",
+    "answers.json bots is never a yes",
+    "HI-15"
+  ]
+}

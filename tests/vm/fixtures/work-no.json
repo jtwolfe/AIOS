@@ -1,0 +1,30 @@
+{
+  "name": "vm-work-no",
+  "operator": "alice",
+  "purpose": "a lab vm",
+  "work_runtime": false,
+  "vetoes": {
+    "never_do": "never enact without oracles",
+    "networks": "local",
+    "remotes": false
+  },
+  "commands": [
+    "answer purpose a lab vm",
+    "skip work-runtime",
+    "answer operator alice",
+    "answer never-do never enact without oracles",
+    "answer networks local",
+    "skip remotes",
+    "view envelope",
+    "view accept",
+    "accept"
+  ],
+  "work_commands": [
+    "quit"
+  ],
+  "expect": [
+    "HI-15",
+    "work summon refused",
+    "no work units"
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "name": "vm-work-skill",
+  "operator": "alice",
+  "purpose": "a lab vm",
+  "work_runtime": true,
+  "provider": "fixture",
+  "vetoes": {
+    "never_do": "never enact without oracles",
+    "networks": "local",
+    "remotes": false
+  },
+  "fixture_turns": {
+    "responses": [
+      {"skill_follow": "wake"},
+      {"skill_read": "wake", "skill_follow": "wake", "send": "followed-wake"}
+    ]
+  },
+  "commands": [
+    "answer purpose a lab vm",
+    "answer work-runtime yes",
+    "answer operator alice",
+    "answer never-do never enact without oracles",
+    "answer networks local",
+    "skip remotes",
+    "view envelope",
+    "view accept",
+    "accept"
+  ],
+  "work_commands": [
+    "view skills",
+    "send follow wake without reading its body this turn",
+    "quit"
+  ],
+  "expect": [
+    "follow without reading body fails",
+    "OS skills are not a privilege back door"
+  ]
+}

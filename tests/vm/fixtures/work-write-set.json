@@ -1,0 +1,40 @@
+{
+  "name": "vm-work-write-set",
+  "operator": "alice",
+  "purpose": "a lab vm",
+  "work_runtime": true,
+  "provider": "fixture",
+  "vetoes": {
+    "never_do": "never enact without oracles",
+    "networks": "local",
+    "remotes": false
+  },
+  "write_set": [
+    "/tmp",
+    "/var/tmp",
+    "/srv/aios/src/work-runtime"
+  ],
+  "outside": [
+    "/home",
+    "~/src",
+    "/srv/aios/envelope",
+    "/srv/aios/state",
+    "/usr/lib/aios/bin/enact"
+  ],
+  "commands": [
+    "answer purpose a lab vm",
+    "answer work-runtime yes",
+    "answer operator alice",
+    "answer never-do never enact without oracles",
+    "answer networks local",
+    "skip remotes",
+    "view envelope",
+    "view accept",
+    "accept"
+  ],
+  "expect": [
+    "write in set succeeds",
+    "write outside without approval fails",
+    "L-15"
+  ]
+}

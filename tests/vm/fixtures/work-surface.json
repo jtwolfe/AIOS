@@ -1,0 +1,45 @@
+{
+  "name": "vm-work-surface",
+  "operator": "alice",
+  "purpose": "a lab vm",
+  "work_runtime": true,
+  "provider": "fixture",
+  "vetoes": {
+    "never_do": "never enact without oracles",
+    "networks": "local",
+    "remotes": false
+  },
+  "commands": [
+    "answer purpose a lab vm",
+    "answer work-runtime yes",
+    "answer operator alice",
+    "answer never-do never enact without oracles",
+    "answer networks local",
+    "skip remotes",
+    "view envelope",
+    "view accept",
+    "accept"
+  ],
+  "work_commands": [
+    "view packages",
+    "view snapper",
+    "view envelope",
+    "enact",
+    "rollback",
+    "view skills",
+    "view connectors",
+    "view bridge",
+    "view store",
+    "quit"
+  ],
+  "os_commands": [
+    "view skills",
+    "view envelope",
+    "quit"
+  ],
+  "expect": [
+    "work turn has no privileged tools",
+    "OS turn is not in the slice",
+    "L-14"
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "name": "vm-work-wake",
+  "operator": "alice",
+  "purpose": "a lab vm",
+  "work_runtime": true,
+  "provider": "fixture",
+  "vetoes": {
+    "never_do": "never enact without oracles",
+    "networks": "local",
+    "remotes": false
+  },
+  "injects": [
+    "AGENTS.md",
+    "skills catalog",
+    "tools",
+    "operational notes",
+    "envelope bit"
+  ],
+  "fixture_turns": {
+    "responses": [
+      {"send": "visible-reply"},
+      {"question": "which-one?", "send": "too-late"},
+      "plain-undelivered-text"
+    ]
+  },
+  "commands": [
+    "answer purpose a lab vm",
+    "answer work-runtime yes",
+    "answer operator alice",
+    "answer never-do never enact without oracles",
+    "answer networks local",
+    "skip remotes",
+    "view envelope",
+    "view accept",
+    "accept"
+  ],
+  "work_commands": [
+    "view conversation",
+    "send which job?",
+    "quit"
+  ],
+  "expect": [
+    "inject order from the seed",
+    "explicit send",
+    "question ends the turn",
+    "no psyche",
+    "no OS-agent privilege"
+  ]
+}

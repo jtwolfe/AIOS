@@ -1,0 +1,33 @@
+{
+  "name": "vm-work-disable",
+  "operator": "alice",
+  "purpose": "a lab vm",
+  "work_runtime": true,
+  "provider": "fixture",
+  "vetoes": {
+    "never_do": "never enact without oracles",
+    "networks": "local",
+    "remotes": false
+  },
+  "commands": [
+    "answer purpose a lab vm",
+    "answer work-runtime yes",
+    "answer operator alice",
+    "answer never-do never enact without oracles",
+    "answer networks local",
+    "skip remotes",
+    "view envelope",
+    "view accept",
+    "accept"
+  ],
+  "os_commands": [
+    "view envelope",
+    "quit"
+  ],
+  "expect": [
+    "disable is an envelope patch",
+    "stop units",
+    "git remains",
+    "HI-15"
+  ]
+}

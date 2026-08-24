@@ -1,0 +1,33 @@
+{
+  "name": "vm-work-routine",
+  "operator": "alice",
+  "purpose": "a lab vm",
+  "work_runtime": true,
+  "provider": "fixture",
+  "vetoes": {
+    "never_do": "never enact without oracles",
+    "networks": "local",
+    "remotes": false
+  },
+  "commands": [
+    "answer purpose a lab vm",
+    "answer work-runtime yes",
+    "answer operator alice",
+    "answer never-do never enact without oracles",
+    "answer networks local",
+    "skip remotes",
+    "view envelope",
+    "view accept",
+    "accept"
+  ],
+  "work_commands": [
+    "view store",
+    "send create a routine that is cron and listeners",
+    "quit"
+  ],
+  "expect": [
+    "cron xor listeners",
+    "persisted in the work store",
+    "never both"
+  ]
+}

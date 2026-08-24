@@ -1,0 +1,28 @@
+{
+  "name": "vm-work-yes",
+  "operator": "alice",
+  "purpose": "a lab vm",
+  "work_runtime": true,
+  "provider": "fixture",
+  "vetoes": {
+    "never_do": "never enact without oracles",
+    "networks": "local",
+    "remotes": false
+  },
+  "commands": [
+    "answer purpose a lab vm",
+    "answer work-runtime yes",
+    "answer operator alice",
+    "answer never-do never enact without oracles",
+    "answer networks local",
+    "skip remotes",
+    "view envelope",
+    "view accept",
+    "accept"
+  ],
+  "expect": [
+    "synthesis from local seeds with nic down",
+    "live git at /srv/aios/src/work-runtime",
+    "HI-17"
+  ]
+}

@@ -9,6 +9,7 @@ ROOT=$(CDPATH= cd -- "${SCRIPT_DIR}/../.." && pwd)
 QEMU="${ROOT}/tests/vm/qemu.sh"
 RUN="${ROOT}/tests/vm/run.sh"
 VM_DENY="${ROOT}/tests/vm/oracles/vm-privilege-deny.sh"
+VM_COMMON="${ROOT}/tests/vm/oracles/common.sh"
 SMOKE="${ROOT}/tests/vm/fixtures/smoke.json"
 RECOVER="${ROOT}/tests/vm/fixtures/recover.json"
 MAIN="${ROOT}/installer/aios_installer/main.py"
@@ -28,6 +29,7 @@ fail() {
 [ -x "${RUN}" ] || fail "run.sh must be executable"
 [ -f "${VM_DENY}" ] || fail "missing ${VM_DENY}"
 [ -x "${VM_DENY}" ] || fail "vm-privilege-deny.sh must be executable"
+[ -f "${VM_COMMON}" ] || fail "missing ${VM_COMMON}"
 [ -f "${SMOKE}" ] || fail "missing ${SMOKE}"
 [ -f "${RECOVER}" ] || fail "missing ${RECOVER}"
 [ -f "${MAIN}" ] || fail "missing ${MAIN}"
@@ -35,7 +37,32 @@ fail() {
 sh -n "${QEMU}" || fail "sh -n qemu.sh"
 sh -n "${RUN}" || fail "sh -n run.sh"
 sh -n "${VM_DENY}" || fail "sh -n vm-privilege-deny.sh"
+sh -n "${VM_COMMON}" || fail "sh -n common.sh"
 sh -n "${0}" || fail "sh -n p9-vm-harness.sh"
+
+# P8.14: incomplete if any transferred surface is missing.
+(
+  set -eu
+  P814_ROOT="${ROOT}"
+  # shellcheck disable=SC1091
+  . "${VM_COMMON}"
+  p814_album_complete
+  for _s in ${P814_SURFACES}
+  do
+    sh -n "${ROOT}/tests/vm/oracles/vm-${_s}.sh"
+    grep -q 'common.sh' "${ROOT}/tests/vm/oracles/vm-${_s}.sh"
+    grep -q "${_s}" "${RUN}"
+    p814_check_fixture "${_s}"
+  done
+  if grep -q 'qemu-system-x86_64' \
+    "${ROOT}/tests/vm/oracles/"vm-work-*.sh \
+    "${ROOT}/tests/vm/oracles/"vm-bots-*.sh \
+    "${VM_COMMON}" 2>/dev/null
+  then
+    printf 'error: P8.14 oracles must use qemu.sh via run.sh\n' >&2
+    exit 1
+  fi
+) || fail "P8.14 album incomplete (fixture, vm oracle, or schema)"
 
 grep -q '/dev/kvm' "${QEMU}" \
   || fail "qemu.sh must fail closed without KVM (/dev/kvm)"
@@ -94,6 +121,10 @@ grep -q 'AIOS_VM_BOOT' "${VM_DENY}" \
 if grep -q 'qemu-system-x86_64' "${RUN}" "${VM_DENY}"; then
   fail "run.sh/vm-privilege-deny.sh must use qemu.sh, not a second wrapper"
 fi
+grep -q 'cmd_album' "${RUN}" \
+  || fail "run.sh missing cmd_album (P8.14)"
+grep -q 'Full ISO boot not claimed' "${RUN}" \
+  || fail "run.sh album must not claim a green ISO boot (HI-08)"
 
 # p9 green is not vm-smoke green (HI-08). Without an ISO, the named entrypoint
 # must fail closed — not skip-green, not a host-only ok.
@@ -118,6 +149,16 @@ if [ "${_iso_n}" -eq 0 ]; then
     || fail "vm-privilege-deny.sh must fail closed without ISO (do not skip green)"
   printf '%s\n' "${_or_run}" | grep -q 'fail closed (do not skip green)' \
     || fail "vm-privilege-deny.sh missing fail-closed ISO error: ${_or_run}"
+  _album_run=$("${RUN}" work-no 2>&1) && _album_rc=0 || _album_rc=$?
+  [ "${_album_rc}" -eq 0 ] \
+    || fail "run.sh work-no host path must not require ISO: ${_album_run}"
+  printf '%s\n' "${_album_run}" | grep -q 'Full ISO boot not claimed' \
+    || fail "run.sh work-no must not claim ISO boot: ${_album_run}"
+  _album_boot=$(AIOS_VM_BOOT=1 "${RUN}" work-yes 2>&1) && _ab_rc=0 || _ab_rc=$?
+  [ "${_ab_rc}" -ne 0 ] \
+    || fail "run.sh work-yes AIOS_VM_BOOT=1 must fail closed without ISO"
+  printf '%s\n' "${_album_boot}" | grep -q 'fail closed (do not skip green)' \
+    || fail "run.sh work-yes boot missing fail-closed ISO error: ${_album_boot}"
 fi
 
 if grep -R -q -- '-Syu' "${ROOT}/tests/vm" 2>/dev/null; then
