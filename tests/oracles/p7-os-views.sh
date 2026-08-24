@@ -1,5 +1,5 @@
 #!/bin/sh
-# P7.5: L-18 OS catalog bodies. Keyboard-complete. Notify stays stubbed.
+# P7.5: L-18 OS catalog bodies. Keyboard-complete. Notify is P7.2.
 # Envelope: P7.5, L-18, L-12, HI-15, L-09, L-20.
 set -eu
 
@@ -127,7 +127,9 @@ mkdir -p "${TMP}/root/etc/aios" \
   "${TMP}/boot" \
   "${TMP}/intents" \
   "${TMP}/pin" \
-  "${TMP}/live"
+  "${TMP}/live" \
+  "${TMP}/notify-empty" \
+  "${TMP}/work-src"
 printf '%s\n' '{"purpose":"a lab vm","work_runtime":false,"operator":"alice","vetoes":{"never_do":"format the disk","networks":"lan only","remotes":false}}' \
   > "${TMP}/boot/answers.json"
 printf '%s\n' 'linux' 'linux-lts' 'git' > "${TMP}/pin/packages.txt"
@@ -145,6 +147,9 @@ drive() {
     AIOS_LIVE_PACKAGES="${TMP}/live/packages.txt" \
     AIOS_SNAPPER_LIST="${TMP}/snapper.list" \
     AIOS_INTENTS="${TMP}/intents-empty" \
+    AIOS_NOTIFY="${TMP}/notify-empty" \
+    AIOS_WORK_SRC="${TMP}/work-src" \
+    AIOS_ENVELOPE_WORK="${TMP}/missing-envelope.md" \
     python3 -u "${MAIN}"
 }
 
@@ -257,9 +262,11 @@ printf '%s\n' "${_vl}" | grep -q '^view: login$' \
 
 _stub=$(drive 'view notify' 'quit') || true
 printf '%s\n' "${_stub}" | grep -q 'not this PR' \
-  || fail "notify must stay stubbed: ${_stub}"
+  && fail "notify must not stay stubbed: ${_stub}" || true
 printf '%s\n' "${_stub}" | grep -q '^view: notify$' \
   || fail "notify view id must be reachable: ${_stub}"
+printf '%s\n' "${_stub}" | grep -q 'not a coding CLI' \
+  || fail "notify must say not a coding CLI: ${_stub}"
 
 _keys=$(drive 'h' 'c' 'e' 'i' 'n' 's' 'p' 'l' 'quit') || true
 printf '%s\n' "${_keys}" | grep -q '^view: chrome$' \

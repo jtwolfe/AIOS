@@ -188,9 +188,16 @@ _live_old=0
 [ -e "${LIVE_BRAKE}" ] && _live_existed=1
 [ -e "${LIVE_OLD}" ] && _live_old=1
 
+printf '%s\n' '{"work_runtime":false}' > "${TMP}/off.json"
 drive() {
-  printf '%s\n' "$@" | AIOS_BRAKE="${TMP}/unused-brake" python3 -u "${MAIN}"
+  printf '%s\n' "$@" | AIOS_ANSWERS="${TMP}/off.json" \
+    AIOS_BRAKE="${TMP}/unused-brake" \
+    AIOS_ROOT="${TMP}/root" \
+    AIOS_WORK_SRC="${TMP}/work-src" \
+    AIOS_ENVELOPE_WORK="${TMP}/missing-envelope.md" \
+    python3 -u "${MAIN}"
 }
+mkdir -p "${TMP}/root" "${TMP}/work-src"
 
 _os=$(drive 'quit') || true
 printf '%s\n' "${_os}" | grep -q '^mode: os$' \
@@ -206,14 +213,21 @@ printf '%s\n' "${_os}" | grep -q '^brake: off$' \
 printf '%s\n' "${_os}" | grep -q '^catalog:.* brake' \
   && fail "catalog must not list brake as a view: ${_os}" || true
 
-_os2=$(printf 'quit\n' | AIOS_BRAKE="${TMP}/unused-brake" python3 -u "${MAIN}" os) \
+_os2=$(printf 'quit\n' | AIOS_ANSWERS="${TMP}/off.json" \
+  AIOS_BRAKE="${TMP}/unused-brake" \
+  AIOS_ROOT="${TMP}/root" AIOS_WORK_SRC="${TMP}/work-src" \
+  AIOS_ENVELOPE_WORK="${TMP}/missing-envelope.md" \
+  python3 -u "${MAIN}" os) \
   || true
 printf '%s\n' "${_os2}" | grep -q '^mode: os$' \
   || fail "aios os must open mode os: ${_os2}"
 printf '%s\n' "${_os2}" | grep -q '^view: chrome$' \
   || fail "aios os must default to chrome: ${_os2}"
 
-_work=$(AIOS_BRAKE="${TMP}/unused-brake" python3 -u "${MAIN}" work) && _wrc=0 || _wrc=$?
+_work=$(AIOS_ANSWERS="${TMP}/off.json" AIOS_BRAKE="${TMP}/unused-brake" \
+  AIOS_ROOT="${TMP}/root" AIOS_WORK_SRC="${TMP}/work-src" \
+  AIOS_ENVELOPE_WORK="${TMP}/missing-envelope.md" \
+  python3 -u "${MAIN}" work) && _wrc=0 || _wrc=$?
 [ "${_wrc}" != 0 ] || fail "aios work must be refused: ${_work}"
 printf '%s\n' "${_work}" | grep -q 'HI-15' \
   || fail "aios work must quote HI-15: ${_work}"
@@ -236,7 +250,10 @@ printf '%s\n' "${_mi}" | grep -q 'mode refused: installer' \
 
 _brfile="${TMP}/brake"
 _br=$(
-  AIOS_BRAKE="${_brfile}" python3 -u "${MAIN}" brake
+  AIOS_ANSWERS="${TMP}/off.json" AIOS_BRAKE="${_brfile}" \
+    AIOS_ROOT="${TMP}/root" AIOS_WORK_SRC="${TMP}/work-src" \
+    AIOS_ENVELOPE_WORK="${TMP}/missing-envelope.md" \
+    python3 -u "${MAIN}" brake
 ) && _brc=0 || _brc=$?
 [ "${_brc}" = 0 ] || fail "aios brake must return 0: ${_br}"
 [ -f "${_brfile}" ] || fail "aios brake must write AIOS_BRAKE"
@@ -246,7 +263,10 @@ printf '%s\n' "${_br}" | grep -q '^brake: on$' \
   || fail "aios brake must report on: ${_br}"
 
 _stay=$(
-  AIOS_BRAKE="${TMP}/brake-tui" python3 -u "${MAIN}" <<'EOF'
+  AIOS_ANSWERS="${TMP}/off.json" AIOS_BRAKE="${TMP}/brake-tui" \
+    AIOS_ROOT="${TMP}/root" AIOS_WORK_SRC="${TMP}/work-src" \
+    AIOS_ENVELOPE_WORK="${TMP}/missing-envelope.md" \
+    python3 -u "${MAIN}" <<'EOF'
 brake
 view chrome
 quit
@@ -270,11 +290,12 @@ printf '%s\n' "${_vb}" | grep -q '^view: brake$' \
 
 _stub=$(drive 'view envelope' 'quit') || true
 printf '%s\n' "${_stub}" | grep -q 'not this PR' \
-  || fail "unimplemented OS view must say not this PR: ${_stub}"
+  && fail "envelope must not stay stubbed: ${_stub}" || true
 printf '%s\n' "${_stub}" | grep -q '^view: envelope$' \
-  || fail "envelope view id must be reachable as a stub: ${_stub}"
+  || fail "envelope view id must be reachable: ${_stub}"
 
-_st=$(AIOS_BRAKE="${_brfile}" python3 -u "${MAIN}" status) || true
+_st=$(AIOS_ANSWERS="${TMP}/off.json" AIOS_BRAKE="${_brfile}" \
+  AIOS_ROOT="${TMP}/root" python3 -u "${MAIN}" status) || true
 printf '%s\n' "${_st}" | grep -q '^mode: os$' \
   || fail "aios status must report mode os: ${_st}"
 printf '%s\n' "${_st}" | grep -q '^brake: on$' \
@@ -284,14 +305,19 @@ printf '%s\n' "${_st}" | grep -q 'L-12' \
 
 _wrap="${TMP}/wrap-brake"
 _wout=$(
-  AIOS_CLIENT="${MAIN}" AIOS_BRAKE="${_wrap}" "${ISO_BIN}" brake
+  AIOS_CLIENT="${MAIN}" AIOS_ANSWERS="${TMP}/off.json" AIOS_BRAKE="${_wrap}" \
+    AIOS_ROOT="${TMP}/root" "${ISO_BIN}" brake
 ) && _wrc=0 || _wrc=$?
 [ "${_wrc}" = 0 ] || fail "ISO bin/aios brake must return 0: ${_wout}"
 [ -f "${_wrap}" ] || fail "ISO bin/aios brake must write AIOS_BRAKE"
 printf '%s\n' "${_wout}" | grep -q 'L-12' \
   || fail "ISO bin/aios brake must quote L-12: ${_wout}"
 
-_ww=$(AIOS_CLIENT="${MAIN}" AIOS_BRAKE="${TMP}/wrap-unused" "${ISO_BIN}" work) \
+_ww=$(AIOS_CLIENT="${MAIN}" AIOS_ANSWERS="${TMP}/off.json" \
+  AIOS_BRAKE="${TMP}/wrap-unused" \
+  AIOS_ROOT="${TMP}/root" AIOS_WORK_SRC="${TMP}/work-src" \
+  AIOS_ENVELOPE_WORK="${TMP}/missing-envelope.md" \
+  "${ISO_BIN}" work) \
   && _wwrc=0 || _wwrc=$?
 [ "${_wwrc}" != 0 ] || fail "ISO bin/aios work must be refused: ${_ww}"
 printf '%s\n' "${_ww}" | grep -q 'HI-15' \

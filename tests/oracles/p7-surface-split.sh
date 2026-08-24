@@ -64,7 +64,7 @@ if "brake" in views or "brake" in work:
 for need in ("chrome", "conversation", "envelope", "packages", "snapper", "login"):
     if need not in views:
         raise SystemExit("OS catalog missing %s" % need)
-for need in ("chrome", "conversation", "skills", "connectors", "bridge", "store"):
+for need in ("chrome", "conversation", "skills", "connectors", "bridge", "store", "login"):
     if need not in work:
         raise SystemExit("work catalog missing %s" % need)
 for forbidden in ("envelope", "packages", "snapper", "intents", "notify", "accept", "enact"):
@@ -137,13 +137,21 @@ cleanup() {
 trap cleanup EXIT
 
 drive() {
-  printf '%s\n' "$@" | AIOS_BRAKE="${TMP}/unused-brake" python3 -u "${MAIN}"
+  printf '%s\n' "$@" | AIOS_ANSWERS="${TMP}/off.json" \
+    AIOS_BRAKE="${TMP}/unused-brake" \
+    AIOS_ROOT="${TMP}/root" \
+    AIOS_WORK_SRC="${TMP}/work-src" \
+    AIOS_ENVELOPE_WORK="${TMP}/missing-envelope.md" \
+    python3 -u "${MAIN}"
 }
 
 drive_ans() {
   _ans=$1
   shift
   printf '%s\n' "$@" | AIOS_ANSWERS="${_ans}" AIOS_BRAKE="${TMP}/unused-brake" \
+    AIOS_ROOT="${TMP}/root" \
+    AIOS_WORK_SRC="${TMP}/work-src" \
+    AIOS_ENVELOPE_WORK="${TMP}/missing-envelope.md" \
     python3 -u "${MAIN}"
 }
 
@@ -151,11 +159,22 @@ drive_work() {
   _ans=$1
   shift
   printf '%s\n' "$@" | AIOS_ANSWERS="${_ans}" AIOS_BRAKE="${TMP}/unused-brake" \
+    AIOS_ROOT="${TMP}/root" \
+    AIOS_WORK_SRC="${TMP}/work-src" \
+    AIOS_ENVELOPE_WORK="${TMP}/missing-envelope.md" \
     python3 -u "${MAIN}" work
 }
 
+mkdir -p "${TMP}/root" "${TMP}/work-src"
+printf '%s\n' '{"work_runtime": false}' > "${TMP}/off.json"
+
 # Bit off (no answers, missing file, false, 1, "true"): refuse HI-15.
-_work=$(AIOS_BRAKE="${TMP}/unused-brake" python3 -u "${MAIN}" work) && _wrc=0 || _wrc=$?
+_work=$(AIOS_ANSWERS="${TMP}/missing-answers.json" \
+  AIOS_BRAKE="${TMP}/unused-brake" \
+  AIOS_ROOT="${TMP}/root" \
+  AIOS_WORK_SRC="${TMP}/work-src" \
+  AIOS_ENVELOPE_WORK="${TMP}/missing-envelope.md" \
+  python3 -u "${MAIN}" work) && _wrc=0 || _wrc=$?
 [ "${_wrc}" != 0 ] || fail "aios work must be refused with bit off: ${_work}"
 printf '%s\n' "${_work}" | grep -q 'HI-15' \
   || fail "aios work must quote HI-15: ${_work}"
@@ -164,20 +183,25 @@ printf '%s\n' "${_work}" | grep -q '^mode: work$' \
 printf '%s\n' "${_work}" | grep -q 'view: chrome' \
   && fail "aios work must not open the TUI with bit off: ${_work}" || true
 
-printf '%s\n' '{"work_runtime": false}' > "${TMP}/off.json"
 _off=$(AIOS_ANSWERS="${TMP}/off.json" AIOS_BRAKE="${TMP}/unused-brake" \
+  AIOS_ROOT="${TMP}/root" AIOS_WORK_SRC="${TMP}/work-src" \
+  AIOS_ENVELOPE_WORK="${TMP}/missing-envelope.md" \
   python3 -u "${MAIN}" work) && _offrc=0 || _offrc=$?
 [ "${_offrc}" != 0 ] || fail "work_runtime false must refuse: ${_off}"
 printf '%s\n' "${_off}" | grep -q 'HI-15' || fail "false must quote HI-15: ${_off}"
 
 printf '%s\n' '{"work_runtime": 1}' > "${TMP}/one.json"
 _one=$(AIOS_ANSWERS="${TMP}/one.json" AIOS_BRAKE="${TMP}/unused-brake" \
+  AIOS_ROOT="${TMP}/root" AIOS_WORK_SRC="${TMP}/work-src" \
+  AIOS_ENVELOPE_WORK="${TMP}/missing-envelope.md" \
   python3 -u "${MAIN}" work) && _onerc=0 || _onerc=$?
 [ "${_onerc}" != 0 ] || fail "work_runtime 1 must refuse: ${_one}"
 printf '%s\n' "${_one}" | grep -q 'HI-15' || fail "1 must quote HI-15: ${_one}"
 
 printf '%s\n' '{"work_runtime": "true"}' > "${TMP}/str.json"
 _str=$(AIOS_ANSWERS="${TMP}/str.json" AIOS_BRAKE="${TMP}/unused-brake" \
+  AIOS_ROOT="${TMP}/root" AIOS_WORK_SRC="${TMP}/work-src" \
+  AIOS_ENVELOPE_WORK="${TMP}/missing-envelope.md" \
   python3 -u "${MAIN}" work) && _strrc=0 || _strrc=$?
 [ "${_strrc}" != 0 ] || fail 'work_runtime "true" must refuse: '"${_str}"
 printf '%s\n' "${_str}" | grep -q 'HI-15' || fail '"true" must quote HI-15: '"${_str}"
@@ -194,6 +218,8 @@ printf '%s\n' "${_mw}" | grep -q '^mode: work$' \
 printf '%s\n' '{"work_runtime": true}' > "${TMP}/on.json"
 _won=$(
   printf 'quit\n' | AIOS_ANSWERS="${TMP}/on.json" AIOS_BRAKE="${TMP}/unused-brake" \
+    AIOS_ROOT="${TMP}/root" AIOS_WORK_SRC="${TMP}/work-src" \
+    AIOS_ENVELOPE_WORK="${TMP}/missing-envelope.md" \
     python3 -u "${MAIN}" work
 ) && _wonrc=0 || _wonrc=$?
 [ "${_wonrc}" = 0 ] || fail "aios work with explicit yes must open: ${_won}"
@@ -203,7 +229,7 @@ printf '%s\n' "${_won}" | grep -q '^view: chrome$' \
   || fail "aios work with yes must open chrome: ${_won}"
 printf '%s\n' "${_won}" | grep -q '^surface: work$' \
   || fail "aios work chrome must name surface work: ${_won}"
-printf '%s\n' "${_won}" | grep -q '^catalog: chrome conversation skills connectors bridge store$' \
+printf '%s\n' "${_won}" | grep -q '^catalog: chrome conversation skills connectors bridge store login$' \
   || fail "work catalog mismatch: ${_won}"
 printf '%s\n' "${_won}" | grep -q '^work-views:' \
   || fail "work chrome must list work-views: ${_won}"
@@ -251,9 +277,11 @@ _wview=$(drive_work "${TMP}/on.json" 'view skills' 'view connectors' \
 printf '%s\n' "${_wview}" | grep -q '^view: store$' \
   || fail "work views must be reachable: ${_wview}"
 printf '%s\n' "${_wview}" | grep -q '^surface: work$' \
-  || fail "work stubs must be labeled work: ${_wview}"
-printf '%s\n' "${_wview}" | grep -q 'work stub' \
-  || fail "work stubs must say work stub: ${_wview}"
+  || fail "work views must be labeled work: ${_wview}"
+printf '%s\n' "${_wview}" | grep -q '^sidebar:' \
+  || fail "work views must show sidebar structure: ${_wview}"
+printf '%s\n' "${_wview}" | grep -q '^info:' \
+  || fail "work views must show info pane: ${_wview}"
 
 # OS session still has brake and envelope inspect.
 _os=$(drive_ans "${TMP}/on.json" 'view envelope' 'quit') || true
@@ -269,7 +297,9 @@ printf '%s\n' "${_os}" | grep -q 'inspect' \
   || fail "OS envelope must offer inspect: ${_os}"
 
 _br=$(
-  AIOS_ANSWERS="${TMP}/on.json" AIOS_BRAKE="${TMP}/os-brake" python3 -u "${MAIN}" <<'EOF'
+  AIOS_ANSWERS="${TMP}/on.json" AIOS_BRAKE="${TMP}/os-brake" \
+    AIOS_ROOT="${TMP}/root" AIOS_WORK_SRC="${TMP}/work-src" \
+    AIOS_ENVELOPE_WORK="${TMP}/missing-envelope.md" python3 -u "${MAIN}" <<'EOF'
 brake
 view chrome
 quit
@@ -294,6 +324,8 @@ printf '%s\n' "${_sw}" | grep -q '^view: envelope$' \
 _fromw=$(
   printf '%s\n' 'mode os' 'quit' \
     | AIOS_ANSWERS="${TMP}/on.json" AIOS_BRAKE="${TMP}/unused-brake" \
+      AIOS_ROOT="${TMP}/root" AIOS_WORK_SRC="${TMP}/work-src" \
+      AIOS_ENVELOPE_WORK="${TMP}/missing-envelope.md" \
       python3 -u "${MAIN}" work
 ) || true
 printf '%s\n' "${_fromw}" | grep -q '^mode: os$' \
@@ -303,7 +335,10 @@ printf '%s\n' "${_fromw}" | grep -q '^os-views:' \
 
 _ww=$(
   AIOS_CLIENT="${MAIN}" AIOS_ANSWERS="${TMP}/on.json" \
-    AIOS_BRAKE="${TMP}/wrap-unused" "${ISO_BIN}" work <<'EOF'
+    AIOS_BRAKE="${TMP}/wrap-unused" \
+    AIOS_ROOT="${TMP}/root" AIOS_WORK_SRC="${TMP}/work-src" \
+    AIOS_ENVELOPE_WORK="${TMP}/missing-envelope.md" \
+    "${ISO_BIN}" work <<'EOF'
 quit
 EOF
 ) && _wwrc=0 || _wwrc=$?
@@ -312,7 +347,10 @@ printf '%s\n' "${_ww}" | grep -q '^mode: work$' \
   || fail "ISO bin/aios work with yes must be mode work: ${_ww}"
 
 _wwoff=$(AIOS_CLIENT="${MAIN}" AIOS_ANSWERS="${TMP}/off.json" \
-  AIOS_BRAKE="${TMP}/wrap-unused" "${ISO_BIN}" work) && _wwoffrc=0 || _wwoffrc=$?
+  AIOS_BRAKE="${TMP}/wrap-unused" \
+  AIOS_ROOT="${TMP}/root" AIOS_WORK_SRC="${TMP}/work-src" \
+  AIOS_ENVELOPE_WORK="${TMP}/missing-envelope.md" \
+  "${ISO_BIN}" work) && _wwoffrc=0 || _wwoffrc=$?
 [ "${_wwoffrc}" != 0 ] || fail "ISO bin/aios work with bit off must refuse: ${_wwoff}"
 printf '%s\n' "${_wwoff}" | grep -q 'HI-15' \
   || fail "ISO bin/aios work with bit off must quote HI-15: ${_wwoff}"

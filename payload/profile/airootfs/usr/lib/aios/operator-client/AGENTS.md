@@ -25,9 +25,11 @@ Work runtime stays default off (HI-15).
    installed graphical client later, not this OS contract.
 3. Work summon is refused unless `answers.json` has `work_runtime` JSON
    true (HI-15). Skip, `1`, and `"true"` are not a yes. When yes,
-   `aios work` opens work chrome, not OS tools (L-14). Do not synthesise
-   `/srv/aios/src/work-runtime`. This client must not run inside
-   aios-work.slice.
+   `aios work` opens work chrome, not OS tools (L-14). Work catalog
+   (L-18): conversation, skills, connectors, bridge, store, login.
+   Every action has a keyboard path. `roster`/`job` stay refused
+   (HI-15). Do not synthesise `/srv/aios/src/work-runtime`. This client
+   must not run inside aios-work.slice. Mixed-privilege chat fails.
 4. Emergency brake writes `/srv/aios/state/brake.d/stamp` (or
    `AIOS_BRAKE`). Accept grants a 1731 drop dir; do not chmod
    `/srv/aios/state` 0777 (HI-16). Freeze privileged writes. TUI stays.

@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""OS operator client (P7.1, P7.3, P7.5, P7.6, P7.7, L-18, L-12, L-17, L-19). Unprivileged. One binary."""
+"""OS operator client (P7.1, P7.2, P7.3, P7.4, P7.5, P7.6, P7.7, P8.15, L-18, L-14, L-12, L-17, L-19). Unprivileged. One binary."""
 
 import io
 import json
@@ -33,7 +33,8 @@ WORK_VIEWS = (
     "roster",
     "job",
 )
-# Work session catalog: chrome + conversation + work views, not OS tools (L-14).
+BOTS_VIEWS = ("roster", "job")
+# Work session catalog: chrome + conversation + work views + login, not OS tools (L-14).
 WORK_CATALOG = (
     "chrome",
     "conversation",
@@ -41,9 +42,10 @@ WORK_CATALOG = (
     "connectors",
     "bridge",
     "store",
+    "login",
 )
-# P7.2 notify bodies land in a later PR.
 STUB_VIEWS = ()
+_WORK_INSPECT = ("skills", "connectors", "bridge", "store")
 
 MODE = "os"
 BRAKE_PATH = "/srv/aios/state/brake.d/stamp"
@@ -72,6 +74,10 @@ ACTIONS = {
     "snapper": ("inspect", "rollback", "view", "brake"),
     "packages": ("inspect", "view", "brake"),
     "login": ("start", "cancel", "poll", "view", "brake"),
+    "skills": ("open", "follow", "inspect", "view", "brake", "mode"),
+    "connectors": ("connect", "disconnect", "inspect", "view", "brake", "mode"),
+    "bridge": ("approve", "deny", "inspect", "view", "brake", "mode"),
+    "store": ("inspect", "view", "brake", "mode"),
 }
 
 _WORK_SHORT = {
@@ -81,6 +87,7 @@ _WORK_SHORT = {
     "n": "connectors",
     "g": "bridge",
     "t": "store",
+    "l": "login",
 }
 
 _SHORT_VIEW = {
@@ -134,18 +141,43 @@ def _answers_path():
     return os.environ.get("AIOS_ANSWERS") or ANSWERS_PATH
 
 
-def work_runtime_on():
-    path = _answers_path()
+def _clause_enabled(path):
     if not path or not os.path.isfile(path):
         return False
     try:
         with open(path, "r", encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except (OSError, ValueError):
+            text = fh.read()
+    except OSError:
         return False
-    if not isinstance(doc, dict):
-        return False
-    return doc.get("work_runtime") is True
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        key, sep, val = stripped.partition("=")
+        if not sep:
+            key, sep, val = stripped.partition(":")
+        if not sep:
+            continue
+        if key.strip().lower() == "enabled" and val.strip().lower() in (
+            "true",
+            "yes",
+            "1",
+        ):
+            return True
+    return False
+
+
+def work_runtime_on():
+    path = _answers_path()
+    if path and os.path.isfile(path):
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                doc = json.load(fh)
+        except (OSError, ValueError):
+            doc = None
+        if isinstance(doc, dict) and doc.get("work_runtime") is True:
+            return True
+    return _clause_enabled(os.environ.get("AIOS_ENVELOPE_WORK"))
 
 
 def write_brake():
@@ -468,6 +500,130 @@ def _parse_rollback_n(arg):
     return token
 
 
+def _work_src():
+    env = os.environ.get("AIOS_WORK_SRC")
+    if env:
+        return env
+    return _path("AIOS_WORK_SRC", "/srv/aios/src/work-runtime")
+
+
+def _skills_dir():
+    env = os.environ.get("AIOS_SKILLS")
+    if env:
+        return env
+    return os.path.join(_work_src(), "skills")
+
+
+def _connectors_dir():
+    env = os.environ.get("AIOS_CONNECTORS")
+    if env:
+        return env
+    return os.path.join(_work_src(), "connectors")
+
+
+def _bridge_dir():
+    env = os.environ.get("AIOS_BRIDGE")
+    if env:
+        return env
+    return os.path.join(_work_src(), "bridge")
+
+
+def _list_named_files(directory):
+    if not directory or not os.path.isdir(directory):
+        return []
+    try:
+        listing = os.listdir(directory)
+    except OSError:
+        return []
+    names = []
+    for name in sorted(listing):
+        if name.startswith("."):
+            continue
+        full = os.path.join(directory, name)
+        if os.path.isfile(full):
+            names.append(name)
+    return names
+
+
+def _skill_record(path):
+    name = os.path.splitext(os.path.basename(path))[0]
+    desc = ""
+    body = ""
+    try:
+        text = _read_text(path)
+    except OSError:
+        return name, desc, body
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    if text.startswith("---"):
+        parts = text.split("---", 2)
+        if len(parts) >= 3:
+            for line in parts[1].splitlines():
+                stripped = line.strip()
+                if stripped.startswith("name:"):
+                    value = stripped.split(":", 1)[1].strip()
+                    if value:
+                        name = value
+                elif stripped.startswith("description:"):
+                    desc = stripped.split(":", 1)[1].strip()
+            body = parts[2]
+            if body.startswith("\n"):
+                body = body[1:]
+            if body.endswith("\n"):
+                body = body[:-1]
+            return name, desc, body
+    if text.endswith("\n"):
+        text = text[:-1]
+    return name, desc, text
+
+
+def _list_skills():
+    directory = _skills_dir()
+    rows = []
+    for name in _list_named_files(directory):
+        if not name.endswith(".md"):
+            continue
+        path = os.path.join(directory, name)
+        rows.append(_skill_record(path))
+    rows.sort(key=lambda row: row[0].lower())
+    return rows
+
+
+def _find_skill(ident):
+    ident = (ident or "").strip().lower()
+    if not ident:
+        return None
+    for name, desc, body in _list_skills():
+        if name.lower() == ident:
+            return name, desc, body
+    return None
+
+
+def _list_connectors():
+    names = []
+    for name in _list_named_files(_connectors_dir()):
+        base = os.path.splitext(name)[0]
+        names.append(base or name)
+    return names
+
+
+def _list_bridge_pending():
+    return _list_named_files(_bridge_dir())
+
+
+def _store_entries():
+    src = _work_src()
+    rows = []
+    for kind in ("notes", "routines", "connectors"):
+        directory = os.path.join(src, kind)
+        files = _list_named_files(directory)
+        if not files:
+            rows.append("%s: (empty)" % kind)
+            continue
+        for name in files:
+            rows.append("%s: %s" % (kind, name))
+    return rows
+
+
 class Session:
     def __init__(self, mode=None):
         want = (mode or MODE).strip().lower()
@@ -492,6 +648,10 @@ class Session:
         self.rollback_n = ""
         self.rollback_error = ""
         self.rollback_entry = ""
+        self.skill_sel = ""
+        self._skills_read = set()
+        self.connector_sel = ""
+        self.bridge_sel = ""
 
     def catalog(self):
         if self.mode == "work":
@@ -541,6 +701,10 @@ class Session:
             "snapper": self._snapper,
             "packages": self._packages,
             "login": self._login,
+            "skills": self._skills,
+            "connectors": self._connectors,
+            "bridge": self._bridge,
+            "store": self._store,
         }.get(self.view)
         if body is None:
             self._stub(out)
@@ -549,7 +713,8 @@ class Session:
         self._emit(out, "--")
 
     def _notify(self, out):
-        notify.render(self, out)
+        for line in notify.render_lines(notify.load_payloads()):
+            self._emit(out, line)
 
     def _chrome(self, out):
         self._emit(out, "surface: %s" % self.mode)
@@ -559,11 +724,18 @@ class Session:
             self._emit(out, "send: conversation line")
             self._emit(out, "work-views: %s" % " ".join(WORK_CATALOG))
             self._emit(out, "privileged tools: none (L-14)")
+            self._work_panes(out, list(WORK_CATALOG), ["work catalog (P8.15, L-18)"])
             return
-        self._emit(
-            out,
-            "switch: work refused (HI-15); installer refused (not firstboot)",
-        )
+        if work_runtime_on():
+            self._emit(
+                out,
+                "switch: work allowed (session); installer refused (not firstboot)",
+            )
+        else:
+            self._emit(
+                out,
+                "switch: work refused (HI-15); installer refused (not firstboot)",
+            )
         self._emit(
             out,
             "brake: human-only; freeze privileged writes; TUI stays (L-12)",
@@ -571,7 +743,36 @@ class Session:
         self._emit(out, "send: conversation line")
         self._emit(out, "os-views: %s" % " ".join(VIEWS))
 
+    def _work_panes(self, out, sidebar, info):
+        self._emit(out, "sidebar:")
+        if not sidebar:
+            self._emit(out, "  (empty)")
+        else:
+            for item in sidebar:
+                self._emit(out, "  %s" % item)
+        self._emit(out, "transcript:")
+        if not self.transcript:
+            self._emit(out, "  (empty)")
+        else:
+            for item in self.transcript[-20:]:
+                self._emit(out, "  %s" % item)
+        self._emit(out, "info:")
+        if not info:
+            self._emit(out, "  (empty)")
+            return
+        for line in info:
+            self._emit(out, "  %s" % line)
+
     def _conversation(self, out):
+        if self.mode == "work":
+            self._emit(out, "surface: work")
+            self._work_panes(
+                out,
+                list(WORK_CATALOG),
+                ["conversation (L-18); question ends the turn"],
+            )
+            self._emit(out, "attach: work path (L-18)")
+            return
         self._emit(out, "transcript:")
         if not self.transcript:
             self._emit(out, "  (empty)")
@@ -671,20 +872,91 @@ class Session:
             )
         if self.login_status == "ok":
             self._emit(out, "token: written 0600 (not in transcript)")
+        if self.mode == "work":
+            self._emit(out, "surface: work")
+
+    def _skills(self, out):
+        rows = _list_skills()
+        sidebar = [name for name, _desc, _body in rows]
+        info = ["skills-inspect: catalog (L-18); read the body this turn to follow"]
+        if self.skill_sel:
+            rec = _find_skill(self.skill_sel)
+            if rec is not None:
+                name, desc, body = rec
+                info.append("selected: %s" % name)
+                if desc:
+                    info.append("description: %s" % desc)
+                if body:
+                    info.extend(body.splitlines() or [""])
+        elif not rows:
+            info.append("(empty)")
+        self._emit(out, "surface: work")
+        self._work_panes(out, sidebar, info)
+
+    def _connectors(self, out):
+        names = _list_connectors()
+        info = [
+            "connectors-inspect: MCP status (L-18); connect is a card, not chat",
+        ]
+        if self.connector_sel:
+            info.append("selected: %s" % self.connector_sel)
+        elif not names:
+            info.append("(empty)")
+        self._emit(out, "surface: work")
+        self._work_panes(out, names, info)
+
+    def _bridge(self, out):
+        pending = _list_bridge_pending()
+        info = [
+            "bridge-inspect: private-path approval (L-18); copy is verbatim, not a mount",
+        ]
+        if self.bridge_sel:
+            info.append("selected: %s" % self.bridge_sel)
+        elif not pending:
+            info.append("pending: (empty)")
+        self._emit(out, "surface: work")
+        self._work_panes(out, pending, info)
+
+    def _store(self, out):
+        entries = _store_entries()
+        sidebar = list(entries)
+        info = [
+            "store-inspect: notes routines connectors as git in the work tree (L-18)",
+            "not /srv/aios/memory",
+        ]
+        self._emit(out, "surface: work")
+        self._work_panes(out, sidebar, info)
 
     def _stub(self, out):
         self._emit(out, "not this PR")
 
     def switch(self, view_id):
         view_id = (view_id or "").strip().lower()
+        view_id = self.shorts().get(view_id, view_id)
         if view_id == "brake":
             self.note_text = "brake is a chrome action, not a view (L-12, L-18)"
             return
         if view_id in INSTALLER_VIEWS:
             self.note_text = "installer view refused (not firstboot)"
             return
+        if view_id in BOTS_VIEWS:
+            self.note_text = "bots view refused (HI-15)"
+            return
+        if self.mode == "work":
+            if view_id in self.catalog():
+                self.view = view_id
+                self.note_text = ""
+                return
+            if view_id in VIEWS or view_id in _WORK_PRIVILEGED:
+                self.note_text = "%s refused in work session (L-14)" % view_id
+                return
+            self.note_text = "unknown view %s (L-18)" % view_id
+            return
         if view_id in WORK_VIEWS:
-            self.note_text = "work view refused (HI-15)"
+            if work_runtime_on():
+                self.note_text = "%s refused in os session (L-14)" % view_id
+            else:
+                self.note_text = "work view refused (HI-15)"
             return
         if view_id not in VIEWS:
             self.note_text = "unknown view %s (L-18)" % view_id
@@ -737,9 +1009,15 @@ class Session:
             self.view = "conversation"
 
     def attach(self):
+        if self.mode == "work":
+            self.note_text = "attach: work path (L-18)"
+            return
         self.note_text = "attach: not allowed in OS mode"
 
     def inspect(self):
+        if self.mode == "work" and self.view in _WORK_INSPECT:
+            self.note_text = "inspect: %s" % self.view
+            return
         if self.view not in _INSPECT_VIEWS and self.view != "login":
             if self.view in STUB_VIEWS:
                 self.note_text = "not this PR"
@@ -747,6 +1025,79 @@ class Session:
             self.note_text = "inspect: not this view"
             return
         self.note_text = "inspect: %s" % self.view
+
+    def open_handoff(self):
+        payloads = notify.load_payloads()
+        if not payloads:
+            self.note_text = "no HI-14 payload"
+            return
+        self.transcript.append(notify.conversation_line(payloads[0]))
+        self.view = "conversation"
+        self.note_text = "opened notify into conversation (HI-14)"
+
+    def skill_open(self, ident):
+        ident = (ident or "").strip()
+        rows = _list_skills()
+        if not rows:
+            self.note_text = "open: no skills"
+            return
+        rec = _find_skill(ident) if ident else rows[0]
+        if rec is None:
+            self.note_text = "open: unknown skill %s" % ident
+            return
+        name, _desc, _body = rec
+        self.skill_sel = name
+        self._skills_read.add(name)
+        self.note_text = "open: %s (read this turn)" % name
+
+    def skill_follow(self, ident):
+        ident = (ident or self.skill_sel or "").strip()
+        if not ident:
+            self.note_text = "follow: select a skill"
+            return
+        rec = _find_skill(ident)
+        name = rec[0] if rec is not None else ident
+        if name not in self._skills_read:
+            self.note_text = "follow refused: read the skill body this turn"
+            return
+        self.skill_sel = name
+        self.note_text = "follow: %s" % name
+
+    def connector_connect(self, ident):
+        ident = (ident or self.connector_sel or "").strip()
+        if not ident:
+            self.note_text = "connect: select a connector"
+            return
+        self.connector_sel = ident
+        self.note_text = "connect: card %s (not chat)" % ident
+
+    def connector_disconnect(self, ident):
+        ident = (ident or self.connector_sel or "").strip()
+        if not ident:
+            self.note_text = "disconnect: select a connector"
+            return
+        self.note_text = "disconnect: %s" % ident
+
+    def bridge_approve(self, ident):
+        ident = (ident or self.bridge_sel or "").strip()
+        pending = _list_bridge_pending()
+        if not pending and not ident:
+            self.note_text = "approve: none pending"
+            return
+        if not ident:
+            ident = pending[0]
+        self.bridge_sel = ident
+        self.note_text = "approve: %s (not run)" % ident
+
+    def bridge_deny(self, ident):
+        ident = (ident or self.bridge_sel or "").strip()
+        pending = _list_bridge_pending()
+        if not pending and not ident:
+            self.note_text = "deny: none pending"
+            return
+        if not ident:
+            ident = pending[0]
+        self.note_text = "deny: %s" % ident
 
     def open_intent(self, ident):
         ident = (ident or "").strip()
@@ -817,6 +1168,9 @@ class Session:
             self.rollback_entry = entry
 
     def rollback(self, arg=""):
+        if self.mode == "work":
+            self.note_text = "rollback refused in work session (L-14)"
+            return
         # Operator is unprivileged: file a request; aios-agent runs enact (L-04).
         ident = _parse_rollback_n(arg)
         if ident is None:
@@ -1036,17 +1390,25 @@ class Session:
 
     def mode_switch(self, target):
         target = (target or "").strip().lower()
-        if not target or target == MODE:
+        if not target or target == MODE or target == "os":
             self.mode = MODE
+            if self.view not in VIEWS:
+                self.view = "chrome"
             self.note_text = "mode: os"
             return
         if target == "work":
-            self.note_text = "mode refused: work (HI-15); staying os"
+            if not work_runtime_on():
+                self.note_text = "mode refused: work (HI-15); staying %s" % self.mode
+                return
+            self.mode = "work"
+            if self.view not in self.catalog():
+                self.view = "chrome"
+            self.note_text = "mode: work"
             return
         if target == "installer":
             self.note_text = "mode refused: installer (not firstboot)"
             return
-        self.note_text = "mode refused: %s; staying os" % target
+        self.note_text = "mode refused: %s; staying %s" % (target, self.mode)
 
     def handle(self, raw):
         line = (raw or "").strip()
@@ -1068,16 +1430,21 @@ class Session:
             return None
 
         if cmd in ("view", "v"):
-            name = _SHORT_VIEW.get(arg.strip().lower(), arg.strip().lower())
+            token = arg.strip().lower()
+            name = self.shorts().get(token, token)
             self.switch(name)
             return None
 
-        if cmd in VIEWS:
+        if cmd in VIEWS or cmd in WORK_VIEWS or cmd in self.catalog():
             self.switch(cmd)
             return None
 
-        if cmd in _SHORT_VIEW and not arg:
-            self.switch(_SHORT_VIEW[cmd])
+        if cmd in self.shorts() and not arg:
+            self.switch(self.shorts()[cmd])
+            return None
+
+        if cmd in _WORK_PRIVILEGED and self.mode == "work":
+            self.note_text = "%s refused in work session (L-14)" % cmd
             return None
 
         if cmd in ("brake", "b") and not arg:
@@ -1096,7 +1463,49 @@ class Session:
             self.inspect()
             return None
         if cmd == "open":
-            self.open_intent(arg)
+            if self.mode == "work":
+                if self.view == "skills":
+                    self.skill_open(arg)
+                else:
+                    self.note_text = "open: not this view"
+                return None
+            if self.view == "notify":
+                self.open_handoff()
+                return None
+            if self.view == "intents":
+                self.open_intent(arg)
+                return None
+            self.note_text = "open is a notify action (HI-14)"
+            return None
+        if cmd == "follow":
+            if self.mode != "work" or self.view != "skills":
+                self.note_text = "follow: not this view"
+                return None
+            self.skill_follow(arg)
+            return None
+        if cmd == "connect":
+            if self.mode != "work" or self.view != "connectors":
+                self.note_text = "connect: not this view"
+                return None
+            self.connector_connect(arg)
+            return None
+        if cmd == "disconnect":
+            if self.mode != "work" or self.view != "connectors":
+                self.note_text = "disconnect: not this view"
+                return None
+            self.connector_disconnect(arg)
+            return None
+        if cmd == "approve":
+            if self.mode != "work" or self.view != "bridge":
+                self.note_text = "approve: not this view"
+                return None
+            self.bridge_approve(arg)
+            return None
+        if cmd == "deny":
+            if self.mode != "work" or self.view != "bridge":
+                self.note_text = "deny: not this view"
+                return None
+            self.bridge_deny(arg)
             return None
         if cmd == "start":
             self.login_start(arg)
@@ -1118,10 +1527,10 @@ class Session:
         return None
 
 
-def serve(stdin=None, stdout=None):
+def serve(stdin=None, stdout=None, mode=None):
     stdin = sys.stdin if stdin is None else stdin
     stdout = sys.stdout if stdout is None else stdout
-    sess = Session()
+    sess = Session(mode)
     try:
         sess.piped = not stdin.isatty()
     except Exception:
@@ -1132,7 +1541,7 @@ def serve(stdin=None, stdout=None):
         prev_int = signal.signal(signal.SIGINT, signal.SIG_IGN)
     try:
         try:
-            _line(stdout, "views: %s" % " ".join(VIEWS))
+            _line(stdout, "views: %s" % " ".join(sess.catalog()))
             sess.render(stdout)
         except BrokenPipeError:
             if sess.piped:
@@ -1188,7 +1597,7 @@ def serve(stdin=None, stdout=None):
 def _usage(out):
     _line(out, "usage: aios [os|work|brake|status]")
     _line(out, "aios / aios os  OS definition surface (mode: os)")
-    _line(out, "aios work       work surface (refused: HI-15)")
+    _line(out, "aios work       work surface (HI-15 unless explicit yes)")
     _line(out, "aios brake      freeze privileged writes (L-12); TUI stays")
     _line(out, "aios status     mode and brake stamp")
     _line(out, "L-18 views: %s" % " ".join(VIEWS))
@@ -1236,7 +1645,12 @@ def main(argv=None):
             return 2
         return serve()
     if cmd == "work":
-        return refuse_work()
+        if not work_runtime_on():
+            return refuse_work()
+        if len(argv) > 1:
+            _usage(sys.stderr)
+            return 2
+        return serve(mode="work")
     if cmd == "brake":
         if len(argv) > 1:
             _usage(sys.stderr)
