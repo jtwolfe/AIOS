@@ -108,12 +108,12 @@ if [ "${_iso_n}" -eq 0 ]; then
     || fail "run.sh smoke must fail closed without ISO (do not skip green)"
   printf '%s\n' "${_smoke_run}" | grep -q 'fail closed (do not skip green)' \
     || fail "run.sh smoke missing fail-closed ISO error: ${_smoke_run}"
-  _pd_run=$("${RUN}" privilege-deny 2>&1) && _pd_rc=0 || _pd_rc=$?
+  _pd_run=$(env -u AIOS_VM_GUEST "${RUN}" privilege-deny 2>&1) && _pd_rc=0 || _pd_rc=$?
   [ "${_pd_rc}" -ne 0 ] \
     || fail "run.sh privilege-deny must fail closed without ISO (do not skip green)"
   printf '%s\n' "${_pd_run}" | grep -q 'fail closed (do not skip green)' \
     || fail "run.sh privilege-deny missing fail-closed ISO error: ${_pd_run}"
-  _or_run=$("${VM_DENY}" 2>&1) && _or_rc=0 || _or_rc=$?
+  _or_run=$(env -u AIOS_VM_GUEST "${VM_DENY}" 2>&1) && _or_rc=0 || _or_rc=$?
   [ "${_or_rc}" -ne 0 ] \
     || fail "vm-privilege-deny.sh must fail closed without ISO (do not skip green)"
   printf '%s\n' "${_or_run}" | grep -q 'fail closed (do not skip green)' \

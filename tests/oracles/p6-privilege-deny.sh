@@ -169,16 +169,25 @@ if grep -q 'qemu-system-x86_64' "${RUN}" "${VM_DENY}"; then
 fi
 grep -q 'sudo -u aios-work test -w /srv/aios/envelope' "${VM_DENY}" \
   || fail "vm-privilege-deny.sh missing envelope write denial (HI-13)"
-grep -q 'sudo -u aios-work test -x /usr/lib/aios/bin/enact' "${VM_DENY}" \
-  || fail "vm-privilege-deny.sh missing enact exec denial (HI-16)"
+grep -q '/usr/bin/test -x /usr/lib/aios/bin/enact' "${VM_DENY}" \
+  || fail "vm-privilege-deny.sh missing slice enact exec denial (HI-16)"
+if grep -q 'sudo -u aios-work test -x /usr/lib/aios/bin/enact' "${VM_DENY}"; then
+  fail "vm-privilege-deny.sh must not unsliced test -x enact (755 false-red)"
+fi
+grep -q 'live aios-work.slice missing; fail closed' "${VM_DENY}" \
+  || fail "vm-privilege-deny.sh must fail closed without live slice"
+grep -q 'live floor drop-in missing; fail closed' "${VM_DENY}" \
+  || fail "vm-privilege-deny.sh must fail closed without live floor drop-in"
 grep -q 'EPERM' "${VM_DENY}" \
   || fail "vm-privilege-deny.sh must expect EPERM/capabilities (HI-16)"
 grep -q 'the model declined' "${VM_DENY}" \
   || fail "vm-privilege-deny.sh must reject a model-decline story (HI-13)"
 grep -q 'HI-13' "${VM_DENY}" || fail "vm-privilege-deny.sh must quote HI-13"
 grep -q 'HI-16' "${VM_DENY}" || fail "vm-privilege-deny.sh must quote HI-16"
-grep -q 'AIOS_VM_GUEST' "${VM_DENY}" \
-  || fail "vm-privilege-deny.sh must gate live sudo on AIOS_VM_GUEST"
+grep -q 'AIOS_VM_GUEST=1 in the worktree; refuse (do not mutate the workstation)' \
+  "${VM_DENY}" || fail "vm-privilege-deny.sh missing worktree refuse die"
+grep -q 'payload/profile/airootfs/etc/systemd/system/aios-work.slice' "${VM_DENY}" \
+  || fail "vm-privilege-deny.sh must test airootfs slice path before guest sudo"
 grep -q 'AIOS_VM_BOOT' "${VM_DENY}" \
   || fail "vm-privilege-deny.sh must mention AIOS_VM_BOOT (HI-08)"
 if grep -q -- '-Syu' "${VM_DENY}"; then
@@ -384,6 +393,13 @@ if [ "${PROD_BEFORE}" = 0 ] && grep -F ' /run/aios/intent.sock' /proc/net/unix >
   fail "LISTEN on /run/aios/intent.sock after traffic"
 fi
 
+# Worktree guest guard: must refuse, not skip into live sudo/pacman.
+_g_run=$(env AIOS_VM_GUEST=1 "${VM_DENY}" 2>&1) && _g_rc=0 || _g_rc=$?
+[ "${_g_rc}" -ne 0 ] \
+  || fail "AIOS_VM_GUEST=1 in the worktree must refuse (do not mutate)"
+printf '%s\n' "${_g_run}" | grep -q 'refuse (do not mutate the workstation)' \
+  || fail "AIOS_VM_GUEST=1 missing refuse: ${_g_run}"
+
 # VM boot path must fail closed without ISO (do not skip green).
 _iso_n=0
 for _f in "${ROOT}/dist"/aios-*.iso; do
@@ -391,12 +407,12 @@ for _f in "${ROOT}/dist"/aios-*.iso; do
   _iso_n=$((_iso_n + 1))
 done
 if [ "${_iso_n}" -eq 0 ]; then
-  _pd_run=$("${RUN}" privilege-deny 2>&1) && _pd_rc=0 || _pd_rc=$?
+  _pd_run=$(env -u AIOS_VM_GUEST "${RUN}" privilege-deny 2>&1) && _pd_rc=0 || _pd_rc=$?
   [ "${_pd_rc}" -ne 0 ] \
     || fail "run.sh privilege-deny must fail closed without ISO (do not skip green)"
   printf '%s\n' "${_pd_run}" | grep -q 'fail closed (do not skip green)' \
     || fail "run.sh privilege-deny missing fail-closed ISO error: ${_pd_run}"
-  _or_run=$("${VM_DENY}" 2>&1) && _or_rc=0 || _or_rc=$?
+  _or_run=$(env -u AIOS_VM_GUEST "${VM_DENY}" 2>&1) && _or_rc=0 || _or_rc=$?
   [ "${_or_rc}" -ne 0 ] \
     || fail "vm-privilege-deny.sh must fail closed without ISO (do not skip green)"
   printf '%s\n' "${_or_run}" | grep -q 'fail closed (do not skip green)' \

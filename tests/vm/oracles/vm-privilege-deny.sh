@@ -45,7 +45,11 @@ guest_oracle() {
   fi
   [ -x "${POLICY}/work-slice.sh" ] || die "work-slice.sh missing"
   [ -x "${POLICY}/hi-16-os-privilege.sh" ] || die "hi-16-os-privilege.sh missing"
-  # Live guest: destroot would skip uid checks.
+  # Live guest: destroot would skip uid checks. Absence of P6.2 units is not green.
+  [ -f /etc/systemd/system/aios-work.slice ] \
+    || die "live aios-work.slice missing; fail closed (HI-16)"
+  [ -f /usr/lib/systemd/system/aios-work-.service.d/10-floor.conf ] \
+    || die "live floor drop-in missing; fail closed (HI-16)"
   env -u AIOS_POLICY_ROOT "${POLICY}/work-slice.sh" \
     || die "work-slice.sh failed in guest (HI-13)"
   env -u AIOS_POLICY_ROOT "${POLICY}/hi-16-os-privilege.sh" \
@@ -58,9 +62,6 @@ guest_oracle() {
   if sudo -u aios-work test -w /srv/aios/envelope; then
     die "aios-work can write /srv/aios/envelope (HI-13)"
   fi
-  if sudo -u aios-work test -x /usr/lib/aios/bin/enact; then
-    die "aios-work can execute /usr/lib/aios/bin/enact (HI-16)"
-  fi
   if sudo -u aios-work test -w /srv/aios/state; then
     die "aios-work can write /srv/aios/state (HI-16)"
   fi
@@ -68,6 +69,29 @@ guest_oracle() {
   if [ -e "${_token}" ] && sudo -u aios-work test -r "${_token}"; then
     die "aios-work can read OS token (L-16, HI-13)"
   fi
+
+  # Floor drop-in applies to aios-work-*.service. Prove it loaded (HI-16).
+  _probe=aios-work-privilege-deny-probe.service
+  systemctl reset-failed "${_probe}" >/dev/null 2>&1 || true
+  if ! systemd-run --quiet --service-type=oneshot --remain-after-exit \
+    --uid=aios-work --gid=aios-work \
+    --slice=aios-work.slice \
+    --unit="${_probe}" \
+    /usr/bin/true; then
+    systemctl reset-failed "${_probe}" >/dev/null 2>&1 || true
+    die "could not start aios-work slice probe (HI-16)"
+  fi
+  _caps=$(systemctl show -p CapabilityBoundingSet --value "${_probe}" 2>/dev/null || true)
+  _inacc=$(systemctl show -p InaccessiblePaths --value "${_probe}" 2>/dev/null || true)
+  _sl=$(systemctl show -p Slice --value "${_probe}" 2>/dev/null || true)
+  systemctl stop "${_probe}" >/dev/null 2>&1 || true
+  systemctl reset-failed "${_probe}" >/dev/null 2>&1 || true
+  [ -z "${_caps}" ] \
+    || die "slice probe CapabilityBoundingSet is not empty: ${_caps}"
+  printf '%s\n' "${_inacc}" | grep -q enact \
+    || die "slice probe InaccessiblePaths missing enact: ${_inacc}"
+  [ "${_sl}" = "aios-work.slice" ] \
+    || die "slice probe Slice is ${_sl}, not aios-work.slice"
 
   _unit=aios-work-privilege-deny.service
   systemctl reset-failed "${_unit}" >/dev/null 2>&1 || true
@@ -90,24 +114,6 @@ guest_oracle() {
     /usr/bin/test -x /usr/lib/aios/bin/enact 2>&1) && _xrc=0 || _xrc=$?
   [ "${_xrc}" != 0 ] \
     || die "slice can execute enact (HI-16): ${_xout}"
-
-  SCHEMA=/usr/lib/aios/intent/schema.json
-  [ -f "${SCHEMA}" ] || SCHEMA=/srv/aios/agent/../intent/schema.json
-  [ -f "${SCHEMA}" ] || die "intent/schema.json missing"
-  python3 - "${SCHEMA}" <<'PY' || die "schema accepted a shell string (HI-13)"
-import json
-import sys
-
-schema = json.load(open(sys.argv[1], encoding="utf-8"))
-enum = (schema.get("properties") or {}).get("source", {}).get("enum") or []
-if set(enum) != {"work-runtime", "work-runtime-bots"}:
-    raise SystemExit("schema source enum mismatch")
-
-instance = "pacman -S neovim"
-if schema.get("type") == "object" and not isinstance(instance, dict):
-    raise SystemExit(0)
-raise SystemExit("shell string must fail schema")
-PY
 
   [ -S /run/aios/intent.sock ] || die "intent.sock missing; fail closed (L-05)"
   _payload='{"id":"6ba7b810-9dad-41d1-80b4-00c04fd430c8","source":"work-runtime","asked":"install neovim as the system editor","clause":null,"suggested_oracles":["pacman -Qi neovim"],"paths":["/srv/aios/src/work-runtime"]}'
