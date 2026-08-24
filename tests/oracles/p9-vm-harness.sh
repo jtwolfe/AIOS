@@ -59,8 +59,10 @@ sh -n "${0}" || fail "sh -n p9-vm-harness.sh"
     grep -q 'p814_must_close' "${ROOT}/tests/vm/oracles/vm-${_s}.sh" \
       || { printf 'error: vm-%s.sh must call p814_must_close\n' "${_s}" >&2; exit 1; }
   done
+  [ -f "${ROOT}/tests/oracles/p8-work-views.sh" ] \
+    || { printf 'error: missing p8-work-views.sh (P8.15)\n' >&2; exit 1; }
   grep -q 'p8-work-views.sh' "${ROOT}/tests/vm/oracles/vm-work-surface.sh" \
-    || { printf 'error: vm-work-surface.sh must wrap p8-work-views.sh\n' >&2; exit 1; }
+    || { printf 'error: vm-work-surface.sh must name p8-work-views.sh\n' >&2; exit 1; }
   if grep -q 'p8-surface.sh' \
     "${ROOT}/tests/vm/oracles/"vm-work-*.sh \
     "${ROOT}/tests/vm/oracles/common.sh" 2>/dev/null
