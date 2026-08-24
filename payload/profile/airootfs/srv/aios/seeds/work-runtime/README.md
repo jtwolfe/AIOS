@@ -11,7 +11,8 @@ On a running box the live tree is `/srv/aios/src/work-runtime`, its own git
 repository, proposed on a branch, checked, merged. This seed is the contract
 the synthesis job must satisfy — not a deployment. The program is `main.py`
 (Python 3 stdlib, L-01). ExecStart is already that path. Default provider is
-fixture. Do not call live Grok. Delivery is an explicit send.
+fixture. Live is L-17 device-code on a work token file, never the OS key
+(L-16). Delivery is an explicit send.
 
 Read [AGENTS.md](AGENTS.md) first. Then [boundaries/invariants.md](boundaries/invariants.md)
 and [boundaries/interfaces.md](boundaries/interfaces.md). Skills are loaded

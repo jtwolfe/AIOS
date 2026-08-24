@@ -1,9 +1,10 @@
-"""Fixture provider. Live Grok is refused."""
+"""Work fixture (default) and live Grok adapter. Not the OS token (L-16)."""
 
 import json
 import os
 
 OS_TOKEN_PATH = "/srv/aios/state/provider/os.token"
+WORK_TOKEN_PATH = "/srv/aios/src/work-runtime/.provider/work.token"
 
 
 class ProviderError(Exception):
@@ -36,6 +37,56 @@ def _guard_path(path):
     abs_path = os.path.abspath(path)
     if abs_path == OS_TOKEN_PATH or abs_path.startswith("/srv/aios/state/"):
         refuse_os_token(path)
+    if "/srv/aios/state/" in abs_path.replace("\\", "/"):
+        refuse_os_token(path)
+    if abs_path.startswith("/home/") or abs_path.startswith("/etc/aios/"):
+        raise ProviderError("work token path is not the P8.10 lock (L-16)")
+
+
+def aios_root():
+    env = os.environ.get("AIOS_ROOT")
+    if env is None:
+        return ""
+    env = env.strip()
+    if not env:
+        raise ProviderError("AIOS_ROOT empty")
+    return os.path.abspath(env)
+
+
+def work_root():
+    env = os.environ.get("AIOS_WORK_SRC")
+    if env is None:
+        return os.path.dirname(os.path.abspath(__file__))
+    env = env.strip()
+    if not env:
+        raise ProviderError("AIOS_WORK_SRC empty")
+    return os.path.abspath(env)
+
+
+def work_token_path():
+    env = os.environ.get("AIOS_WORK_TOKEN")
+    if env is not None:
+        env = env.strip()
+        if not env:
+            raise ProviderError("AIOS_WORK_TOKEN empty")
+        path = env
+    else:
+        src = os.environ.get("AIOS_WORK_SRC")
+        if src is not None:
+            src = src.strip()
+            if not src:
+                raise ProviderError("AIOS_WORK_SRC empty")
+            path = os.path.join(os.path.abspath(src), ".provider", "work.token")
+        else:
+            root = aios_root()
+            if root:
+                path = root + WORK_TOKEN_PATH
+            else:
+                path = WORK_TOKEN_PATH
+    _guard_path(path)
+    if os.path.abspath(path) == OS_TOKEN_PATH:
+        refuse_os_token(path)
+    return path
 
 
 class FixtureProvider:
@@ -78,9 +129,13 @@ class FixtureProvider:
 
 def load(kind=None, fixture_path=None):
     kind = (kind or os.environ.get("AIOS_PROVIDER") or "fixture").strip()
-    if kind != "fixture":
-        raise ProviderError(
-            "work provider is fixture (L-08); do not call live Grok (L-16)"
-        )
-    path = fixture_path or os.environ.get("AIOS_FIXTURE")
-    return FixtureProvider(path)
+    if not kind:
+        kind = "fixture"
+    if kind == "fixture":
+        path = fixture_path or os.environ.get("AIOS_FIXTURE")
+        return FixtureProvider(path)
+    if kind == "live":
+        from live import LiveProvider
+
+        return LiveProvider()
+    raise ProviderError("unknown provider %s (L-08)" % kind)

@@ -91,7 +91,7 @@ def _env_bit():
     raise WakeError("AIOS_WORK_RUNTIME invalid")
 
 
-def envelope_text(root):
+def envelope_state(root):
     # Work uid cannot read /srv/aios/state or /srv/aios/envelope (L-23).
     path = _compiled_path(root)
     env_enabled = _env_bit()
@@ -102,6 +102,11 @@ def envelope_text(root):
     if file_enabled is None and env_enabled is None:
         raise WakeError("work envelope bit missing (HI-15)")
     enabled = env_enabled if env_enabled is not None else file_enabled
+    return enabled, vetoes
+
+
+def envelope_text(root):
+    enabled, vetoes = envelope_state(root)
     lines = ["work-runtime enabled: %s" % ("yes" if enabled else "no")]
     if not vetoes:
         lines.append("vetoes: none")

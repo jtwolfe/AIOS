@@ -53,10 +53,11 @@ fi
 _pyct="${TMP}/pycompile"
 mkdir -p "${_pyct}"
 cp -a "${SEED}/main.py" "${SEED}/skills.py" "${SEED}/wake.py" \
-  "${SEED}/provider.py" "${_pyct}/"
+  "${SEED}/provider.py" "${SEED}/live.py" "${SEED}/connectors.py" \
+  "${_pyct}/"
 python3 -m py_compile \
   "${_pyct}/main.py" "${_pyct}/skills.py" "${_pyct}/wake.py" \
-  "${_pyct}/provider.py" \
+  "${_pyct}/provider.py" "${_pyct}/live.py" "${_pyct}/connectors.py" \
   || fail "py_compile seed work-runtime failed"
 sh -n "${0}" || fail "sh -n p8-skill.sh"
 

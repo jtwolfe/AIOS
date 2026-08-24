@@ -41,10 +41,14 @@ trap cleanup EXIT
 [ -f "${SEED}/wake.py" ] || fail "missing seed/work-runtime/wake.py"
 [ -f "${SEED}/skills.py" ] || fail "missing seed/work-runtime/skills.py"
 [ -f "${SEED}/provider.py" ] || fail "missing seed/work-runtime/provider.py"
+[ -f "${SEED}/live.py" ] || fail "missing seed/work-runtime/live.py"
+[ -f "${SEED}/connectors.py" ] || fail "missing seed/work-runtime/connectors.py"
 [ -f "${ISO_SEED}/main.py" ] || fail "missing ISO seed main.py"
 [ -f "${ISO_SEED}/wake.py" ] || fail "missing ISO seed wake.py"
 [ -f "${ISO_SEED}/skills.py" ] || fail "missing ISO seed skills.py"
 [ -f "${ISO_SEED}/provider.py" ] || fail "missing ISO seed provider.py"
+[ -f "${ISO_SEED}/live.py" ] || fail "missing ISO seed live.py"
+[ -f "${ISO_SEED}/connectors.py" ] || fail "missing ISO seed connectors.py"
 
 diff -qr -x '__pycache__' -x '*.pyc' "${SEED}" "${ISO_SEED}" \
   || fail "ISO work-runtime seed != seed/work-runtime"
@@ -63,24 +67,33 @@ grep -q 'work-runtime enabled:' "${SEED}/wake.py" \
   || fail "wake.py must inject the envelope bit"
 grep -q 'work envelope bit missing (HI-15)' "${SEED}/wake.py" \
   || fail "wake.py must fail closed with HI-15 when the bit is missing"
-grep -q 'do not call live Grok' "${SEED}/provider.py" \
-  || fail "provider.py must refuse live Grok"
+grep -q 'work uid cannot read the OS token (L-16)' "${SEED}/provider.py" \
+  || fail "provider.py must refuse the OS token (L-16)"
 grep -qx 'OS_TOKEN_PATH = "/srv/aios/state/provider/os.token"' \
   "${SEED}/provider.py" \
   || fail "provider.py OS token path lock drifted"
+grep -qx 'WORK_TOKEN_PATH = "/srv/aios/src/work-runtime/.provider/work.token"' \
+  "${SEED}/provider.py" \
+  || fail "provider.py work token path lock drifted"
 if grep -Fq '/srv/aios/state/bootstrap-in-progress' "${SEED}/wake.py" \
   || grep -Fq '/srv/aios/envelope/work-runtime.md' "${SEED}/wake.py"; then
   fail "wake.py must not default envelope inject to privileged paths"
 fi
 if grep -nE '^(import|from)[[:space:]]+(urllib|aios_agent|http\.client)\b' \
   "${SEED}/main.py" "${SEED}/wake.py" "${SEED}/skills.py" "${SEED}/provider.py" \
+  "${SEED}/connectors.py" \
   >/dev/null; then
-  fail "work runtime must not import urllib/aios_agent/http.client"
+  fail "work runtime must not import urllib/aios_agent/http.client outside live.py"
 fi
-if grep -nE 'github\.com|auth\.x\.ai' \
+if grep -nE '^(import|from)[[:space:]]+aios_agent\b' \
+  "${SEED}/live.py" >/dev/null; then
+  fail "work live.py must not import aios_agent (L-16)"
+fi
+if grep -nE 'github\.com' \
   "${SEED}/main.py" "${SEED}/wake.py" "${SEED}/skills.py" "${SEED}/provider.py" \
+  "${SEED}/connectors.py" \
   >/dev/null; then
-  fail "work runtime must not call live Grok"
+  fail "work runtime must not call GitHub"
 fi
 if grep -q -- '-Syu' "${SEED}/main.py" "${SEED}/wake.py"; then
   fail "work runtime contains -Syu (L-20)"
@@ -89,16 +102,20 @@ fi
 _pyct="${TMP}/pycompile"
 mkdir -p "${_pyct}/seed" "${_pyct}/iso"
 cp -a "${SEED}/main.py" "${SEED}/wake.py" "${SEED}/skills.py" \
-  "${SEED}/provider.py" "${_pyct}/seed/"
+  "${SEED}/provider.py" "${SEED}/live.py" "${SEED}/connectors.py" \
+  "${_pyct}/seed/"
 cp -a "${ISO_SEED}/main.py" "${ISO_SEED}/wake.py" \
-  "${ISO_SEED}/skills.py" "${ISO_SEED}/provider.py" "${_pyct}/iso/"
+  "${ISO_SEED}/skills.py" "${ISO_SEED}/provider.py" \
+  "${ISO_SEED}/live.py" "${ISO_SEED}/connectors.py" "${_pyct}/iso/"
 python3 -m py_compile \
   "${_pyct}/seed/main.py" "${_pyct}/seed/wake.py" \
   "${_pyct}/seed/skills.py" "${_pyct}/seed/provider.py" \
+  "${_pyct}/seed/live.py" "${_pyct}/seed/connectors.py" \
   || fail "py_compile seed work-runtime failed"
 python3 -m py_compile \
   "${_pyct}/iso/main.py" "${_pyct}/iso/wake.py" \
   "${_pyct}/iso/skills.py" "${_pyct}/iso/provider.py" \
+  "${_pyct}/iso/live.py" "${_pyct}/iso/connectors.py" \
   || fail "py_compile ISO seed work-runtime failed"
 sh -n "${0}" || fail "sh -n p8-wake.sh"
 
@@ -309,8 +326,10 @@ _live=$(
     AIOS_FIXTURE="${TMP}/send.json" \
     python3 "${SRC}/main.py" turn ping 2>/dev/null || true
 )
-printf '%s\n' "${_live}" | grep -q 'live Grok' \
-  || fail "live provider must be refused: ${_live}"
+printf '%s\n' "${_live}" | grep -q 'live login required (L-17)' \
+  || fail "live without a work token must fail closed: ${_live}"
+printf '%s\n' "${_live}" | grep -q '/srv/aios/state/provider/os.token' \
+  && fail "live turn used the OS token path: ${_live}" || true
 
 _tok=$(
   env -u AIOS_ANSWERS -u AIOS_ENVELOPE_WORK \

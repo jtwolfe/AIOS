@@ -1,0 +1,7 @@
+# Local git is the source of truth (HI-01).
+__pycache__/
+*.pyc
+# L-16: live work token is never a git object.
+/.provider/
+work.token
+.work.token.*

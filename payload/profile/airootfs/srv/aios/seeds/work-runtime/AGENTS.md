@@ -45,6 +45,9 @@ System-scoped failure is not your wake. That handoff belongs to the OS agent.
 ## Depth
 
 - [main.py](main.py)
+- [connectors.py](connectors.py)
+- [provider.py](provider.py)
+- [live.py](live.py)
 - [boundaries/invariants.md](boundaries/invariants.md)
 - [boundaries/interfaces.md](boundaries/interfaces.md)
 - [skills/wake.md](skills/wake.md)

@@ -19,6 +19,9 @@ minisign.key
 # L-16: live OS token is operator-local, never a git object.
 **/os.token
 **/.os.token.*
+# L-16: live work token is a different file, never a git object.
+**/work.token
+**/.work.token.*
 
 # Tooling
 node_modules/
