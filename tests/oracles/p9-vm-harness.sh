@@ -8,6 +8,7 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ROOT=$(CDPATH= cd -- "${SCRIPT_DIR}/../.." && pwd)
 QEMU="${ROOT}/tests/vm/qemu.sh"
 RUN="${ROOT}/tests/vm/run.sh"
+VM_DENY="${ROOT}/tests/vm/oracles/vm-privilege-deny.sh"
 SMOKE="${ROOT}/tests/vm/fixtures/smoke.json"
 RECOVER="${ROOT}/tests/vm/fixtures/recover.json"
 MAIN="${ROOT}/installer/aios_installer/main.py"
@@ -25,12 +26,15 @@ fail() {
 [ -x "${QEMU}" ] || fail "qemu.sh must be executable"
 [ -f "${RUN}" ] || fail "missing ${RUN}"
 [ -x "${RUN}" ] || fail "run.sh must be executable"
+[ -f "${VM_DENY}" ] || fail "missing ${VM_DENY}"
+[ -x "${VM_DENY}" ] || fail "vm-privilege-deny.sh must be executable"
 [ -f "${SMOKE}" ] || fail "missing ${SMOKE}"
 [ -f "${RECOVER}" ] || fail "missing ${RECOVER}"
 [ -f "${MAIN}" ] || fail "missing ${MAIN}"
 
 sh -n "${QEMU}" || fail "sh -n qemu.sh"
 sh -n "${RUN}" || fail "sh -n run.sh"
+sh -n "${VM_DENY}" || fail "sh -n vm-privilege-deny.sh"
 sh -n "${0}" || fail "sh -n p9-vm-harness.sh"
 
 grep -q '/dev/kvm' "${QEMU}" \
@@ -83,8 +87,12 @@ grep -q 'do not skip green' "${RUN}" \
   || fail "run.sh must fail closed without ISO"
 grep -q 'Full ISO boot not claimed' "${RUN}" \
   || fail "run.sh must not claim a green ISO boot (HI-08)"
-if grep -q 'qemu-system-x86_64' "${RUN}"; then
-  fail "run.sh must use qemu.sh, not a second wrapper"
+grep -q 'privilege-deny' "${RUN}" \
+  || fail "run.sh missing privilege-deny target (P6.3)"
+grep -q 'AIOS_VM_BOOT' "${VM_DENY}" \
+  || fail "vm-privilege-deny.sh must mention AIOS_VM_BOOT (HI-08)"
+if grep -q 'qemu-system-x86_64' "${RUN}" "${VM_DENY}"; then
+  fail "run.sh/vm-privilege-deny.sh must use qemu.sh, not a second wrapper"
 fi
 
 # p9 green is not vm-smoke green (HI-08). Without an ISO, the named entrypoint
@@ -100,6 +108,16 @@ if [ "${_iso_n}" -eq 0 ]; then
     || fail "run.sh smoke must fail closed without ISO (do not skip green)"
   printf '%s\n' "${_smoke_run}" | grep -q 'fail closed (do not skip green)' \
     || fail "run.sh smoke missing fail-closed ISO error: ${_smoke_run}"
+  _pd_run=$("${RUN}" privilege-deny 2>&1) && _pd_rc=0 || _pd_rc=$?
+  [ "${_pd_rc}" -ne 0 ] \
+    || fail "run.sh privilege-deny must fail closed without ISO (do not skip green)"
+  printf '%s\n' "${_pd_run}" | grep -q 'fail closed (do not skip green)' \
+    || fail "run.sh privilege-deny missing fail-closed ISO error: ${_pd_run}"
+  _or_run=$("${VM_DENY}" 2>&1) && _or_rc=0 || _or_rc=$?
+  [ "${_or_rc}" -ne 0 ] \
+    || fail "vm-privilege-deny.sh must fail closed without ISO (do not skip green)"
+  printf '%s\n' "${_or_run}" | grep -q 'fail closed (do not skip green)' \
+    || fail "vm-privilege-deny.sh missing fail-closed ISO error: ${_or_run}"
 fi
 
 if grep -R -q -- '-Syu' "${ROOT}/tests/vm" 2>/dev/null; then

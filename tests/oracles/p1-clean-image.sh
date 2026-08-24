@@ -308,6 +308,10 @@ if ! "${SCRIPT_DIR}/p6-work-slice.sh"; then
   fail "p6-work-slice"
 fi
 
+if ! "${SCRIPT_DIR}/p6-privilege-deny.sh"; then
+  fail "p6-privilege-deny"
+fi
+
 if ! "${SCRIPT_DIR}/p7-summon-brake.sh"; then
   fail "p7-summon-brake"
 fi

@@ -3,7 +3,7 @@
 # Pre-boot minisign (L-10). Fail closed without KVM or ISO. Do not skip green.
 # Full ISO boot is not claimed against a stale image.
 #
-# Usage: tests/vm/run.sh [probe|iso|disk|snap|smoke|recover]
+# Usage: tests/vm/run.sh [probe|iso|disk|snap|smoke|recover|privilege-deny]
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -194,6 +194,17 @@ cmd_recover() {
   printf 'ok: vm-recover harness (kill/resume). Disk reboot not claimed.\n'
 }
 
+# P6.3. Guest denials live in oracles/vm-privilege-deny.sh (AIOS_VM_GUEST=1).
+# Host: fail closed without ISO/KVM. qemu gated on AIOS_VM_BOOT (HI-08).
+cmd_privilege_deny() {
+  require_boot_env
+  assert_no_live_bip
+  if [ "${AIOS_VM_BOOT:-0}" = 1 ]; then
+    exec "${QEMU}" disk
+  fi
+  printf 'ok: vm-privilege-deny harness (pre-boot minisign). Full ISO boot not claimed.\n'
+}
+
 mode=${1:-probe}
 TMP=$(mktemp -d)
 trap 'rm -rf "${TMP}"' EXIT
@@ -217,10 +228,13 @@ case "${mode}" in
   recover)
     cmd_recover
     ;;
+  privilege-deny)
+    cmd_privilege_deny
+    ;;
   -h|--help)
-    printf 'usage: %s [probe|iso|disk|snap|smoke|recover]\n' "$0"
+    printf 'usage: %s [probe|iso|disk|snap|smoke|recover|privilege-deny]\n' "$0"
     ;;
   *)
-    die "usage: $0 [probe|iso|disk|snap|smoke|recover]"
+    die "usage: $0 [probe|iso|disk|snap|smoke|recover|privilege-deny]"
     ;;
 esac
