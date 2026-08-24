@@ -90,6 +90,12 @@ def _about_privileged(text):
 def _conflict_hi(text):
     for pattern, hi in _CONFLICT:
         if pattern.search(text):
+            if hi == "HI-15":
+                # Envelope yes makes this the machine goal, not a conflict.
+                from goals import work_runtime_yes
+
+                if work_runtime_yes():
+                    continue
             return hi
     return None
 

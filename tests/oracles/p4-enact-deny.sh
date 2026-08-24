@@ -81,6 +81,17 @@ _d_out=$(run_deny unit start aios-installer.service)
 _d_rc=$(deny_rc unit start aios-installer.service)
 [ "${_d_rc}" = 0 ] || fail "deny.py refused unit start aios-installer.service: ${_d_out}"
 
+_d_out=$(run_deny synthesise work-runtime)
+_e_out=$(run_enact synthesise work-runtime)
+_d_rc=$(deny_rc synthesise work-runtime)
+_e_rc=$(enact_rc synthesise work-runtime)
+[ "${_d_rc}" != 0 ] || fail "deny.py allowed synthesise with bit off"
+[ "${_e_rc}" != 0 ] || fail "enact allowed synthesise with bit off"
+need_tag "${_d_out}" "HI-15" "deny.py synthesise without bit"
+need_tag "${_e_out}" "HI-15" "enact synthesise without bit"
+_e_out=$(run_enact unit enable aios-work-runtime.service)
+need_tag "${_e_out}" "L-23" "enact unit enable still L-23 after synthesise verb"
+
 _e_out=$(run_enact pacman -S foo)
 need_tag "${_e_out}" "L-04" "enact pacman"
 

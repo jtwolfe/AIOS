@@ -195,10 +195,19 @@ def citations_usable(items, required_classes):
 
 
 def _messages(asked, skills, triage):
+    from goals import work_runtime_yes
+
+    if work_runtime_yes():
+        wr_line = (
+            "Work-runtime synthesis is a machine goal via enact after "
+            "accept. Do not mutate live while planning (L-20, HI-15)."
+        )
+    else:
+        wr_line = "Do not synthesise the work runtime (HI-15)."
     parts = [
         "You are the AIOS privileged proposer. Quote HI by id.",
         "Do not merge to main (HI-03). Do not force-push.",
-        "Do not synthesise the work runtime (HI-15).",
+        wr_line,
         "Do not decide what memory is worth keeping (HI-11).",
         "Research is plan-only. Do not enact while planning (L-20).",
         "Wiki/man this turn for pacman/systemd/btrfs/boot; empty citations are rejected (P4.6).",

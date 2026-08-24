@@ -1,5 +1,8 @@
 """Proposer deny-list (HI-03, HI-04, HI-06, L-04, L-12)."""
 
+import json
+import os
+
 
 class Denied(Exception):
     """This uid may not perform that action."""
@@ -85,6 +88,51 @@ def check_unit(action, unit):
         raise Denied("unit is not an aios-* unit: %s" % unit)
 
 
+def _answers_path():
+    return os.environ.get("AIOS_ANSWERS") or (
+        "/srv/aios/state/bootstrap-in-progress/answers.json"
+    )
+
+
+def _envelope_work():
+    return os.environ.get("AIOS_ENVELOPE_WORK") or (
+        "/srv/aios/envelope/work-runtime.md"
+    )
+
+
+def work_runtime_yes():
+    """Skip is not a yes (HI-15). Same rule as goals.work_runtime_yes."""
+    answers = _answers_path()
+    if os.path.isfile(answers):
+        try:
+            with open(answers, "r", encoding="utf-8") as fh:
+                doc = json.load(fh)
+        except (OSError, ValueError):
+            doc = None
+        if isinstance(doc, dict) and doc.get("accepted") is True:
+            if doc.get("work_runtime") is True:
+                return True
+    clause = _envelope_work()
+    if os.path.isfile(clause):
+        try:
+            with open(clause, "r", encoding="utf-8") as fh:
+                text = fh.read()
+        except OSError:
+            text = ""
+        for line in text.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("#"):
+                continue
+            if stripped.lower() in (
+                "enabled: true",
+                "enabled: yes",
+                "enabled: 1",
+                "enabled = true",
+            ):
+                return True
+    return False
+
+
 def check(kind, *args):
     if kind in ("merge-main", "merge_to_main"):
         raise Denied("cannot merge to main (HI-03)")
@@ -100,5 +148,14 @@ def check(kind, *args):
         if len(args) != 2:
             raise Denied("unit takes ACTION UNIT")
         check_unit(args[0], args[1])
+        return
+    if kind in ("synthesise", "synthesize"):
+        target = args[0] if args else "work-runtime"
+        if target != "work-runtime":
+            raise Denied("not allowlisted: synthesise %s (HI-15)" % target)
+        if not work_runtime_yes():
+            raise Denied(
+                "work runtime stays off until an explicit yes (HI-15)"
+            )
         return
     raise Denied("unknown action not allowlisted: %s" % kind)

@@ -49,9 +49,11 @@ a build. Matching `SKILL.md` bodies are read this turn before privileged
 writes. Memory ingest is verbatim and unconditional (HI-11): worktree
 plus a commit on `agent/<date>-memory-<id>`. The model does not decide
 what to keep. Never commit to `main` (HI-03). Accept a stored plan id,
-not a plan generated in the same invocation (L-20). Never synthesise the
-work runtime from here (HI-15). Machine goals are `goals` CLI (P4.4,
-L-21). The `-Syu` window is P4.5.
+not a plan generated in the same invocation (L-20). Work runtime stays
+default off (HI-15). Synthesis is a `goals` machine goal enacted after
+accept when the envelope bit is an explicit yes; never a live mutation
+while planning (L-20). Machine goals are `goals` CLI (P4.4, L-21). The
+`-Syu` window is P4.5.
 
 No-arg `serve()` stays idle (L-21). It consumes `/run/aios/intent.sock`
 (ACK only; never executes `asked`; HI-13). Fixture is the VM default (L-08).

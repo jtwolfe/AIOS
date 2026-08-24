@@ -65,6 +65,14 @@ _KIND_ORACLES = {
         "policy/packages-drift.sh",
     ),
     "reconstruct": ("policy/boot-seatbelt.sh",),
+    # Named only (HI-10). Planner does not copy trees or enable units.
+    "work-runtime": (
+        "policy/hi-17-seeds-local.sh",
+        "policy/work-runtime-git.sh",
+        "policy/hi-15-work-default-off.sh",
+        "policy/hi-13-work-slice.sh",
+        "policy/hi-16-os-privilege.sh",
+    ),
 }
 
 # L-19: stall offers TUI rollback of that window. This uid does not enact it.
@@ -148,6 +156,16 @@ def _answers_path(path=None):
 
 def _envelope_work(path=None):
     return path or os.environ.get("AIOS_ENVELOPE_WORK") or ENVELOPE_WORK
+
+
+def _work_src_path():
+    return os.environ.get("AIOS_WORK_SRC") or "/srv/aios/src/work-runtime"
+
+
+def _live_work_git():
+    # Read-only. Host tests set AIOS_WORK_SRC so this never probes live /srv.
+    path = _work_src_path()
+    return os.path.isdir(os.path.join(path, ".git"))
 
 
 def _idle_doc():
@@ -535,6 +553,8 @@ def _asked_for(event):
         return "repair packages.txt drift (bounded -Syu, not mixed)"
     if kind == "sysupgrade":
         return "bounded sysupgrade window; linux-lts remains bootable"
+    if kind == "work-runtime":
+        return "synthesise work-runtime from local seeds (HI-17)"
     return "machine-goal %s" % kind
 
 
@@ -750,13 +770,11 @@ def _tick(
     normalized = normalized[:MAX_EVENTS]
 
     for event in normalized:
-        if event.get("kind") == "work-runtime":
+        if event.get("kind") == "work-runtime" and not work_runtime_yes():
+            # Skip is not a yes and not a SAME_GAP poison (HI-15).
             reason = "work runtime stays off until an explicit yes (HI-15)"
-            if work_runtime_yes():
-                reason = "work-runtime synthesis is P8.1; not this loop (HI-15)"
             state["status"] = "idle"
             state["proposal"] = None
-            # Skip is not a gap. Do not poison SAME_GAP for a later declared window.
             state["last_gap"] = None
             state["gap_count"] = 0
             state["handoff"] = None
@@ -816,6 +834,12 @@ def _tick(
         ):
             # Restart resumes the plan. It does not invent a new one (L-21).
             return _resume_plan(state, path, memory_root)
+        if work_runtime_yes() and not _live_work_git():
+            # Envelope bit is the machine goal; planner does not copy (L-20).
+            event = {"kind": "work-runtime"}
+            return _plan_event(
+                event, state, path, notify_dir, memory_root
+            )
         if "sysupgrade" in declared:
             event = {"kind": "sysupgrade"}
             return _plan_event(
@@ -845,6 +869,7 @@ def _tick(
         "hi-failed",
         "packages-drift",
         "sysupgrade",
+        "work-runtime",
     ):
         return _plan_event(event, state, path, notify_dir, memory_root)
 
@@ -884,6 +909,7 @@ def _plan_event(event, state, path, notify_dir, memory_root):
         "packages-drift": "HI-01",
         "sysupgrade": "L-19",
         "hi-failed": "HI-09",
+        "work-runtime": "HI-17",
     }.get(event.get("kind"), "L-21")
     asked = _asked_for(event)
     plan = _proposal(event, oracles, asked, clause)

@@ -33,7 +33,7 @@ log() {
 }
 
 usage() {
-  printf 'usage: enact {syu|snapper-pre|snapper-post|bootctl|unit|rollback} ...\n' >&2
+  printf 'usage: enact {syu|snapper-pre|snapper-post|bootctl|unit|rollback|synthesise} ...\n' >&2
   exit 2
 }
 
@@ -539,6 +539,115 @@ cmd_unit() {
   exec /usr/bin/systemctl --no-ask-password "${_act}" "${_unit}"
 }
 
+# HI-15: skip / "true" / 1 are not a yes. JSON true or compiled enabled: only.
+work_runtime_yes() {
+  _ans="${DESTROOT}/srv/aios/state/bootstrap-in-progress/answers.json"
+  if [ -f "${_ans}" ] \
+    && grep -Eq '"accepted"[[:space:]]*:[[:space:]]*true' "${_ans}" \
+    && grep -Eq '"work_runtime"[[:space:]]*:[[:space:]]*true' "${_ans}"; then
+    return 0
+  fi
+  _clause="${DESTROOT}/srv/aios/envelope/work-runtime.md"
+  if [ -f "${_clause}" ] \
+    && grep -Eq '^[[:space:]]*enabled[[:space:]]*[:=][[:space:]]*(true|yes|1)[[:space:]]*$' \
+      "${_clause}"; then
+    return 0
+  fi
+  return 1
+}
+
+# Seed → own git. Offline. No GitHub remote (HI-17).
+materialise_work_tree() {
+  _seed="${DESTROOT}/srv/aios/seeds/work-runtime"
+  _dest="${DESTROOT}/srv/aios/src/work-runtime"
+  [ -d "${_seed}" ] || die "seeds/work-runtime missing (HI-17)"
+  [ -f "${_seed}/AGENTS.md" ] || die "seeds/work-runtime/AGENTS.md missing (HI-17)"
+  if [ -d "${_dest}/.git" ]; then
+    git -c safe.directory="${_dest}" -C "${_dest}" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+      || die "${_dest} is not a git repository"
+    return 0
+  fi
+  [ ! -e "${_dest}" ] || die "${_dest} exists but is not a git repository"
+  mkdir -p "${DESTROOT}/srv/aios/src" || die "mkdir ${DESTROOT}/srv/aios/src failed"
+  mkdir -p "${_dest}" || die "mkdir ${_dest} failed"
+  cp -a "${_seed}/." "${_dest}/" || die "copy seed to ${_dest} failed"
+  rm -rf "${_dest}/.git"
+  clear_git_env
+  git -c safe.directory="${_dest}" -C "${_dest}" init -b main \
+    || die "git init ${_dest} failed"
+  git -c safe.directory="${_dest}" \
+    -c user.name=aios-work \
+    -c user.email=aios-work@localhost \
+    -C "${_dest}" add -A \
+    || die "git add ${_dest} failed"
+  git -c safe.directory="${_dest}" \
+    -c user.name=aios-work \
+    -c user.email=aios-work@localhost \
+    -C "${_dest}" commit -m "feat(work-runtime): synthesise from local seed
+
+Copied from /srv/aios/seeds/work-runtime (HI-17). No remote." \
+    || die "git commit ${_dest} failed"
+  _origin=$(git -c safe.directory="${_dest}" -C "${_dest}" remote get-url origin 2>/dev/null || true)
+  case "${_origin}" in
+    *github*|*http://*|*https://*)
+      die "work-runtime origin is ${_origin}, not local (HI-17)"
+      ;;
+  esac
+  if [ -z "${DESTROOT}" ]; then
+    id -u aios-work >/dev/null 2>&1 || die "aios-work missing (L-02)"
+    chown -R aios-work:aios-work "${_dest}" \
+      || die "chown ${_dest} failed"
+  fi
+  git -c safe.directory="${_dest}" -C "${_dest}" rev-parse --is-inside-work-tree >/dev/null \
+    || die "${_dest} is not a git repository after synthesise"
+}
+
+# Destroot: wants symlink only. Live: systemctl --user -M; never unit enable (L-23).
+enable_work_user_unit() {
+  _unit=aios-work-runtime.service
+  _tree="${DESTROOT}/srv/aios/src/work-runtime"
+  if [ -n "${DESTROOT}" ]; then
+    _wants="${DESTROOT}/etc/systemd/user/default.target.wants"
+    mkdir -p "${_wants}" || die "mkdir ${_wants} failed"
+    ln -sfn /usr/lib/systemd/user/aios-work-runtime.service \
+      "${_wants}/${_unit}" \
+      || die "wants symlink ${_unit} failed"
+    return 0
+  fi
+  /usr/bin/systemctl --user -M aios-work@ enable "${_unit}" \
+    || die "systemctl --user -M aios-work@ enable ${_unit} failed"
+  # Start only when the runtime entrypoint exists; enable is the P8.1 seatbelt.
+  if [ -d "${_tree}" ] && [ -f "${_tree}/main.py" ]; then
+    /usr/bin/systemctl --user -M aios-work@ start "${_unit}" \
+      || die "systemctl --user -M aios-work@ start ${_unit} failed"
+  fi
+}
+
+cmd_synthesise() {
+  [ "$#" -le 1 ] || die "synthesise takes optional work-runtime only"
+  _target=${1:-work-runtime}
+  [ "${_target}" = work-runtime ] \
+    || die "not allowlisted: synthesise ${_target} (HI-15)"
+  work_runtime_yes \
+    || die "work runtime stays off until an explicit yes (HI-15)"
+  if [ -n "${DESTROOT}" ]; then
+    materialise_work_tree
+    enable_work_user_unit
+    printf 'synthesised %s\n' "${DESTROOT}/srv/aios/src/work-runtime"
+    return 0
+  fi
+  acquire_window
+  require_esp
+  require_kernels
+  _pre=$(create_pre "work-runtime")
+  materialise_work_tree
+  enable_work_user_unit
+  _post=$(create_post "${_pre}" "work-runtime")
+  finish_window "${_pre}" "${_post}" "work-runtime"
+  printf 'synthesised /srv/aios/src/work-runtime\npre %s\npost %s\n' \
+    "${_pre}" "${_post}"
+}
+
 # AIOS_ROOT destroot: host oracles write files without mutating workstation btrfs (P7.7).
 bind_destroot() {
   _root=${AIOS_ROOT-}
@@ -911,7 +1020,7 @@ main() {
     -S*|pacman)
       die "partial pacman is not allowlisted (L-04); use enact syu"
       ;;
-    syu|snapper-pre|snapper-post|bootctl|unit|rollback) ;;
+    syu|snapper-pre|snapper-post|bootctl|unit|rollback|synthesise|synthesize) ;;
     *)
       die "not allowlisted: $1"
       ;;
@@ -920,6 +1029,22 @@ main() {
   shift
   if [ "${_cmd}" = unit ]; then
     validate_unit "$@"
+  fi
+  if [ "${_cmd}" = synthesise ] || [ "${_cmd}" = synthesize ]; then
+    # Bit check before root so host oracles see HI-15 without privilege.
+    bind_destroot
+    _syn_target=${1:-work-runtime}
+    [ "${_syn_target}" = work-runtime ] \
+      || die "not allowlisted: synthesise ${_syn_target} (HI-15)"
+    work_runtime_yes \
+      || die "work runtime stays off until an explicit yes (HI-15)"
+    if [ -z "${AIOS_ROOT-}" ]; then
+      require_root
+    fi
+    require_not_frozen
+    require_accept_stamp
+    cmd_synthesise "$@"
+    return
   fi
   if [ "${_cmd}" = rollback ]; then
     # Destroot file writes (AIOS_ROOT) are host oracles; live still needs root.

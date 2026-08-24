@@ -19,6 +19,7 @@ fail() {
 
 grep -q 'L-21' "${GOALS}" || fail "goals.py must quote L-21"
 grep -q 'HI-15' "${GOALS}" || fail "goals.py must quote HI-15"
+grep -q 'HI-17' "${GOALS}" || fail "goals.py must quote HI-17"
 grep -q 'HI-10' "${GOALS}" || fail "goals.py must quote HI-10"
 grep -q 'HI-14' "${GOALS}" || fail "goals.py must quote HI-14"
 grep -q 'HI-03' "${GOALS}" || fail "goals.py must quote HI-03"
@@ -33,9 +34,12 @@ grep -q 'cmd_goals' "${MAIN}" || fail "main.py must wire goals CLI"
 if grep -n 'git merge\|merge_to_main\|checkout main' "${GOALS}" >/dev/null; then
   fail "goals.py must not merge to main (HI-03)"
 fi
+if grep -nE 'shutil|copytree|systemctl' "${GOALS}" | grep -v '^[^:]*:[[:space:]]*#' >/dev/null; then
+  fail "goals.py must not copy trees or call systemctl (L-20)"
+fi
 if grep -n 'work.runtime' "${GOALS}" | grep -qi 'synthesi'; then
-  grep -q 'not this loop' "${GOALS}" \
-    || fail "goals.py must not synthesise work-runtime (HI-15)"
+  grep -q 'work_runtime_yes' "${GOALS}" \
+    || fail "goals.py synthesis must be gated on work_runtime_yes (HI-15)"
 fi
 if grep -Eq 'oracles.*=.*\["true"\]|oracles.*=.*\("true"\)' "${GOALS}"; then
   fail "goals.py must not invent true as an oracle (HI-08, HI-10)"
@@ -62,6 +66,8 @@ goals() {
     AIOS_MEMORY="${MEM}" \
     AIOS_BRAKE="${TMP}/brake" \
     AIOS_ANSWERS="${TMP}/answers.json" \
+    AIOS_ENVELOPE_WORK="${TMP}/envelope-work.md" \
+    AIOS_WORK_SRC="${TMP}/work-src" \
     python3 "${MAIN}" goals "$@"
 }
 
@@ -291,6 +297,9 @@ _out=$(
     AIOS_NOTIFY="${TMP}/notify" \
     AIOS_MEMORY="${MEM}" \
     AIOS_BRAKE="${TMP}/brake" \
+    AIOS_ANSWERS="${TMP}/answers.json" \
+    AIOS_ENVELOPE_WORK="${TMP}/envelope-work.md" \
+    AIOS_WORK_SRC="${TMP}/work-src" \
     python3 "${MAIN}" goals '{"kind":"unit-failed","unit":"x.service"}'
 ) || true
 touch "${TMP}/brake"
@@ -299,6 +308,9 @@ _br=$(
     AIOS_NOTIFY="${TMP}/notify" \
     AIOS_MEMORY="${MEM}" \
     AIOS_BRAKE="${TMP}/brake" \
+    AIOS_ANSWERS="${TMP}/answers.json" \
+    AIOS_ENVELOPE_WORK="${TMP}/envelope-work.md" \
+    AIOS_WORK_SRC="${TMP}/work-src" \
     python3 "${MAIN}" goals
 ) || true
 printf '%s\n' "${_br}" | grep -q 'L-12' \
@@ -401,6 +413,62 @@ printf '%s\n' "${_out}" | grep -q '"paused": true' \
   || fail "third identical unit-failed stays paused: ${_out}"
 printf '%s\n' "${_out}" | grep -q '"status": "paused"' \
   || fail "third identical unit-failed status paused: ${_out}"
+
+rm -f "${TMP}/goals.json" "${TMP}/answers.json"
+printf '%s\n' '{"status":"idle","declared":["work-runtime"]}' > "${TMP}/goals.json"
+_out=$(goals) || true
+printf '%s\n' "${_out}" | grep -q '"status": "idle"' \
+  || fail "declared work-runtime with bit off must idle: ${_out}"
+printf '%s\n' "${_out}" | grep -q '"proposal": null' \
+  || fail "declared work-runtime with bit off must not propose: ${_out}"
+printf '%s\n' "${_out}" | grep -q '"work_runtime": false' \
+  || fail "declared work-runtime with bit off work_runtime false: ${_out}"
+
+rm -f "${TMP}/goals.json"
+printf '%s\n' '{"accepted":true,"work_runtime":true}' > "${TMP}/answers.json"
+_out=$(goals) || true
+printf '%s\n' "${_out}" | grep -q '"status": "waiting-accept"' \
+  || fail "answers work_runtime true must plan synthesis: ${_out}"
+printf '%s\n' "${_out}" | grep -q 'not-while-planning' \
+  || fail "synthesis plan must not enact while planning: ${_out}"
+printf '%s\n' "${_out}" | grep -q 'policy/hi-17-seeds-local.sh' \
+  || fail "synthesis plan must name hi-17-seeds-local oracle: ${_out}"
+printf '%s\n' "${_out}" | grep -q 'policy/work-runtime-git.sh' \
+  || fail "synthesis plan must name work-runtime-git oracle: ${_out}"
+printf '%s\n' "${_out}" | grep -q '"work_runtime": false' \
+  || fail "plan tick must keep work_runtime false: ${_out}"
+printf '%s\n' "${_out}" | grep -q '"true"' \
+  && fail "synthesis plan invented true oracle: ${_out}" || true
+[ ! -e "${TMP}/work-src" ] \
+  || fail "planner must not materialise the live work tree"
+python3 - "${TMP}/goals.json" <<'PY' || fail "synthesis plan oracles on disk"
+import json, sys
+doc = json.load(open(sys.argv[1], encoding="utf-8"))
+oracles = (doc.get("proposal") or {}).get("oracles") or []
+assert "policy/hi-17-seeds-local.sh" in oracles, oracles
+assert "policy/work-runtime-git.sh" in oracles, oracles
+assert "true" not in oracles, oracles
+assert (doc.get("proposal") or {}).get("enact") == "not-while-planning"
+assert doc.get("status") == "waiting-accept"
+PY
+
+rm -f "${TMP}/goals.json"
+_out=$(goals '{"kind":"work-runtime"}') || true
+printf '%s\n' "${_out}" | grep -q '"status": "waiting-accept"' \
+  || fail "work-runtime event with bit on must plan: ${_out}"
+printf '%s\n' "${_out}" | grep -q 'policy/hi-17-seeds-local.sh' \
+  || fail "work-runtime event must name hi-17 oracle: ${_out}"
+printf '%s\n' "${_out}" | grep -q '"work_runtime": false' \
+  || fail "work-runtime event plan tick work_runtime false: ${_out}"
+[ ! -e "${TMP}/work-src" ] \
+  || fail "event planner must not materialise the live work tree"
+
+rm -f "${TMP}/goals.json" "${TMP}/answers.json"
+_out=$(goals '{"kind":"work-runtime"}') || true
+printf '%s\n' "${_out}" | grep -q 'HI-15' \
+  || fail "work-runtime event after clearing answers is HI-15 skip: ${_out}"
+printf '%s\n' "${_out}" | grep -q '"proposal": null' \
+  || fail "cleared-bit work-runtime skip must not propose: ${_out}"
 
 python3 - "${ROOT}/agent/aios_agent" "${MAIN}" <<'PY' || fail "constants / idle serve"
 import sys
