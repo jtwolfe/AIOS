@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""OS operator client (P7.1, P7.3, P7.5, P7.6, L-18, L-12, L-17). Unprivileged. One binary."""
+"""OS operator client (P7.1, P7.3, P7.5, P7.6, P7.7, L-18, L-12, L-17, L-19). Unprivileged. One binary."""
 
 import io
 import json
@@ -54,6 +54,8 @@ INTENTS_DIR = "/srv/aios/state/intents"
 ESP_MAP = "/srv/aios/state/esp-generations"
 LOGIN_REQUEST = "/run/aios/login-request"
 LOGIN_STATUS = "/run/aios/login-status"
+ROLLBACK_REQUEST = "/run/aios/rollback-request"
+ROLLBACK_STATUS = "/run/aios/rollback-status"
 OS_TOKEN_PATH = "/srv/aios/state/provider/os.token"
 WORK_REFUSED = (
     "refused: work (HI-15); work runtime is off until bootstrap "
@@ -422,6 +424,50 @@ def _snapper_text():
     return ""
 
 
+def _esp_map_path():
+    return _path("AIOS_ESP_GENERATIONS", ESP_MAP)
+
+
+def _esp_generations():
+    path = _esp_map_path()
+    if not os.path.isfile(path):
+        return []
+    try:
+        text = _read_text(path)
+    except OSError:
+        return []
+    rows = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        parts = stripped.split()
+        if not parts:
+            continue
+        ident = parts[0]
+        if ident.isdigit() and int(ident) > 0:
+            rows.append(ident)
+    return rows
+
+
+def _previous_post():
+    rows = _esp_generations()
+    if len(rows) < 2:
+        return None
+    return rows[-2]
+
+
+def _parse_rollback_n(arg):
+    token = (arg or "").strip()
+    if token.lower().startswith("rollback "):
+        token = token.split(None, 1)[1].strip()
+    if not token:
+        return _previous_post()
+    if token.startswith("-") or not token.isdigit() or int(token) <= 0:
+        return None
+    return token
+
+
 class Session:
     def __init__(self, mode=None):
         want = (mode or MODE).strip().lower()
@@ -547,6 +593,15 @@ class Session:
 
     def _snapper(self, out):
         self._emit(out, "snapper-inspect: generations (L-18); rollback is L-19")
+        prev = _previous_post()
+        if prev:
+            self._emit(
+                out,
+                "rollback: previous successful post %s (L-19, HI-06); not undochange"
+                % prev,
+            )
+        else:
+            self._emit(out, "rollback: select N (L-19); not undochange")
         text = _snapper_text()
         if not text.strip():
             self._emit(out, "(empty)")
@@ -700,9 +755,42 @@ class Session:
         self.view = "conversation"
         self.send(body or ident)
 
-    def rollback(self):
-        # L-19 restore is P7.7; listing generations is inspect-only here.
-        self.note_text = "rollback not this PR (L-19)"
+    def _rollback_request_path(self):
+        return _path("AIOS_ROLLBACK_REQUEST", ROLLBACK_REQUEST)
+
+    def rollback(self, arg=""):
+        # Operator is unprivileged: file a request; aios-agent runs enact (L-04).
+        ident = _parse_rollback_n(arg)
+        if ident is None:
+            self.note_text = "rollback: select N (L-19)"
+            return
+        rows = _esp_generations()
+        if rows:
+            last = rows[-1]
+            if ident == last:
+                self.note_text = (
+                    "rollback refused: %s is the failed window post id (HI-06, L-19)"
+                    % ident
+                )
+                return
+            if ident not in rows:
+                self.note_text = (
+                    "rollback refused: %s is not a successful post (L-19)" % ident
+                )
+                return
+        path = self._rollback_request_path()
+        try:
+            parent = os.path.dirname(path)
+            if parent and not os.path.isdir(parent):
+                raise OSError("rollback rendezvous missing")
+            _write_login_request(path, "rollback %s" % ident)
+        except OSError as exc:
+            self.note_text = "rollback rendezvous missing: %s (L-19)" % exc
+            return
+        self.note_text = (
+            "rollback %s requested (L-19, HI-06); not undochange; reboot after enact"
+            % ident
+        )
 
     def _forget_device(self):
         if self._device_code and self._device_code not in self._secrets:
@@ -963,8 +1051,11 @@ class Session:
         if cmd == "poll" and not arg:
             self.login_poll()
             return None
-        if cmd == "rollback" and not arg:
-            self.rollback()
+        if cmd == "rollback":
+            self.rollback(arg)
+            return None
+        if self.view == "snapper" and cmd.isdigit() and not arg:
+            self.rollback(cmd)
             return None
 
         self.note_text = "unknown: %s" % cmd

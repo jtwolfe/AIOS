@@ -39,3 +39,6 @@ Work runtime stays default off (HI-15).
    `/srv/aios/state/provider/os.token` mode `0600`. Token not in the
    transcript. Do not sudo live login. Remotes veto refuses login (L-17).
 7. Never commit to `main`. Never force-push (HI-03).
+8. Snapper rollback is L-19 (HI-06): TUI files `/run/aios/rollback-request`;
+   `aios-agent` runs `enact rollback N`. Do not sudo. Do not call
+   `snapper rollback` or `undochange`. Do not boot a RO snapper snapshot.

@@ -399,14 +399,21 @@ def _grant_login_rendezvous(root, name):
         pass
     req = os.path.join(run_dir, "login-request")
     status = os.path.join(run_dir, "login-status")
+    rb_req = os.path.join(run_dir, "rollback-request")
+    rb_status = os.path.join(run_dir, "rollback-status")
     _touch_mode(req, 0o660)
     _touch_mode(status, 0o640)
+    _touch_mode(rb_req, 0o660)
+    _touch_mode(rb_status, 0o640)
     drop_in = _under(root, "etc", "tmpfiles.d", "aios-os-login.conf")
     _atomic_write(
         drop_in,
-        "# Recreate live-login rendezvous after /run is wiped (L-17).\n"
+        "# Recreate live-login and L-19 rollback rendezvous after /run is wiped.\n"
         "f /run/aios/login-request 0660 aios-agent %s -\n"
-        "f /run/aios/login-status 0640 aios-agent %s -\n" % (name, name),
+        "f /run/aios/login-status 0640 aios-agent %s -\n"
+        "f /run/aios/rollback-request 0660 aios-agent %s -\n"
+        "f /run/aios/rollback-status 0640 aios-agent %s -\n"
+        % (name, name, name, name),
         mode=0o644,
     )
     if root == "/" and not os.environ.get("AIOS_ROOT"):
@@ -417,6 +424,8 @@ def _grant_login_rendezvous(root, name):
         try:
             os.chown(req, uid, gid)
             os.chown(status, uid, gid)
+            os.chown(rb_req, uid, gid)
+            os.chown(rb_status, uid, gid)
             os.chmod("/run/aios", 0o751)
         except OSError as exc:
             raise OSError("login rendezvous chown failed (L-17): %s" % exc)

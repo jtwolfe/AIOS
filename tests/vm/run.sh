@@ -3,7 +3,7 @@
 # Pre-boot minisign (L-10). Fail closed without KVM or ISO. Do not skip green.
 # Full ISO boot is not claimed against a stale image.
 #
-# Usage: tests/vm/run.sh [probe|iso|disk|snap|smoke|recover|privilege-deny]
+# Usage: tests/vm/run.sh [probe|iso|disk|snap|smoke|recover|privilege-deny|boot-seatbelt]
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -195,7 +195,6 @@ cmd_recover() {
 }
 
 # P6.3. Guest denials live in oracles/vm-privilege-deny.sh (AIOS_VM_GUEST=1).
-# Host: fail closed without ISO/KVM. qemu gated on AIOS_VM_BOOT (HI-08).
 cmd_privilege_deny() {
   require_boot_env
   assert_no_live_bip
@@ -203,6 +202,15 @@ cmd_privilege_deny() {
     exec "${QEMU}" disk
   fi
   printf 'ok: vm-privilege-deny harness (pre-boot minisign). Full ISO boot not claimed.\n'
+}
+
+# P7.7 / L-19: fixture upgrade rollback path. Fail closed without ISO (do not skip green).
+cmd_boot_seatbelt() {
+  require_boot_env
+  if [ "${AIOS_VM_BOOT:-0}" = 1 ]; then
+    exec "${QEMU}" disk
+  fi
+  printf 'ok: vm-boot-seatbelt harness (pre-boot minisign). Rollback boot not claimed.\n'
 }
 
 mode=${1:-probe}
@@ -231,10 +239,13 @@ case "${mode}" in
   privilege-deny)
     cmd_privilege_deny
     ;;
+  boot-seatbelt)
+    cmd_boot_seatbelt
+    ;;
   -h|--help)
-    printf 'usage: %s [probe|iso|disk|snap|smoke|recover|privilege-deny]\n' "$0"
+    printf 'usage: %s [probe|iso|disk|snap|smoke|recover|privilege-deny|boot-seatbelt]\n' "$0"
     ;;
   *)
-    die "usage: $0 [probe|iso|disk|snap|smoke|recover|privilege-deny]"
+    die "usage: $0 [probe|iso|disk|snap|smoke|recover|privilege-deny|boot-seatbelt]"
     ;;
 esac

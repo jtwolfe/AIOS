@@ -31,7 +31,7 @@ def cmd_deny(argv):
 
 def serve():
     # L-21: available, not always proposing. Turns are CLI (`turn`).
-    # Socket: consume + ACK only (L-05, HI-13). Login gate ticks inside POLL_S.
+    # Socket consume+ACK (L-05). Login and L-19 rollback gates tick inside POLL_S.
     from intent_consume import handle_connection, listen_socket
 
     sock = listen_socket()
@@ -40,6 +40,12 @@ def serve():
             from login_gate import tick_login
 
             tick_login()
+        except Exception:
+            pass
+        try:
+            from rollback_gate import tick_rollback
+
+            tick_rollback()
         except Exception:
             pass
         if sock is None:

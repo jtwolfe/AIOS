@@ -15,6 +15,10 @@ STATE_BARE=/srv/aios/git/state.git
 GENROOT=/boot/aios-gen
 WINDOW_LOCK=/run/aios/enact.window
 STATE_INDEX=
+DESTROOT=
+BOOT=/boot
+ENTRIES=/boot/loader/entries
+BTRFS_MNT=/run/aios-btrfs
 
 # Four live images only; 1G ESP cannot hold fallback initramfs copies (L-19).
 ESP_FILES="vmlinuz-linux vmlinuz-linux-lts initramfs-linux.img initramfs-linux-lts.img"
@@ -29,7 +33,7 @@ log() {
 }
 
 usage() {
-  printf 'usage: enact {syu|snapper-pre|snapper-post|bootctl|unit} ...\n' >&2
+  printf 'usage: enact {syu|snapper-pre|snapper-post|bootctl|unit|rollback} ...\n' >&2
   exit 2
 }
 
@@ -43,6 +47,10 @@ require_not_frozen() {
 
 require_accept_stamp() {
   [ -f "${ACCEPT_STAMP}" ] || die "enact refuses until envelope accept (L-20)"
+  # Destroot oracles create the stamp as the test uid; live still requires root.
+  if [ -n "${DESTROOT}" ]; then
+    return 0
+  fi
   _uid=$(stat -c '%u' "${ACCEPT_STAMP}")
   [ "${_uid}" = 0 ] || die "accept stamp is not root-owned (L-20)"
   _mod=$(stat -c '%a' "${ACCEPT_STAMP}")
@@ -135,7 +143,7 @@ restore_owners() {
 # Two windows interleaving pre/post/ESP would leave a snapper id without a boot image (HI-06).
 acquire_window() {
   command -v flock >/dev/null 2>&1 || die "flock missing"
-  mkdir -p /run/aios || die "mkdir /run/aios failed"
+  mkdir -p "$(dirname "${WINDOW_LOCK}")" || die "mkdir $(dirname "${WINDOW_LOCK}") failed"
   exec 9>"${WINDOW_LOCK}"
   flock -n 9 || die "enact window already running"
   trap restore_owners EXIT
@@ -531,6 +539,364 @@ cmd_unit() {
   exec /usr/bin/systemctl --no-ask-password "${_act}" "${_unit}"
 }
 
+# AIOS_ROOT destroot: host oracles write files without mutating workstation btrfs (P7.7).
+bind_destroot() {
+  _root=${AIOS_ROOT-}
+  if [ -z "${_root}" ]; then
+    DESTROOT=
+    return 0
+  fi
+  while [ "${_root}" != / ] && [ "${_root%/}" != "${_root}" ]; do
+    _root=${_root%/}
+  done
+  [ -n "${_root}" ] || die "AIOS_ROOT empty"
+  case "${_root}" in
+    /) die "AIOS_ROOT must not be /" ;;
+    /*) ;;
+    *) die "AIOS_ROOT must be absolute" ;;
+  esac
+  DESTROOT=${_root}
+  BRAKE="${DESTROOT}/srv/aios/state/brake.d/stamp"
+  ACCEPT_STAMP="${DESTROOT}/etc/aios/envelope-accepted"
+  STATE="${DESTROOT}/srv/aios/state"
+  PIN="${STATE}/packages.txt"
+  MAP="${STATE}/esp-generations"
+  GENROOT="${DESTROOT}/boot/aios-gen"
+  BOOT="${DESTROOT}/boot"
+  ENTRIES="${DESTROOT}/boot/loader/entries"
+  BTRFS_MNT="${DESTROOT}/run/aios-btrfs"
+  WINDOW_LOCK="${DESTROOT}/run/aios/enact.window"
+}
+
+map_ids() {
+  [ -f "${MAP}" ] || die "missing ${MAP} (HI-06, L-19)"
+  grep -v '^[[:space:]]*#' "${MAP}" | grep -v '^[[:space:]]*$' | awk '{print $1}'
+}
+
+snapper_xml_type() {
+  _n=$1
+  for _info in \
+    "${BTRFS_MNT}/@snapshots/${_n}/info.xml" \
+    "${DESTROOT}/.snapshots/${_n}/info.xml" \
+    "/.snapshots/${_n}/info.xml"
+  do
+    [ -n "${_info}" ] || continue
+    [ -f "${_info}" ] || continue
+    if grep -q '<type>pre</type>' "${_info}"; then
+      printf 'pre\n'
+      return 0
+    fi
+    if grep -q '<type>post</type>' "${_info}"; then
+      printf 'post\n'
+      return 0
+    fi
+  done
+  return 0
+}
+
+# N is a previous successful post in esp-generations with /boot/aios-gen/<N>/.
+# Not the failed window's post (last map id). Not a pre id (L-19, HI-06).
+validate_restore_n() {
+  _n=$1
+  require_numeric_id "${_n}" "rollback N"
+  _last=$(map_last_id || true)
+  [ -n "${_last}" ] || die "esp-generations has no generations (L-19)"
+  [ "${_n}" != "${_last}" ] \
+    || die "N must not be the failed window post id ${_last} (HI-06, L-19)"
+  _found=0
+  _count=0
+  for _id in $(map_ids); do
+    require_numeric_id "${_id}" "esp-generations id"
+    _count=$((_count + 1))
+    if [ "${_id}" = "${_n}" ]; then
+      _found=1
+    fi
+  done
+  [ "${_count}" -ge 2 ] || die "no previous successful post (L-19)"
+  _ty=$(snapper_xml_type "${_n}" || true)
+  if [ "${_ty}" = pre ]; then
+    die "N ${_n} is a pre id; not an ESP generation key (L-19)"
+  fi
+  [ "${_found}" = 1 ] \
+    || die "N ${_n} is not a successful post in esp-generations (L-19)"
+  generation_complete "${_n}" \
+    || die "missing or incomplete /boot/aios-gen/${_n}/ (HI-06, L-19)"
+}
+
+read_cmdline() {
+  if [ -n "${AIOS_CMDLINE-}" ]; then
+    printf '%s\n' "${AIOS_CMDLINE}"
+    return 0
+  fi
+  if [ -n "${DESTROOT}" ]; then
+    return 0
+  fi
+  [ -r /proc/cmdline ] || return 0
+  cat /proc/cmdline
+}
+
+# Serial fixture: console=ttyS0 last so /dev/console stays serial.
+cmdline_serial() {
+  _cmd=$(read_cmdline || true)
+  [ -n "${_cmd}" ] || return 1
+  _last=
+  for _tok in ${_cmd}; do
+    case "${_tok}" in
+      console=*) _last=${_tok} ;;
+    esac
+  done
+  [ "${_last}" = "console=ttyS0" ]
+}
+
+on_restore_subvol() {
+  _n=$1
+  _cmd=$(read_cmdline || true)
+  [ -n "${_cmd}" ] || return 1
+  _want="subvol=@.restore-${_n}"
+  for _tok in ${_cmd}; do
+    case "${_tok}" in
+      rootflags=*)
+        case "${_tok}" in
+          *"${_want}"*) return 0 ;;
+        esac
+        ;;
+    esac
+  done
+  return 1
+}
+
+root_uuid() {
+  _conf="${ENTRIES}/aios-linux.conf"
+  [ -f "${_conf}" ] || die "missing ${ENTRIES}/aios-linux.conf"
+  _uuid=$(awk '
+    /^options[[:space:]]/ {
+      for (i = 1; i <= NF; i++) {
+        if ($i ~ /^root=UUID=/) {
+          sub(/^root=UUID=/, "", $i)
+          print $i
+          exit
+        }
+      }
+    }' "${_conf}")
+  [ -n "${_uuid}" ] || die "aios-linux.conf has no root=UUID (L-19)"
+  printf '%s\n' "${_uuid}"
+}
+
+set_boot_default() {
+  _ent=$1
+  mkdir -p "${BOOT}/loader" || die "mkdir ${BOOT}/loader failed"
+  _loader="${BOOT}/loader/loader.conf"
+  if [ -f "${_loader}" ]; then
+    awk -v e="${_ent}" '
+      BEGIN { done = 0 }
+      /^default[[:space:]]/ { print "default " e; done = 1; next }
+      { print }
+      END { if (!done) print "default " e }
+    ' "${_loader}" > "${_loader}.tmp" || die "write ${_loader}.tmp failed"
+    mv -f "${_loader}.tmp" "${_loader}" || die "replace ${_loader} failed"
+  else
+    printf 'default %s\ntimeout 5\nconsole-mode keep\neditor no\n' "${_ent}" \
+      > "${_loader}" || die "write ${_loader} failed"
+  fi
+  if [ -z "${DESTROOT}" ]; then
+    /usr/bin/bootctl --esp-path=/boot set-default "${_ent}" \
+      || log "bootctl set-default failed; loader.conf default=${_ent}"
+  fi
+}
+
+# Do not boot the RO snapper snapshot as / (L-19, HI-06). Prefer subvol= over subvolid=.
+write_rollback_conf() {
+  _n=$1
+  _uuid=$(root_uuid)
+  _cons="console=tty0"
+  _file=aios-rollback.conf
+  if cmdline_serial; then
+    _cons="console=tty0 console=ttyS0"
+    _file=aios-rollback-serial.conf
+  fi
+  _subvol="@.restore-${_n}"
+  case "${_subvol}" in
+    @snapshots/*|*/snapshot) die "refuse RO snapper snapshot as / (L-19, HI-06)" ;;
+  esac
+  mkdir -p "${ENTRIES}" || die "mkdir ${ENTRIES} failed"
+  cat > "${ENTRIES}/${_file}" <<EOF || die "write ${_file} failed"
+title   AIOS rollback
+linux   /aios-gen/${_n}/vmlinuz-linux
+initrd  /aios-gen/${_n}/initramfs-linux.img
+options root=UUID=${_uuid} rootflags=subvol=${_subvol} rw ${_cons}
+EOF
+  grep -Fq "rootflags=subvol=@.restore-${_n}" "${ENTRIES}/${_file}" \
+    || die "rollback.conf missing subvol=@.restore-${_n} (L-19)"
+  if grep -Fq 'rootflags=subvol=@snapshots/' "${ENTRIES}/${_file}"; then
+    die "refuse RO snapper snapshot as / (L-19, HI-06)"
+  fi
+  if grep -Fq 'subvolid=' "${ENTRIES}/${_file}"; then
+    die "prefer subvol= over subvolid= (L-19)"
+  fi
+  set_boot_default "${_file}"
+  printf '%s\n' "${_file}"
+}
+
+mount_toplevel() {
+  mkdir -p "${BTRFS_MNT}" || die "mkdir ${BTRFS_MNT} failed"
+  if [ -n "${DESTROOT}" ]; then
+    return 0
+  fi
+  if mountpoint -q "${BTRFS_MNT}"; then
+    return 0
+  fi
+  _src=$(findmnt -n -o SOURCE /) || die "cannot find root device"
+  # Toplevel is subvolid=5 so we can name @ / @.restore-N / @snapshots (L-19).
+  mount -o subvolid=5 "${_src}" "${BTRFS_MNT}" \
+    || die "mount toplevel subvolid=5 failed"
+}
+
+# RW clone only. Never a read-only btrfs snapshot. Never snapper restore verbs.
+clone_restore() {
+  _n=$1
+  _src="${BTRFS_MNT}/@snapshots/${_n}/snapshot"
+  _dst="${BTRFS_MNT}/@.restore-${_n}"
+  if [ -n "${DESTROOT}" ]; then
+    mkdir -p "${BTRFS_MNT}/@" "${_src}" "${_dst}" \
+      || die "destroot restore dirs failed"
+    printf 'rw\n' > "${_dst}/.aios-restore" \
+      || die "destroot restore marker failed"
+    return 0
+  fi
+  [ -d "${_src}" ] || die "missing snapper snapshot ${_n} at ${_src} (L-19)"
+  if [ -e "${_dst}" ]; then
+    _ro=$(btrfs property get -ts "${_dst}" ro 2>/dev/null || true)
+    case "${_ro}" in
+      *true*) die "existing @.restore-${_n} is RO; refuse (L-19, HI-06)" ;;
+    esac
+    log "reuse RW @.restore-${_n}"
+    return 0
+  fi
+  btrfs subvolume snapshot "${_src}" "${_dst}" \
+    || die "RW snapshot @.restore-${_n} failed (L-19)"
+  _ro=$(btrfs property get -ts "${_dst}" ro 2>/dev/null || true)
+  case "${_ro}" in
+    *true*) die "restore clone is RO; refuse to boot it (L-19, HI-06)" ;;
+  esac
+  log "RW clone @.restore-${_n}"
+}
+
+write_linux_entry() {
+  _file=$1
+  _title=$2
+  _linux=$3
+  _initrd=$4
+  _cons=$5
+  _uuid=$6
+  cat > "${ENTRIES}/${_file}" <<EOF || die "write ${_file} failed"
+title   ${_title}
+linux   ${_linux}
+initrd  ${_initrd}
+options root=UUID=${_uuid} rootflags=subvol=@ rw ${_cons}
+EOF
+  grep -Eq '^linux[[:space:]]+/vmlinuz-linux' "${ENTRIES}/${_file}" \
+    || die "${_file} linux path (L-19)"
+  grep -Fq 'rootflags=subvol=@' "${ENTRIES}/${_file}" \
+    || die "${_file} must use rootflags=subvol=@ (L-19)"
+  if grep -Fq 'subvolid=' "${ENTRIES}/${_file}"; then
+    die "prefer subvol= over subvolid= (L-19)"
+  fi
+  if grep -Fq 'rootflags=subvol=@snapshots/' "${ENTRIES}/${_file}"; then
+    die "refuse RO snapper snapshot as / (L-19, HI-06)"
+  fi
+}
+
+restore_esp_live() {
+  _n=$1
+  generation_complete "${_n}" || die "ESP generation ${_n} is incomplete (L-19)"
+  mkdir -p "${BOOT}" || die "mkdir ${BOOT} failed"
+  for _f in ${ESP_FILES}; do
+    cp -a "${GENROOT}/${_n}/${_f}" "${BOOT}/${_f}" \
+      || die "cp -a aios-gen/${_n}/${_f} to /boot failed"
+    need_boot_file "${BOOT}/${_f}"
+  done
+}
+
+check_fstab_subvol() {
+  _fstab=/etc/fstab
+  if [ -n "${DESTROOT}" ]; then
+    _fstab="${DESTROOT}/etc/fstab"
+  fi
+  [ -f "${_fstab}" ] || return 0
+  _rootline=$(awk '$1 !~ /^#/ && $2 == "/" { print; exit }' "${_fstab}" || true)
+  [ -n "${_rootline}" ] || return 0
+  printf '%s\n' "${_rootline}" | grep -q 'subvol=@' \
+    || die "fstab must keep subvol=@ (L-19)"
+  printf '%s\n' "${_rootline}" | grep -q 'subvolid=' \
+    && die "prefer subvol= over subvolid= (L-19)" || true
+}
+
+promote_restore() {
+  _n=$1
+  mount_toplevel
+  _at="${BTRFS_MNT}/@"
+  _rest="${BTRFS_MNT}/@.restore-${_n}"
+  _brok="${BTRFS_MNT}/@.broken-${_n}"
+  [ -e "${_rest}" ] || die "missing @.restore-${_n}; not on restore clone (L-19)"
+  [ ! -e "${_brok}" ] || die "@.broken-${_n} already exists"
+  [ -e "${_at}" ] || die "missing @ to rename"
+  mv "${_at}" "${_brok}" || die "rename @ -> @.broken-${_n} failed"
+  mv "${_rest}" "${_at}" || die "rename @.restore-${_n} -> @ failed"
+  mkdir -p "${STATE}" || die "mkdir ${STATE} failed"
+  printf '%s\n' "@.broken-${_n}" > "${STATE}/broken-subvol" \
+    || die "record broken-subvol failed (HI-09)"
+  check_fstab_subvol
+  restore_esp_live "${_n}"
+  _uuid=$(root_uuid)
+  mkdir -p "${ENTRIES}" || die "mkdir ${ENTRIES} failed"
+  write_linux_entry aios-linux.conf "AIOS (linux)" \
+    /vmlinuz-linux /initramfs-linux.img "console=tty0" "${_uuid}"
+  write_linux_entry aios-linux-lts.conf "AIOS (linux-lts)" \
+    /vmlinuz-linux-lts /initramfs-linux-lts.img "console=tty0" "${_uuid}"
+  write_linux_entry aios-linux-serial.conf "AIOS (linux, serial)" \
+    /vmlinuz-linux /initramfs-linux.img "console=tty0 console=ttyS0" "${_uuid}"
+  write_linux_entry aios-linux-lts-serial.conf "AIOS (linux-lts, serial)" \
+    /vmlinuz-linux-lts /initramfs-linux-lts.img "console=tty0 console=ttyS0" "${_uuid}"
+  rm -f "${ENTRIES}/aios-rollback.conf" "${ENTRIES}/aios-rollback-serial.conf"
+  if cmdline_serial; then
+    set_boot_default aios-linux-serial.conf
+  else
+    set_boot_default aios-linux.conf
+  fi
+  log "promoted @.restore-${_n} -> @; @.broken-${_n} recorded (L-19)"
+}
+
+prepare_restore() {
+  _n=$1
+  mount_toplevel
+  clone_restore "${_n}"
+  _ent=$(write_rollback_conf "${_n}")
+  log "wrote ${_ent}; reboot into RW @.restore-${_n} (L-19)"
+  printf 'restore @.restore-%s\nentry %s\n' "${_n}" "${_ent}"
+}
+
+cmd_rollback() {
+  [ "$#" -ge 1 ] || die "rollback requires N"
+  [ "$#" -le 2 ] || die "rollback takes N and optional promote"
+  bind_destroot
+  _n=$1
+  _mode=${2-}
+  case "${_mode}" in
+    ''|promote) ;;
+    *) die "rollback action not allowlisted: ${_mode}" ;;
+  esac
+  validate_restore_n "${_n}"
+  acquire_window
+  require_accept_stamp
+  # L-19 restore is a human TUI action; L-12 freeze is the proposer, not this path.
+  if [ "${_mode}" = promote ] || on_restore_subvol "${_n}"; then
+    promote_restore "${_n}"
+    printf 'promoted @.restore-%s -> @\nbroken @.broken-%s\n' "${_n}" "${_n}"
+    return 0
+  fi
+  prepare_restore "${_n}"
+}
+
 main() {
   [ "$#" -ge 1 ] || usage
   # Allowlist/deny before root so the oracle can argv-parse without privilege.
@@ -538,7 +904,7 @@ main() {
     -S*|pacman)
       die "partial pacman is not allowlisted (L-04); use enact syu"
       ;;
-    syu|snapper-pre|snapper-post|bootctl|unit) ;;
+    syu|snapper-pre|snapper-post|bootctl|unit|rollback) ;;
     *)
       die "not allowlisted: $1"
       ;;
@@ -547,6 +913,14 @@ main() {
   shift
   if [ "${_cmd}" = unit ]; then
     validate_unit "$@"
+  fi
+  if [ "${_cmd}" = rollback ]; then
+    # Destroot file writes (AIOS_ROOT) are host oracles; live still needs root.
+    if [ -z "${AIOS_ROOT-}" ]; then
+      require_root
+    fi
+    cmd_rollback "$@"
+    return
   fi
   require_root
   require_not_frozen

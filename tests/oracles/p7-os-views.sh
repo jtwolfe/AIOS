@@ -219,13 +219,15 @@ printf '%s\n' "${_sn}" | grep -q 'aios-gen/1' \
   || fail "snapper list missing generation: ${_sn}"
 _rb=$(drive 'view snapper' 'rollback' 'quit') || true
 printf '%s\n' "${_rb}" | grep -q 'not this PR' \
-  || fail "snapper rollback must stay unenacted: ${_rb}"
+  && fail "snapper rollback must not stay stubbed: ${_rb}" || true
 printf '%s\n' "${_rb}" | grep -q 'L-19' \
   || fail "snapper rollback must quote L-19: ${_rb}"
-if printf '%s\n' "${_rb}" | grep -Eq 'subvolume snapshot|@.restore-'
+if printf '%s\n' "${_rb}" | grep -Eq 'subvolume snapshot|btrfs '
 then
   fail "snapper rollback enacted L-19 restore: ${_rb}"
 fi
+printf '%s\n' "${_rb}" | grep -Eq 'select N|requested|rendezvous missing|refused' \
+  || fail "snapper rollback must be a keyboard path: ${_rb}"
 
 _conv=$(drive 'view conversation' 'send is the envelope a view?' 'quit') || true
 printf '%s\n' "${_conv}" | grep -q '^view: conversation$' \

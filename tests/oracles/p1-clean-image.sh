@@ -119,7 +119,7 @@ grep -q 'pacman -Qqe' "${ENACT}" \
   || fail "enact must refresh packages.txt from pacman -Qqe"
 grep -q 'boot-seatbelt.sh' "${ENACT}" \
   || fail "enact must run boot-seatbelt.sh after the window (HI-06, L-19)"
-grep -Fq 'syu|snapper-pre|snapper-post|bootctl|unit' "${ENACT}" \
+grep -Fq 'syu|snapper-pre|snapper-post|bootctl|unit|rollback' "${ENACT}" \
   || fail "enact allowlist verbs missing"
 grep -q 'ACCEPT_STAMP=/etc/aios/envelope-accepted' "${ENACT}" \
   || fail "enact must gate on root-owned accept stamp (L-20)"
@@ -330,6 +330,10 @@ fi
 
 if ! "${SCRIPT_DIR}/p7-surface-split.sh"; then
   fail "p7-surface-split"
+fi
+
+if ! "${SCRIPT_DIR}/p7-rollback.sh"; then
+  fail "p7-rollback"
 fi
 
 if ! "${SCRIPT_DIR}/p9-vm-harness.sh"; then

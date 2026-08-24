@@ -222,6 +222,12 @@ def drain_slice(budget):
     stop = time.time() + float(budget)
     while time.time() < stop:
         tick_login()
+        try:
+            from rollback_gate import tick_rollback
+
+            tick_rollback()
+        except Exception:
+            pass
         remain = stop - time.time()
         if remain <= 0:
             break
