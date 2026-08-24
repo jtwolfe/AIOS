@@ -94,9 +94,13 @@ if [ -e "${AIROOTFS}/usr/lib/systemd/system/aios-work-runtime.service" ]; then
   fail "aios-work-runtime.service must not be a system unit (L-23)"
 fi
 if [ -e "${AIROOTFS}/etc/systemd/system/aios-work-runtime-bots.service" ] \
-  || [ -e "${AIROOTFS}/usr/lib/systemd/system/aios-work-runtime-bots.service" ] \
-  || [ -e "${AIROOTFS}/usr/lib/systemd/user/aios-work-runtime-bots.service" ]; then
-  fail "aios-work-runtime-bots.service must not be added (L-23)"
+  || [ -e "${AIROOTFS}/usr/lib/systemd/system/aios-work-runtime-bots.service" ]; then
+  fail "aios-work-runtime-bots.service must not be a system unit (L-23)"
+fi
+[ -f "${AIROOTFS}/usr/lib/systemd/user/aios-work-runtime-bots.service" ] \
+  || fail "missing aios-work-runtime-bots.service user unit (L-23)"
+if [ -e "${AIROOTFS}/usr/lib/systemd/user/default.target.wants/aios-work-runtime-bots.service" ]; then
+  fail "aios-work-runtime-bots.service must not be enabled (HI-15)"
 fi
 if [ -e "${AIROOTFS}/srv/aios/src" ]; then
   fail "/srv/aios/src must not exist in airootfs (HI-15)"

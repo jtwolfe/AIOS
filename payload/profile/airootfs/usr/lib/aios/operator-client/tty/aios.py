@@ -63,12 +63,23 @@ WORK_REFUSED = (
     "refused: work (HI-15); work runtime is off until bootstrap "
     "records an explicit yes"
 )
+BOTS_REFUSED = (
+    "refused: bots (HI-15); second bit is off until the OS envelope "
+    "view records an explicit yes after work-runtime is already yes"
+)
+BOTS_REQUEST = "/run/aios/bots-request"
+ENVELOPE_BOTS = "/srv/aios/envelope/work-runtime-bots.md"
+BOTS_SRC = "/srv/aios/src/work-runtime-bots"
+_BOTS_ENABLED = re.compile(r"^\s*enabled\s*[:=]\s*(true|yes|1)\s*$")
+_BOTS_DISABLED = re.compile(r"^\s*enabled\s*[:=]\s*(false|no|0)\s*$")
 _WORK_PRIVILEGED = ("enact", "accept", "reject", "rollback")
 
 ACTIONS = {
     "chrome": ("view", "brake", "send", "mode"),
     "conversation": ("send", "attach", "view", "brake", "mode"),
-    "envelope": ("inspect", "view", "brake"),
+    "envelope": ("inspect", "view", "brake", "bots"),
+    "roster": ("open", "view", "mode"),
+    "job": ("send", "stop", "view", "mode"),
     "intents": ("open", "inspect", "view", "brake"),
     "notify": ("open", "view", "brake", "mode"),
     "snapper": ("inspect", "rollback", "view", "brake"),
@@ -305,6 +316,40 @@ def work_runtime_on():
         if isinstance(doc, dict) and doc.get("work_runtime") is True:
             return True
     return _clause_enabled(os.environ.get("AIOS_ENVELOPE_WORK"))
+
+
+def _bots_clause_path():
+    return _path("AIOS_ENVELOPE_BOTS", ENVELOPE_BOTS)
+
+
+def _bots_request_path():
+    return _path("AIOS_BOTS_REQUEST", BOTS_REQUEST)
+
+
+def _bots_src_path():
+    return os.environ.get("AIOS_BOTS_SRC") or _path("AIOS_BOTS_SRC", BOTS_SRC)
+
+
+def bots_on():
+    if not work_runtime_on():
+        return False
+    path = _bots_clause_path()
+    if not path or not os.path.isfile(path):
+        return False
+    try:
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read()
+    except OSError:
+        return False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            continue
+        if _BOTS_DISABLED.match(stripped):
+            return False
+        if _BOTS_ENABLED.match(stripped):
+            return True
+    return False
 
 
 def _load_answers_doc():
@@ -936,7 +981,14 @@ class Session:
             self.note_text = "installer view refused (not firstboot)"
             return
         if view_id in BOTS_VIEWS:
-            self.note_text = "bots view refused (HI-15)"
+            if not bots_on():
+                self.note_text = BOTS_REFUSED
+                return
+            if self.mode != "work":
+                self.note_text = "%s refused in os session (L-14)" % view_id
+                return
+            self.view = view_id
+            self.note_text = ""
             return
         if self.mode == "work":
             if view_id in self.catalog():

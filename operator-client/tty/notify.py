@@ -134,6 +134,11 @@ def conversation_line(payload):
     return " | ".join(parts)
 
 
+def render(sess, out):
+    for line in render_lines(load_payloads()):
+        sess._emit(out, line)
+
+
 def render_lines(payloads):
     lines = []
     if not payloads:

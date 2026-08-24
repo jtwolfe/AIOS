@@ -226,6 +226,7 @@ check_hashes() {
     'payload/profile/airootfs/etc/systemd/system/aios-work.slice$' \
     'aios-work-.service.d/10-floor.conf$' \
     'usr/lib/systemd/user/aios-work-runtime.service$' \
+    'usr/lib/systemd/user/aios-work-runtime-bots.service$' \
     'payload/profile/airootfs/etc/sudoers.d/aios-checker-snapper$' \
     'payload/profile/airootfs/etc/sudoers.d/aios-agent-enact$' \
     'payload/profile/airootfs/usr/lib/aios/hard-invariants.md$' \
@@ -458,6 +459,20 @@ check_firstboot_payload() {
     || die "aios-work-runtime.service must not be a system unit (L-23)"
   [[ ! -e "${iso}/usr/lib/systemd/user/default.target.wants/aios-work-runtime.service" ]] \
     || die "aios-work-runtime.service must not be enabled on the live ISO"
+  [[ -f "${iso}/usr/lib/systemd/user/aios-work-runtime-bots.service" ]] \
+    || die "missing aios-work-runtime-bots.service user unit (L-23)"
+  grep -qx 'ConditionPathExists=/srv/aios/src/work-runtime-bots/main.py' \
+    "${iso}/usr/lib/systemd/user/aios-work-runtime-bots.service" \
+    || die "bots user unit missing ConditionPathExists main.py"
+  grep -qx 'ReadWritePaths=/tmp /var/tmp /srv/aios/src/work-runtime-bots' \
+    "${iso}/usr/lib/systemd/user/aios-work-runtime-bots.service" \
+    || die "bots user unit ReadWritePaths is not the bots write set"
+  [[ ! -e "${iso}/etc/systemd/system/aios-work-runtime-bots.service" ]] \
+    || die "aios-work-runtime-bots.service must not be a system unit (L-23)"
+  [[ ! -e "${iso}/usr/lib/systemd/system/aios-work-runtime-bots.service" ]] \
+    || die "aios-work-runtime-bots.service must not be a system unit (L-23)"
+  [[ ! -e "${iso}/usr/lib/systemd/user/default.target.wants/aios-work-runtime-bots.service" ]] \
+    || die "aios-work-runtime-bots.service must not be enabled on the live ISO"
   [[ ! -e "${iso}/srv/aios/src" ]] || die "/srv/aios/src must not exist (HI-15)"
   [[ -f "${iso}/usr/lib/aios/intent/schema.json" ]] || die "missing intent schema.json"
   [[ -f "${iso}/usr/lib/aios/agent/aios_agent/intent_consume.py" ]] \

@@ -20,10 +20,17 @@ NOTIFY_DIR = "/srv/aios/state/notify"
 BRAKE_PATH = "/srv/aios/state/brake.d/stamp"
 ANSWERS_PATH = "/srv/aios/state/bootstrap-in-progress/answers.json"
 ENVELOPE_WORK = "/srv/aios/envelope/work-runtime.md"
+ENVELOPE_BOTS = "/srv/aios/envelope/work-runtime-bots.md"
 
 KNOWN_STATUS = frozenset(("idle", "paused", "waiting-accept", "verify"))
 KNOWN_GOALS = frozenset(
-    ("event-repair", "sysupgrade", "reconstruct", "work-runtime")
+    (
+        "event-repair",
+        "sysupgrade",
+        "reconstruct",
+        "work-runtime",
+        "work-runtime-bots",
+    )
 )
 EVENT_KINDS = frozenset(
     (
@@ -34,6 +41,7 @@ EVENT_KINDS = frozenset(
         "infra",
         "gap",
         "work-runtime",
+        "work-runtime-bots",
     )
 )
 
@@ -71,6 +79,13 @@ _KIND_ORACLES = {
         "policy/hi-17-seeds-local.sh",
         "policy/work-runtime-git.sh",
         "policy/work-runtime-store.sh",
+        "policy/hi-15-work-default-off.sh",
+        "policy/hi-13-work-slice.sh",
+        "policy/hi-16-os-privilege.sh",
+    ),
+    "work-runtime-bots": (
+        "policy/hi-17-seeds-local.sh",
+        "policy/work-runtime-bots-git.sh",
         "policy/hi-15-work-default-off.sh",
         "policy/hi-13-work-slice.sh",
         "policy/hi-16-os-privilege.sh",
@@ -160,13 +175,19 @@ def _envelope_work(path=None):
     return path or os.environ.get("AIOS_ENVELOPE_WORK") or ENVELOPE_WORK
 
 
+def _envelope_bots(path=None):
+    return path or os.environ.get("AIOS_ENVELOPE_BOTS") or ENVELOPE_BOTS
+
+
 def _work_src_path():
     return os.environ.get("AIOS_WORK_SRC") or "/srv/aios/src/work-runtime"
 
 
-def _live_work_git():
-    # AIOS_WORK_SRC so host ticks never probe live /srv.
-    path = _work_src_path()
+def _bots_src_path():
+    return os.environ.get("AIOS_BOTS_SRC") or "/srv/aios/src/work-runtime-bots"
+
+
+def _live_git(path):
     try:
         proc = subprocess.run(
             [
@@ -187,6 +208,15 @@ def _live_work_git():
     return proc.returncode == 0 and proc.stdout.strip() == "true"
 
 
+def _live_work_git():
+    # AIOS_WORK_SRC so host ticks never probe live /srv.
+    return _live_git(_work_src_path())
+
+
+def _live_bots_git():
+    return _live_git(_bots_src_path())
+
+
 def _is_work_runtime_plan(proposal):
     if not isinstance(proposal, dict):
         return False
@@ -196,7 +226,21 @@ def _is_work_runtime_plan(proposal):
     intent = proposal.get("intent")
     if isinstance(intent, dict):
         asked = intent.get("asked") or ""
-        if "synthesise work-runtime" in str(asked):
+        if "synthesise work-runtime" in str(asked) and "bots" not in str(asked):
+            return True
+    return False
+
+
+def _is_bots_plan(proposal):
+    if not isinstance(proposal, dict):
+        return False
+    oracles = proposal.get("oracles") or []
+    if "policy/work-runtime-bots-git.sh" in oracles:
+        return True
+    intent = proposal.get("intent")
+    if isinstance(intent, dict):
+        asked = intent.get("asked") or ""
+        if "synthesise work-runtime-bots" in str(asked):
             return True
     return False
 
@@ -355,6 +399,28 @@ def work_runtime_yes(answers=None, clause=None):
             doc = None
         if isinstance(doc, dict) and doc.get("accepted") is True:
             if doc.get("work_runtime") is True:
+                return True
+    return False
+
+
+def bots_yes(answers=None, clause=None, work_clause=None):
+    """Second bit. Default off. answers.json bots is never a yes (P8.13)."""
+    if not work_runtime_yes(answers=answers, clause=work_clause):
+        return False
+    clause = _envelope_bots(clause)
+    if os.path.isfile(clause):
+        try:
+            with open(clause, "r", encoding="utf-8") as fh:
+                text = fh.read()
+        except OSError:
+            text = ""
+        for line in text.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("#"):
+                continue
+            if _DISABLED_LINE.match(stripped):
+                return False
+            if _ENABLED_LINE.match(stripped):
                 return True
     return False
 
@@ -594,6 +660,8 @@ def _asked_for(event):
         return "bounded sysupgrade window; linux-lts remains bootable"
     if kind == "work-runtime":
         return "synthesise work-runtime from local seeds (HI-17)"
+    if kind == "work-runtime-bots":
+        return "synthesise work-runtime-bots from local seeds (HI-17)"
     return "machine-goal %s" % kind
 
 
@@ -809,34 +877,59 @@ def _tick(
     normalized = normalized[:MAX_EVENTS]
 
     for event in normalized:
-        if event.get("kind") != "work-runtime":
-            continue
-        if not work_runtime_yes():
-            # Skip is not a yes and not a SAME_GAP poison (HI-15).
-            reason = "work runtime stays off until an explicit yes (HI-15)"
-            state["status"] = "idle"
-            state["proposal"] = None
-            state["last_gap"] = None
-            state["gap_count"] = 0
-            state["handoff"] = None
-            state["reason"] = reason
-            state["hi"] = "HI-15"
-            save_state(state, path)
-            return _run_from_state(
-                state, False, reason, "HI-15", memory_root=memory_root
-            )
-        if _live_work_git():
-            if (
-                state.get("status") in ("waiting-accept", "verify")
-                and state.get("proposal")
-                and not _is_work_runtime_plan(state.get("proposal"))
+        if event.get("kind") == "work-runtime":
+            if not work_runtime_yes():
+                # Skip is not a yes and not a SAME_GAP poison (HI-15).
+                reason = "work runtime stays off until an explicit yes (HI-15)"
+                state["status"] = "idle"
+                state["proposal"] = None
+                state["last_gap"] = None
+                state["gap_count"] = 0
+                state["handoff"] = None
+                state["reason"] = reason
+                state["hi"] = "HI-15"
+                save_state(state, path)
+                return _run_from_state(
+                    state, False, reason, "HI-15", memory_root=memory_root
+                )
+            if _live_work_git():
+                if (
+                    state.get("status") in ("waiting-accept", "verify")
+                    and state.get("proposal")
+                    and not _is_work_runtime_plan(state.get("proposal"))
+                ):
+                    return _resume_plan(state, path, memory_root)
+                return _idle_synthesis_done(state, path, memory_root)
+            if state.get("status") in ("waiting-accept", "verify") and _is_work_runtime_plan(
+                state.get("proposal")
             ):
                 return _resume_plan(state, path, memory_root)
-            return _idle_synthesis_done(state, path, memory_root)
-        if state.get("status") in ("waiting-accept", "verify") and _is_work_runtime_plan(
-            state.get("proposal")
-        ):
-            return _resume_plan(state, path, memory_root)
+        if event.get("kind") == "work-runtime-bots":
+            if not bots_yes():
+                reason = "bots stay off until an explicit yes (HI-15)"
+                state["status"] = "idle"
+                state["proposal"] = None
+                state["last_gap"] = None
+                state["gap_count"] = 0
+                state["handoff"] = None
+                state["reason"] = reason
+                state["hi"] = "HI-15"
+                save_state(state, path)
+                return _run_from_state(
+                    state, False, reason, "HI-15", memory_root=memory_root
+                )
+            if _live_bots_git():
+                if (
+                    state.get("status") in ("waiting-accept", "verify")
+                    and state.get("proposal")
+                    and not _is_bots_plan(state.get("proposal"))
+                ):
+                    return _resume_plan(state, path, memory_root)
+                return _idle_synthesis_done(state, path, memory_root)
+            if state.get("status") in ("waiting-accept", "verify") and _is_bots_plan(
+                state.get("proposal")
+            ):
+                return _resume_plan(state, path, memory_root)
 
     for event in normalized:
         if _is_infra(event):
@@ -880,9 +973,14 @@ def _tick(
     if "work-runtime" in declared and not work_runtime_yes():
         declared = [name for name in declared if name != "work-runtime"]
         state["declared"] = declared
+    if "work-runtime-bots" in declared and not bots_yes():
+        declared = [name for name in declared if name != "work-runtime-bots"]
+        state["declared"] = declared
 
     if not normalized:
         if _live_work_git() and _is_work_runtime_plan(state.get("proposal")):
+            return _idle_synthesis_done(state, path, memory_root)
+        if _live_bots_git() and _is_bots_plan(state.get("proposal")):
             return _idle_synthesis_done(state, path, memory_root)
         if state.get("status") in ("waiting-accept", "verify") and state.get(
             "proposal"
@@ -891,6 +989,11 @@ def _tick(
             return _resume_plan(state, path, memory_root)
         if work_runtime_yes() and not _live_work_git():
             event = {"kind": "work-runtime"}
+            return _plan_event(
+                event, state, path, notify_dir, memory_root
+            )
+        if bots_yes() and not _live_bots_git():
+            event = {"kind": "work-runtime-bots"}
             return _plan_event(
                 event, state, path, notify_dir, memory_root
             )
@@ -924,6 +1027,7 @@ def _tick(
         "packages-drift",
         "sysupgrade",
         "work-runtime",
+        "work-runtime-bots",
     ):
         return _plan_event(event, state, path, notify_dir, memory_root)
 
@@ -981,6 +1085,7 @@ def _plan_event(event, state, path, notify_dir, memory_root):
         "sysupgrade": "L-19",
         "hi-failed": "HI-09",
         "work-runtime": "HI-17",
+        "work-runtime-bots": "HI-17",
     }.get(event.get("kind"), "L-21")
     asked = _asked_for(event)
     plan = _proposal(event, oracles, asked, clause)

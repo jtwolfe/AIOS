@@ -51,3 +51,41 @@ work_runtime_inert_git() {
   _wr_inside=$(git -c safe.directory="${_wr_tree}" -C "${_wr_tree}" rev-parse --is-inside-work-tree)
   [ "${_wr_inside}" = true ]
 }
+
+# bots_compute_yes PREFIX
+# Envelope clause only. answers.json bots is never a yes. Sets BOTS_YES=0|1.
+bots_compute_yes() {
+  _bt_pfx=${1-}
+  BOTS_YES=0
+  _bt_clause=$(printf '%s%s' "${_bt_pfx}" /srv/aios/envelope/work-runtime-bots.md)
+  if [ -f "${_bt_clause}" ]; then
+    while IFS= read -r _bt_line || [ -n "${_bt_line}" ]; do
+      _bt_lead=${_bt_line%%[![:space:]]*}
+      _bt_s=${_bt_line#"${_bt_lead}"}
+      case "${_bt_s}" in
+        \#*) continue ;;
+      esac
+      if printf '%s\n' "${_bt_s}" \
+        | grep -Eq '^[[:space:]]*enabled[[:space:]]*[:=][[:space:]]*(false|no|0)[[:space:]]*$'; then
+        BOTS_YES=0
+        break
+      fi
+      if printf '%s\n' "${_bt_s}" \
+        | grep -Eq '^[[:space:]]*enabled[[:space:]]*[:=][[:space:]]*(true|yes|1)[[:space:]]*$'; then
+        BOTS_YES=1
+        break
+      fi
+    done < "${_bt_clause}"
+  fi
+}
+
+# 0 if bots tree is absent or a git worktree (inert after disable).
+bots_inert_git() {
+  _bt_pfx=${1-}
+  _bt_tree=$(printf '%s%s' "${_bt_pfx}" /srv/aios/src/work-runtime-bots)
+  [ -e "${_bt_tree}" ] || return 0
+  git -c safe.directory="${_bt_tree}" -C "${_bt_tree}" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+    || return 1
+  _bt_inside=$(git -c safe.directory="${_bt_tree}" -C "${_bt_tree}" rev-parse --is-inside-work-tree)
+  [ "${_bt_inside}" = true ]
+}

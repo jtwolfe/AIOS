@@ -208,7 +208,7 @@ must-close, then lock it in `docs/implementation.md` before code.
 | How summon names the surface (`aios` vs `aios work`) | P7 |
 | **System unit vs user unit for work runtime — pick one** | **Before any P8 unit** |
 | L-15 write set vs `~/src` — `/srv/aios/src/work-runtime` plus tmp; `~/src` is the bridge | **P8.2 locked** |
-| How bots is asked (OS surface, after work-runtime already yes) | P8.13 |
+| How bots is asked (OS envelope view action after work-runtime already yes; never a third bootstrap question) | **P8.13 locked** |
 | LUKS / Secure Boot: asked or listed as hole | P10 |
 | Version scheme; where the public key lives out of band | P11 |
 

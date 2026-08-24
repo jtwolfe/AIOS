@@ -45,20 +45,25 @@ if [ -z "${_root}" ]; then
 fi
 
 # When the user unit exists, denial flags must be on the unit, not hoped for.
-U=$(p /usr/lib/systemd/user/aios-work-runtime.service)
-if [ -f "${U}" ]; then
-  grep -q '^NoNewPrivileges=yes$' "${U}" \
-    || fail "work-runtime user unit missing NoNewPrivileges=yes"
-  grep -q '^ProtectSystem=strict$' "${U}" \
-    || fail "work-runtime user unit missing ProtectSystem=strict"
-  grep -q 'InaccessiblePaths=.*enact' "${U}" \
-    || fail "work-runtime user unit does not hide enact"
-  grep -q 'InaccessiblePaths=.*envelope' "${U}" \
-    || fail "work-runtime user unit does not hide envelope"
+check_user_unit() {
+  _u=$1
+  _label=$2
+  [ -f "${_u}" ] || return 0
+  grep -q '^NoNewPrivileges=yes$' "${_u}" \
+    || fail "${_label} user unit missing NoNewPrivileges=yes"
+  grep -q '^ProtectSystem=strict$' "${_u}" \
+    || fail "${_label} user unit missing ProtectSystem=strict"
+  grep -q 'InaccessiblePaths=.*enact' "${_u}" \
+    || fail "${_label} user unit does not hide enact"
+  grep -q 'InaccessiblePaths=.*envelope' "${_u}" \
+    || fail "${_label} user unit does not hide envelope"
   # L-16: the live OS token lives under /srv/aios/state.
-  grep -q 'InaccessiblePaths=.*state' "${U}" \
-    || fail "work-runtime user unit does not hide state"
-fi
+  grep -q 'InaccessiblePaths=.*state' "${_u}" \
+    || fail "${_label} user unit does not hide state"
+}
+
+check_user_unit "$(p /usr/lib/systemd/user/aios-work-runtime.service)" work-runtime
+check_user_unit "$(p /usr/lib/systemd/user/aios-work-runtime-bots.service)" bots
 
 _slice=$(p /etc/systemd/system/aios-work.slice)
 _floor=$(p /usr/lib/systemd/system/aios-work-.service.d/10-floor.conf)

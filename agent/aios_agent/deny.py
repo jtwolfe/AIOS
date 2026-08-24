@@ -102,9 +102,13 @@ def check(kind, *args):
         check_unit(args[0], args[1])
         return
     if kind in ("synthesise", "synthesize"):
-        from goals import work_runtime_yes
+        from goals import bots_yes, work_runtime_yes
 
         target = args[0] if args else "work-runtime"
+        if target == "work-runtime-bots":
+            if not bots_yes():
+                raise Denied("bots stay off until an explicit yes (HI-15)")
+            return
         if target != "work-runtime":
             raise Denied("not allowlisted: synthesise %s (HI-15)" % target)
         if not work_runtime_yes():

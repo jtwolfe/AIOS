@@ -28,6 +28,12 @@ else
     || fail "work-runtime tree is not git (HI-09)"
 fi
 
+_bots=$(p /srv/aios/src/work-runtime-bots)
+if [ -e "${_bots}" ]; then
+  git -c safe.directory="${_bots}" -C "${_bots}" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+    || fail "work-runtime-bots tree is not git (HI-09)"
+fi
+
 if [ -n "${_root}" ]; then
   exit 0
 fi

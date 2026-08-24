@@ -92,9 +92,13 @@ def _conflict_hi(text):
         if pattern.search(text):
             if hi == "HI-15":
                 # Envelope yes makes this the machine goal, not a conflict.
-                from goals import work_runtime_yes
+                from goals import bots_yes, work_runtime_yes
 
-                if work_runtime_yes():
+                lowered = text.lower()
+                if "bots" in lowered:
+                    if bots_yes():
+                        continue
+                elif work_runtime_yes():
                     continue
             return hi
     return None

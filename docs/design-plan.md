@@ -119,7 +119,7 @@ Canonical table remains [docs/implementation.md](implementation.md) “Locked de
 | When a pattern earns a `SKILL.md` | **P4.3 locked:** two successful verbatim moments of the class, or the human asks. |
 | Operator username: asked vs derived | P5 |
 | How summon names the surface | P7 |
-| How bots is asked | P8.13 |
+| How bots is asked | **P8.13 locked:** OS envelope view action after work-runtime already yes |
 | LUKS / Secure Boot | P10 |
 | How the checker marks hardware-specific commits inapplicable | P10.2 |
 | Version scheme; where the public key lives out of band | P11 |
@@ -1173,7 +1173,7 @@ Brake freezes `enact`. Snapper view rollback is the L-19 path. Do not require li
 | --- | --- |
 | Write set (L-15) | **Locked (P8.2):** `/srv/aios/src/work-runtime` plus `/tmp` and `/var/tmp`. Slice and user-unit `ReadWritePaths` match. Operator home including `~/src` is the approval-gated bridge (P8.9). Do not put `/home` in `ReadWritePaths`. |
 | System unit vs user unit | **Locked (L-23, human 2026-08-23): user unit.** Rationale: work runtime is the multi-agent environment for user tasks *outside* OS configure/manage (HI-15, L-14). OS agent / checker / installer stay system units. Do **not** ship both. Unit file: `/usr/lib/systemd/user/aios-work-runtime.service` (bots: `aios-work-runtime-bots.service`). System-managed; PR 32 installs the vendor **file** (may exist when the bit is no). Enable only at synthesis (P8.1) when the envelope bit is yes: `systemctl --user -M aios-work@`. Linger `aios-work` (`/var/lib/systemd/linger/aios-work` via tmpfiles, not a live homedir). Not `~/.config/systemd/user/` as the only copy (HI-09). Disabled oracles: `is-enabled`/`is-active` false, no linger-started service, work tree inert — not `test ! -f` on the user-unit path. Never `/etc/systemd/system/aios-work-runtime.service`. |
-| How bots is asked | On the OS definition surface, **after** work-runtime is already yes. Never as a third bootstrap question. Options: [Open Questions](#open-questions). |
+| How bots is asked | **Resolved (P8.13):** OS envelope view action after work-runtime is already yes. Never a third bootstrap question. Default off. `answers.json` `bots` is never a yes. `vm-bots-off` / `p8-bots-off.sh` must pass when only work-runtime is yes. |
 
 This phase does **not** specify additional Python files. It specifies questions and oracles. Named synthesis targets: `/srv/aios/src/work-runtime` (P8.1, only if work-runtime bit). `/srv/aios/src/work-runtime-bots` (P8.13, **only** if the second bit is on; HI-15-class). Language lock L-01 holds.
 
@@ -1917,9 +1917,9 @@ Procedure: download once, `sha256sum`, record URL + hash in `payload/build.sh` a
 
 **Lock:** Write set is only `/srv/aios/src/work-runtime` plus `/tmp` and `/var/tmp`. Operator home including `~/src` is the approval-gated bridge (P8.9). Do not put `/home` in `ReadWritePaths`. Do not claim `~/src` as the workspace. Slice drop-in and user-unit `ReadWritePaths` are the same single line.
 
-### How bots is asked — P8.13
+### How bots is asked — P8.13 — **Resolved**
 
-**Options:** OS envelope view action after work-runtime already yes; a later OS conversation turn compiled into a clause. Never a third bootstrap question. Default off. `vm-bots-off` must pass when only work-runtime is yes.
+**Lock:** OS envelope view action (`bots yes`) after work-runtime is already yes. Never a third bootstrap question. Default off. `answers.json` `bots` is never a yes (bootstrap cannot enable the second bit). Live tree `/srv/aios/src/work-runtime-bots` only if the second bit is on. `vm-bots-off` / `tests/oracles/p8-bots-off.sh` must pass when only work-runtime is yes. Jobs are path + slice + skill + state, not selves.
 
 ### LUKS / Secure Boot — P10
 

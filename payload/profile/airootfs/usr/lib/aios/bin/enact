@@ -144,6 +144,8 @@ restore_owners() {
     if [ -n "${_eown}" ]; then
       [ ! -f "${ENVELOPE}/work-runtime.md" ] \
         || chown "${_eown}" "${ENVELOPE}/work-runtime.md" 2>/dev/null || true
+      [ ! -f "${ENVELOPE}/work-runtime-bots.md" ] \
+        || chown "${_eown}" "${ENVELOPE}/work-runtime-bots.md" 2>/dev/null || true
       [ ! -e "${ENVELOPE}/.git" ] \
         || chown -R "${_eown}" "${ENVELOPE}/.git" 2>/dev/null || true
     fi
@@ -565,6 +567,12 @@ work_runtime_yes() {
   [ "${WORK_RUNTIME_YES}" -eq 1 ]
 }
 
+bots_yes() {
+  work_runtime_yes || return 1
+  bots_compute_yes "${DESTROOT}"
+  [ "${BOTS_YES}" -eq 1 ]
+}
+
 git_envelope() {
   git --git-dir="${ENVELOPE_BARE}" --work-tree="${ENVELOPE}" \
     -c safe.directory="${ENVELOPE_BARE}" \
@@ -676,6 +684,10 @@ enabled: false (HI-15).") \
     id -u aios-agent >/dev/null 2>&1 || die "aios-agent missing (L-03)"
     chown aios-agent:aios-agent "${ENVELOPE}/work-runtime.md" \
       || die "chown work-runtime.md failed (L-03)"
+    if [ -f "${ENVELOPE}/work-runtime-bots.md" ]; then
+      chown aios-agent:aios-agent "${ENVELOPE}/work-runtime-bots.md" \
+        || die "chown work-runtime-bots.md failed (L-03)"
+    fi
     if [ -e "${ENVELOPE}/.git" ]; then
       chown -R aios-agent:aios-agent "${ENVELOPE}/.git" \
         || die "chown envelope .git failed (L-03)"
@@ -795,6 +807,70 @@ Copied from /srv/aios/seeds/work-runtime (HI-17). No remote." \
     || die "${_dest} is not a git repository after synthesise"
 }
 
+materialise_bots_tree() {
+  _seed="${DESTROOT}/srv/aios/seeds/work-runtime-bots"
+  _dest="${DESTROOT}/srv/aios/src/work-runtime-bots"
+  [ -d "${_seed}" ] || die "seeds/work-runtime-bots missing (HI-17)"
+  [ -f "${_seed}/AGENTS.md" ] || die "seeds/work-runtime-bots/AGENTS.md missing (HI-17)"
+  if [ -d "${_dest}/.git" ]; then
+    git -c safe.directory="${_dest}" -C "${_dest}" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+      || die "${_dest} is not a git repository"
+    return 0
+  fi
+  [ ! -e "${_dest}" ] || die "${_dest} exists but is not a git repository"
+  mkdir -p "${DESTROOT}/srv/aios/src" || die "mkdir ${DESTROOT}/srv/aios/src failed"
+  mkdir -p "${_dest}" || die "mkdir ${_dest} failed"
+  cp -a "${_seed}/." "${_dest}/" || die "copy seed to ${_dest} failed"
+  rm -rf "${_dest}/.git"
+  clear_git_env
+  git -c safe.directory="${_dest}" -C "${_dest}" init -b main \
+    || die "git init ${_dest} failed"
+  git -c safe.directory="${_dest}" \
+    -c user.name=aios-work \
+    -c user.email=aios-work@localhost \
+    -C "${_dest}" add -A \
+    || die "git add ${_dest} failed"
+  git -c safe.directory="${_dest}" \
+    -c user.name=aios-work \
+    -c user.email=aios-work@localhost \
+    -C "${_dest}" commit -m "feat(work-runtime-bots): synthesise from local seed
+
+Copied from /srv/aios/seeds/work-runtime-bots (HI-17). No remote." \
+    || die "git commit ${_dest} failed"
+  _origin=$(git -c safe.directory="${_dest}" -C "${_dest}" remote get-url origin 2>/dev/null || true)
+  case "${_origin}" in
+    *github*|*http://*|*https://*)
+      die "work-runtime-bots origin is ${_origin}, not local (HI-17)"
+      ;;
+  esac
+  if [ -z "${DESTROOT}" ]; then
+    id -u aios-work >/dev/null 2>&1 || die "aios-work missing (L-02)"
+    chown -R aios-work:aios-work "${_dest}" \
+      || die "chown ${_dest} failed"
+  fi
+  git -c safe.directory="${_dest}" -C "${_dest}" rev-parse --is-inside-work-tree >/dev/null \
+    || die "${_dest} is not a git repository after synthesise"
+}
+
+enable_bots_user_unit() {
+  _unit=aios-work-runtime-bots.service
+  _tree="${DESTROOT}/srv/aios/src/work-runtime-bots"
+  if [ -n "${DESTROOT}" ]; then
+    _wants="${DESTROOT}/etc/systemd/user/default.target.wants"
+    mkdir -p "${_wants}" || die "mkdir ${_wants} failed"
+    ln -sfn /usr/lib/systemd/user/aios-work-runtime-bots.service \
+      "${_wants}/${_unit}" \
+      || die "wants symlink ${_unit} failed"
+    return 0
+  fi
+  /usr/bin/systemctl --user -M aios-work@ enable "${_unit}" \
+    || die "systemctl --user -M aios-work@ enable ${_unit} failed"
+  if [ -d "${_tree}" ] && [ -f "${_tree}/main.py" ]; then
+    /usr/bin/systemctl --user -M aios-work@ start "${_unit}" \
+      || die "systemctl --user -M aios-work@ start ${_unit} failed"
+  fi
+}
+
 enable_work_user_unit() {
   _unit=aios-work-runtime.service
   _tree="${DESTROOT}/srv/aios/src/work-runtime"
@@ -845,28 +921,53 @@ cmd_disable() {
 }
 
 cmd_synthesise() {
-  [ "$#" -le 1 ] || die "synthesise takes optional work-runtime only"
+  [ "$#" -le 1 ] || die "synthesise takes optional work-runtime or work-runtime-bots"
   _target=${1:-work-runtime}
-  [ "${_target}" = work-runtime ] \
-    || die "not allowlisted: synthesise ${_target} (HI-15)"
-  work_runtime_yes \
-    || die "work runtime stays off until an explicit yes (HI-15)"
-  if [ -n "${DESTROOT}" ]; then
-    materialise_work_tree
-    enable_work_user_unit
-    printf 'synthesised %s\n' "${DESTROOT}/srv/aios/src/work-runtime"
-    return 0
-  fi
-  acquire_window
-  require_esp
-  require_kernels
-  _pre=$(create_pre "work-runtime")
-  materialise_work_tree
-  enable_work_user_unit
-  _post=$(create_post "${_pre}" "work-runtime")
-  finish_window "${_pre}" "${_post}" "work-runtime"
-  printf 'synthesised /srv/aios/src/work-runtime\npre %s\npost %s\n' \
-    "${_pre}" "${_post}"
+  case "${_target}" in
+    work-runtime)
+      work_runtime_yes \
+        || die "work runtime stays off until an explicit yes (HI-15)"
+      if [ -n "${DESTROOT}" ]; then
+        materialise_work_tree
+        enable_work_user_unit
+        printf 'synthesised %s\n' "${DESTROOT}/srv/aios/src/work-runtime"
+        return 0
+      fi
+      acquire_window
+      require_esp
+      require_kernels
+      _pre=$(create_pre "work-runtime")
+      materialise_work_tree
+      enable_work_user_unit
+      _post=$(create_post "${_pre}" "work-runtime")
+      finish_window "${_pre}" "${_post}" "work-runtime"
+      printf 'synthesised /srv/aios/src/work-runtime\npre %s\npost %s\n' \
+        "${_pre}" "${_post}"
+      ;;
+    work-runtime-bots)
+      bots_yes \
+        || die "bots stay off until an explicit yes (HI-15)"
+      if [ -n "${DESTROOT}" ]; then
+        materialise_bots_tree
+        enable_bots_user_unit
+        printf 'synthesised %s\n' "${DESTROOT}/srv/aios/src/work-runtime-bots"
+        return 0
+      fi
+      acquire_window
+      require_esp
+      require_kernels
+      _pre=$(create_pre "work-runtime-bots")
+      materialise_bots_tree
+      enable_bots_user_unit
+      _post=$(create_post "${_pre}" "work-runtime-bots")
+      finish_window "${_pre}" "${_post}" "work-runtime-bots"
+      printf 'synthesised /srv/aios/src/work-runtime-bots\npre %s\npost %s\n' \
+        "${_pre}" "${_post}"
+      ;;
+    *)
+      die "not allowlisted: synthesise ${_target} (HI-15)"
+      ;;
+  esac
 }
 
 # AIOS_ROOT destroot: host oracles write files without mutating workstation btrfs (P7.7).
@@ -1257,10 +1358,19 @@ main() {
     # Bit check before root so host oracles see HI-15 without privilege.
     bind_destroot
     _syn_target=${1:-work-runtime}
-    [ "${_syn_target}" = work-runtime ] \
-      || die "not allowlisted: synthesise ${_syn_target} (HI-15)"
-    work_runtime_yes \
-      || die "work runtime stays off until an explicit yes (HI-15)"
+    case "${_syn_target}" in
+      work-runtime)
+        work_runtime_yes \
+          || die "work runtime stays off until an explicit yes (HI-15)"
+        ;;
+      work-runtime-bots)
+        bots_yes \
+          || die "bots stay off until an explicit yes (HI-15)"
+        ;;
+      *)
+        die "not allowlisted: synthesise ${_syn_target} (HI-15)"
+        ;;
+    esac
     if [ -z "${AIOS_ROOT-}" ]; then
       require_root
     fi

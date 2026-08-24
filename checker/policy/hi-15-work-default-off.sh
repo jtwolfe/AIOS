@@ -43,6 +43,8 @@ user_on() {
 if [ "${YES}" -eq 0 ]; then
   work_runtime_inert_git "${_root}" \
     || fail "/srv/aios/src exists while work-runtime is not an explicit yes"
+  bots_inert_git "${_root}" \
+    || fail "/srv/aios/src/work-runtime-bots exists while bots is not an explicit yes"
   [ ! -e "$(p /etc/systemd/user/default.target.wants/aios-work-runtime.service)" ] \
     || fail "aios-work-runtime.service enabled without an explicit yes"
   [ ! -e "$(p /etc/systemd/user/default.target.wants/aios-work-runtime-bots.service)" ] \
@@ -57,6 +59,9 @@ if [ "${YES}" -eq 0 ]; then
     if [ -e /var/lib/systemd/linger/aios-work ]; then
       if user_on aios-work-runtime.service; then
         fail "linger started work-runtime while the bit is off"
+      fi
+      if user_on aios-work-runtime-bots.service; then
+        fail "linger started bots while the bit is off"
       fi
     fi
   fi

@@ -247,6 +247,7 @@ under `/srv/aios/git/`. Seeds stay at `/srv/aios/seeds/`.
 | `/srv/aios/state/provider/os.token` | Live OS Grok token (L-16, P4.2). Mode `0600`, uid `aios-agent`. Not in git. Not `/home`. Not `/etc/aios` (etckeeper). Work token is a different file. |
 | `/srv/aios/seeds/` | Payload-materialised seed git objects (HI-17). |
 | `/srv/aios/src/work-runtime/` | Optional synthesis target. |
+| `/srv/aios/src/work-runtime-bots/` | Optional bots tree. Only if the second envelope bit is on. |
 | `/srv/aios/git/*.git` | Bare privileged repos, checker-owned. |
 
 ### sysusers
@@ -298,6 +299,33 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 ReadWritePaths=/tmp /var/tmp /srv/aios/src/work-runtime
 InaccessiblePaths=/srv/aios/envelope /srv/aios/state /srv/aios/agent /srv/aios/checker /srv/aios/git /etc/systemd/system /usr/lib/aios/bin/enact
 ExecStart=/usr/bin/python3 /srv/aios/src/work-runtime/main.py
+[Install]
+WantedBy=default.target
+```
+
+Bots user unit (P8.13, L-23). Same hardening. Enable only when the
+second bit is on: `systemctl --user -M aios-work@`. Vendor **file** may
+exist when the bit is off. Never a system unit.
+
+```
+# /usr/lib/systemd/user/aios-work-runtime-bots.service
+[Unit]
+Description=AIOS unprivileged work-runtime bots
+ConditionPathIsDirectory=/srv/aios/src/work-runtime-bots
+ConditionPathExists=/srv/aios/src/work-runtime-bots/main.py
+[Service]
+MemoryMax=2G
+CPUQuota=200%
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/tmp /var/tmp /srv/aios/src/work-runtime-bots
+InaccessiblePaths=/srv/aios/envelope /srv/aios/state /srv/aios/agent /srv/aios/checker /srv/aios/git /etc/systemd/system /usr/lib/aios/bin/enact
+ExecStart=/usr/bin/python3 /srv/aios/src/work-runtime-bots/main.py
 [Install]
 WantedBy=default.target
 ```
@@ -1049,8 +1077,12 @@ oracle. Copying markdown is not done. A vague “agents work” is not done.
   is no; disabled oracles are `is-enabled`/`is-active` false, no
   linger-started service, work tree inert (HI-15) — not `test ! -f` on
   the user-unit path. `test ! -f /etc/systemd/system/aios-work-runtime.service`.
-- How bots is asked: on the OS definition surface, after work-runtime
-  is already yes. Never as a third bootstrap question.
+- How bots is asked: **Resolved (P8.13).** OS envelope view action
+  (`bots yes`) after work-runtime is already yes. Never a third
+  bootstrap question. Default off. `answers.json` `bots` is never a
+  yes. Live tree `/srv/aios/src/work-runtime-bots` only if the second
+  bit is on. `vm-bots-off` / `tests/oracles/p8-bots-off.sh` stay green
+  when only work-runtime is yes.
 
 This phase does **not** specify Python files. It specifies questions
 and oracles. An implementation that cannot fail an oracle below is

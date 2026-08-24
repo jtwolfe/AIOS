@@ -1,0 +1,23 @@
+# /usr/lib/systemd/user/aios-work-runtime-bots.service
+[Unit]
+Description=AIOS unprivileged work-runtime bots
+# Skip start when the tree or entrypoint is absent; inactive, not failed.
+ConditionPathIsDirectory=/srv/aios/src/work-runtime-bots
+ConditionPathExists=/srv/aios/src/work-runtime-bots/main.py
+
+[Service]
+MemoryMax=2G
+CPUQuota=200%
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/tmp /var/tmp /srv/aios/src/work-runtime-bots
+InaccessiblePaths=/srv/aios/envelope /srv/aios/state /srv/aios/agent /srv/aios/checker /srv/aios/git /etc/systemd/system /usr/lib/aios/bin/enact
+ExecStart=/usr/bin/python3 /srv/aios/src/work-runtime-bots/main.py
+
+[Install]
+WantedBy=default.target

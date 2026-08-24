@@ -45,6 +45,10 @@ LIVE_USER_UNIT_BEFORE=0
 if [ -e /usr/lib/systemd/user/aios-work-runtime.service ]; then
   LIVE_USER_UNIT_BEFORE=1
 fi
+LIVE_BOTS_UNIT_BEFORE=0
+if [ -e /usr/lib/systemd/user/aios-work-runtime-bots.service ]; then
+  LIVE_BOTS_UNIT_BEFORE=1
+fi
 LIVE_SYS_UNIT_BEFORE=0
 if [ -e /etc/systemd/system/aios-work-runtime.service ]; then
   LIVE_SYS_UNIT_BEFORE=1
@@ -76,11 +80,35 @@ fi
 if [ -e "${AIROOTFS}/usr/lib/systemd/system/aios-work-runtime.service" ]; then
   fail "aios-work-runtime.service must not be a system unit (L-23)"
 fi
-if [ -e "${AIROOTFS}/etc/systemd/system/aios-work-runtime-bots.service" ] \
-  || [ -e "${AIROOTFS}/usr/lib/systemd/system/aios-work-runtime-bots.service" ] \
-  || [ -e "${AIROOTFS}/usr/lib/systemd/user/aios-work-runtime-bots.service" ]; then
-  fail "aios-work-runtime-bots.service must not be added (L-23)"
+BOTS_UNIT="${AIROOTFS}/usr/lib/systemd/user/aios-work-runtime-bots.service"
+BOTS_RW='ReadWritePaths=/tmp /var/tmp /srv/aios/src/work-runtime-bots'
+[ -f "${BOTS_UNIT}" ] || fail "missing aios-work-runtime-bots.service user unit (L-23)"
+if [ -e "${AIROOTFS}/etc/systemd/system/aios-work-runtime-bots.service" ]; then
+  fail "aios-work-runtime-bots.service must not be a system unit (L-23)"
 fi
+if [ -e "${AIROOTFS}/usr/lib/systemd/system/aios-work-runtime-bots.service" ]; then
+  fail "aios-work-runtime-bots.service must not be a system unit (L-23)"
+fi
+if [ -e "${AIROOTFS}/usr/lib/systemd/user/default.target.wants/aios-work-runtime-bots.service" ] \
+  || [ -e "${AIROOTFS}/etc/systemd/user/default.target.wants/aios-work-runtime-bots.service" ] \
+  || [ -e "${AIROOTFS}/etc/systemd/system/default.target.wants/aios-work-runtime-bots.service" ]; then
+  fail "aios-work-runtime-bots.service must not be enabled (HI-15)"
+fi
+grep -qx 'NoNewPrivileges=yes' "${BOTS_UNIT}" \
+  || fail "bots user unit missing NoNewPrivileges=yes"
+grep -qx 'ProtectSystem=strict' "${BOTS_UNIT}" \
+  || fail "bots user unit missing ProtectSystem=strict"
+grep -qx "${BOTS_RW}" "${BOTS_UNIT}" \
+  || fail "bots user unit ReadWritePaths is not the bots write set"
+_rw_b=$(grep -c '^ReadWritePaths=' "${BOTS_UNIT}" || true)
+[ "${_rw_b}" = 1 ] || fail "bots user unit ReadWritePaths must be a single line"
+if grep -E '^(User|Group|Slice)=' "${BOTS_UNIT}" >/dev/null; then
+  fail "bots user unit must not set User=/Group=/Slice="
+fi
+grep -qx 'ConditionPathExists=/srv/aios/src/work-runtime-bots/main.py' "${BOTS_UNIT}" \
+  || fail "bots user unit missing ConditionPathExists main.py"
+grep -qx 'ExecStart=/usr/bin/python3 /srv/aios/src/work-runtime-bots/main.py' "${BOTS_UNIT}" \
+  || fail "bots user unit ExecStart must be bots main.py"
 if [ -e "${AIROOTFS}/usr/lib/systemd/user/default.target.wants/aios-work-runtime.service" ] \
   || [ -e "${AIROOTFS}/etc/systemd/user/default.target.wants/aios-work-runtime.service" ] \
   || [ -e "${AIROOTFS}/etc/systemd/system/default.target.wants/aios-work-runtime.service" ]; then
@@ -151,6 +179,10 @@ grep -q '/usr/lib/systemd/user/aios-work-runtime.service' "${FIRSTBOOT}" \
   || fail "firstboot must copy aios-work-runtime user unit"
 grep -q 'aios-work-runtime user unit missing on target' "${FIRSTBOOT}" \
   || fail "firstboot must fail closed if the user unit is missing"
+grep -q '/usr/lib/systemd/user/aios-work-runtime-bots.service' "${FIRSTBOOT}" \
+  || fail "firstboot must copy aios-work-runtime-bots user unit"
+grep -q 'aios-work-runtime-bots user unit missing on target' "${FIRSTBOOT}" \
+  || fail "firstboot must fail closed if the bots user unit is missing"
 grep -q 'usr/lib/systemd/user' "${FIRSTBOOT}" \
   || fail "firstboot must mkdir /usr/lib/systemd/user"
 grep -q '/srv/aios/src must not exist' "${FIRSTBOOT}" \
@@ -187,6 +219,7 @@ mkdir -p "${TMP}/root/etc/systemd/system" \
 cp -a "${SLICE}" "${TMP}/root/etc/systemd/system/aios-work.slice"
 cp -a "${FLOOR}" "${TMP}/root/usr/lib/systemd/system/aios-work-.service.d/10-floor.conf"
 cp -a "${USER_UNIT}" "${TMP}/root/usr/lib/systemd/user/aios-work-runtime.service"
+cp -a "${BOTS_UNIT}" "${TMP}/root/usr/lib/systemd/user/aios-work-runtime-bots.service"
 
 # Isolation is required; never probe the workstation's live /etc/systemd.
 if ! AIOS_POLICY_ROOT="${TMP}/root" "${POLICY}/work-slice.sh"; then
@@ -209,12 +242,16 @@ fi
 
 grep -Fq 'payload/profile/airootfs/usr/lib/systemd/user/aios-work-runtime.service' "${HASHES}" \
   || fail "payload/hashes.txt must pin aios-work-runtime user unit"
+grep -Fq 'payload/profile/airootfs/usr/lib/systemd/user/aios-work-runtime-bots.service' "${HASHES}" \
+  || fail "payload/hashes.txt must pin aios-work-runtime-bots user unit"
 grep -Fq 'aios-work-.service.d/10-floor.conf' "${HASHES}" \
   || fail "payload/hashes.txt must pin floor drop-in"
 grep -Fq 'usr/lib/tmpfiles.d/aios.conf' "${HASHES}" \
   || fail "payload/hashes.txt must pin tmpfiles.d/aios.conf"
 grep -Fq '/usr/lib/systemd/user/aios-work-runtime.service' "${ISO_HASHES}" \
   || fail "ISO hashes.txt must pin aios-work-runtime user unit"
+grep -Fq '/usr/lib/systemd/user/aios-work-runtime-bots.service' "${ISO_HASHES}" \
+  || fail "ISO hashes.txt must pin aios-work-runtime-bots user unit"
 grep -Fq '/usr/lib/systemd/system/aios-work-.service.d/10-floor.conf' "${ISO_HASHES}" \
   || fail "ISO hashes.txt must pin floor drop-in"
 grep -Fq '/usr/lib/tmpfiles.d/aios.conf' "${ISO_HASHES}" \
@@ -253,6 +290,10 @@ fi
 if [ "${LIVE_USER_UNIT_BEFORE}" -eq 0 ] \
   && [ -e /usr/lib/systemd/user/aios-work-runtime.service ]; then
   fail "oracle wrote live aios-work-runtime.service"
+fi
+if [ "${LIVE_BOTS_UNIT_BEFORE}" -eq 0 ] \
+  && [ -e /usr/lib/systemd/user/aios-work-runtime-bots.service ]; then
+  fail "oracle wrote live aios-work-runtime-bots.service"
 fi
 if [ "${LIVE_SYS_UNIT_BEFORE}" -eq 0 ] \
   && [ -e /etc/systemd/system/aios-work-runtime.service ]; then
