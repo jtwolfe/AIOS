@@ -2,6 +2,8 @@
 
 import json
 import os
+import re
+import subprocess
 import sys
 import uuid
 
@@ -65,7 +67,6 @@ _KIND_ORACLES = {
         "policy/packages-drift.sh",
     ),
     "reconstruct": ("policy/boot-seatbelt.sh",),
-    # Named only (HI-10). Planner does not copy trees or enable units.
     "work-runtime": (
         "policy/hi-17-seeds-local.sh",
         "policy/work-runtime-git.sh",
@@ -163,9 +164,45 @@ def _work_src_path():
 
 
 def _live_work_git():
-    # Read-only. Host tests set AIOS_WORK_SRC so this never probes live /srv.
+    # AIOS_WORK_SRC so host ticks never probe live /srv.
     path = _work_src_path()
-    return os.path.isdir(os.path.join(path, ".git"))
+    try:
+        proc = subprocess.run(
+            [
+                "git",
+                "-c",
+                "safe.directory=%s" % path,
+                "-C",
+                path,
+                "rev-parse",
+                "--is-inside-work-tree",
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+    except OSError:
+        return False
+    return proc.returncode == 0 and proc.stdout.strip() == "true"
+
+
+def _is_work_runtime_plan(proposal):
+    if not isinstance(proposal, dict):
+        return False
+    oracles = proposal.get("oracles") or []
+    if "policy/work-runtime-git.sh" in oracles:
+        return True
+    intent = proposal.get("intent")
+    if isinstance(intent, dict):
+        asked = intent.get("asked") or ""
+        if "synthesise work-runtime" in str(asked):
+            return True
+    return False
+
+
+_ENABLED_LINE = re.compile(
+    r"^\s*enabled\s*[:=]\s*(true|yes|1)\s*$"
+)
 
 
 def _idle_doc():
@@ -310,12 +347,7 @@ def work_runtime_yes(answers=None, clause=None):
             stripped = line.strip()
             if stripped.startswith("#"):
                 continue
-            if stripped.lower() in (
-                "enabled: true",
-                "enabled: yes",
-                "enabled: 1",
-                "enabled = true",
-            ):
+            if _ENABLED_LINE.match(stripped):
                 return True
     return False
 
@@ -770,7 +802,9 @@ def _tick(
     normalized = normalized[:MAX_EVENTS]
 
     for event in normalized:
-        if event.get("kind") == "work-runtime" and not work_runtime_yes():
+        if event.get("kind") != "work-runtime":
+            continue
+        if not work_runtime_yes():
             # Skip is not a yes and not a SAME_GAP poison (HI-15).
             reason = "work runtime stays off until an explicit yes (HI-15)"
             state["status"] = "idle"
@@ -784,6 +818,12 @@ def _tick(
             return _run_from_state(
                 state, False, reason, "HI-15", memory_root=memory_root
             )
+        if _live_work_git():
+            return _idle_synthesis_done(state, path, memory_root)
+        if state.get("status") in ("waiting-accept", "verify") and _is_work_runtime_plan(
+            state.get("proposal")
+        ):
+            return _resume_plan(state, path, memory_root)
 
     for event in normalized:
         if _is_infra(event):
@@ -829,13 +869,14 @@ def _tick(
         state["declared"] = declared
 
     if not normalized:
+        if _live_work_git() and _is_work_runtime_plan(state.get("proposal")):
+            return _idle_synthesis_done(state, path, memory_root)
         if state.get("status") in ("waiting-accept", "verify") and state.get(
             "proposal"
         ):
             # Restart resumes the plan. It does not invent a new one (L-21).
             return _resume_plan(state, path, memory_root)
         if work_runtime_yes() and not _live_work_git():
-            # Envelope bit is the machine goal; planner does not copy (L-20).
             event = {"kind": "work-runtime"}
             return _plan_event(
                 event, state, path, notify_dir, memory_root
@@ -881,6 +922,23 @@ def _tick(
         save_state(state, path)
     return GoalRun(
         "idle", False, None, None, None, state["reason"], hi="L-21", invented=False
+    )
+
+
+def _idle_synthesis_done(state, path, memory_root):
+    reason = "idle is the default (L-21)"
+    state["status"] = "idle"
+    state["proposal"] = None
+    state["notify"] = None
+    state["rollback"] = None
+    state["handoff"] = None
+    state["reason"] = reason
+    state["hi"] = "L-21"
+    state["last_gap"] = None
+    state["gap_count"] = 0
+    save_state(state, path)
+    return _run_from_state(
+        state, False, reason, "L-21", memory_root=memory_root
     )
 
 

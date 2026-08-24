@@ -94,6 +94,8 @@ grep -qx 'Description=AIOS unprivileged work runtime' "${USER_UNIT}" \
   || fail "user unit Description mismatch"
 grep -qx 'ConditionPathIsDirectory=/srv/aios/src/work-runtime' "${USER_UNIT}" \
   || fail "user unit missing ConditionPathIsDirectory (HI-15)"
+grep -qx 'ConditionPathExists=/srv/aios/src/work-runtime/main.py' "${USER_UNIT}" \
+  || fail "user unit missing ConditionPathExists main.py"
 grep -qx 'MemoryMax=2G' "${USER_UNIT}" || fail "user unit MemoryMax must be 2G (L-06)"
 grep -qx 'CPUQuota=200%' "${USER_UNIT}" || fail "user unit CPUQuota must be 200% (L-06)"
 grep -qx 'NoNewPrivileges=yes' "${USER_UNIT}" \

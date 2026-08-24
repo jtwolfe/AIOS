@@ -1,8 +1,9 @@
 # /usr/lib/systemd/user/aios-work-runtime.service
 [Unit]
 Description=AIOS unprivileged work runtime
-# Skip start when the work tree is absent (HI-15); inactive, not failed.
+# Skip start when the tree or entrypoint is absent; inactive, not failed.
 ConditionPathIsDirectory=/srv/aios/src/work-runtime
+ConditionPathExists=/srv/aios/src/work-runtime/main.py
 
 [Service]
 MemoryMax=2G

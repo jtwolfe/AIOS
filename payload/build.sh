@@ -446,6 +446,9 @@ check_firstboot_payload() {
     || die "missing aios-work floor drop-in"
   [[ -f "${iso}/usr/lib/systemd/user/aios-work-runtime.service" ]] \
     || die "missing aios-work-runtime.service user unit (L-23)"
+  grep -qx 'ConditionPathExists=/srv/aios/src/work-runtime/main.py' \
+    "${iso}/usr/lib/systemd/user/aios-work-runtime.service" \
+    || die "user unit missing ConditionPathExists main.py"
   grep -qx 'ReadWritePaths=/tmp /var/tmp /srv/aios/src/work-runtime' \
     "${iso}/usr/lib/systemd/user/aios-work-runtime.service" \
     || die "user unit ReadWritePaths is not the L-15 set"

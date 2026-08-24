@@ -556,7 +556,6 @@ work_runtime_yes() {
   return 1
 }
 
-# Seed → own git. Offline. No GitHub remote (HI-17).
 materialise_work_tree() {
   _seed="${DESTROOT}/srv/aios/seeds/work-runtime"
   _dest="${DESTROOT}/srv/aios/src/work-runtime"
@@ -602,7 +601,6 @@ Copied from /srv/aios/seeds/work-runtime (HI-17). No remote." \
     || die "${_dest} is not a git repository after synthesise"
 }
 
-# Destroot: wants symlink only. Live: systemctl --user -M; never unit enable (L-23).
 enable_work_user_unit() {
   _unit=aios-work-runtime.service
   _tree="${DESTROOT}/srv/aios/src/work-runtime"
@@ -616,7 +614,6 @@ enable_work_user_unit() {
   fi
   /usr/bin/systemctl --user -M aios-work@ enable "${_unit}" \
     || die "systemctl --user -M aios-work@ enable ${_unit} failed"
-  # Start only when the runtime entrypoint exists; enable is the P8.1 seatbelt.
   if [ -d "${_tree}" ] && [ -f "${_tree}/main.py" ]; then
     /usr/bin/systemctl --user -M aios-work@ start "${_unit}" \
       || die "systemctl --user -M aios-work@ start ${_unit} failed"

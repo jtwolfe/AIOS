@@ -452,7 +452,54 @@ assert (doc.get("proposal") or {}).get("enact") == "not-while-planning"
 assert doc.get("status") == "waiting-accept"
 PY
 
+_out=$(goals '{"kind":"work-runtime"}') || true
+printf '%s\n' "${_out}" | grep -q '"paused": true' \
+  && fail "work-runtime event must not SAME_GAP the empty-tick plan: ${_out}" || true
+printf '%s\n' "${_out}" | grep -q '"status": "waiting-accept"' \
+  || fail "work-runtime event while waiting-accept must resume: ${_out}"
+printf '%s\n' "${_out}" | grep -q 'policy/work-runtime-git.sh' \
+  || fail "resumed synthesis plan must keep oracles: ${_out}"
+
+mkdir -p "${TMP}/work-src"
+git -C "${TMP}/work-src" init -b main >/dev/null 2>&1
+_out=$(goals) || true
+printf '%s\n' "${_out}" | grep -q '"status": "idle"' \
+  || fail "empty tick after live git must idle: ${_out}"
+printf '%s\n' "${_out}" | grep -q '"proposal": null' \
+  || fail "empty tick after live git must drop the plan: ${_out}"
+printf '%s\n' "${_out}" | grep -q '"work_runtime": false' \
+  || fail "idle after live git work_runtime false: ${_out}"
+python3 - "${TMP}/goals.json" <<'PY' || fail "live git left a synthesis plan on disk"
+import json, sys
+doc = json.load(open(sys.argv[1], encoding="utf-8"))
+assert doc.get("status") == "idle", doc
+assert doc.get("proposal") is None, doc
+PY
+
+_out=$(goals) || true
+printf '%s\n' "${_out}" | grep -q '"status": "idle"' \
+  || fail "second empty tick with live git must stay idle: ${_out}"
+printf '%s\n' "${_out}" | grep -q '"proposal": null' \
+  || fail "second empty tick with live git must not propose: ${_out}"
+
+rm -rf "${TMP}/work-src"
+mkdir -p "${TMP}/work-src/.git"
+_out=$(goals) || true
+printf '%s\n' "${_out}" | grep -q '"status": "waiting-accept"' \
+  || fail "empty .git dir must not count as synthesised: ${_out}"
+printf '%s\n' "${_out}" | grep -q 'policy/work-runtime-git.sh' \
+  || fail "empty .git dir must still plan synthesis: ${_out}"
+rm -rf "${TMP}/work-src"
+
+rm -f "${TMP}/goals.json" "${TMP}/answers.json"
+printf '%s\n' 'enabled = yes' > "${TMP}/envelope-work.md"
+_out=$(goals) || true
+printf '%s\n' "${_out}" | grep -q '"status": "waiting-accept"' \
+  || fail "enabled = yes must plan synthesis: ${_out}"
+rm -f "${TMP}/envelope-work.md"
+
 rm -f "${TMP}/goals.json"
+printf '%s\n' '{"accepted":true,"work_runtime":true}' > "${TMP}/answers.json"
 _out=$(goals '{"kind":"work-runtime"}') || true
 printf '%s\n' "${_out}" | grep -q '"status": "waiting-accept"' \
   || fail "work-runtime event with bit on must plan: ${_out}"

@@ -87,6 +87,9 @@ grep -q 'is a user unit (L-23)' "${DENY}" \
 grep -q 'synthesise' "${ENACT}" || fail "enact must grow a synthesise verb"
 grep -q 'systemctl --user -M aios-work@' "${ENACT}" \
   || fail "enact live enable must use systemctl --user -M aios-work@"
+grep -qx 'ConditionPathExists=/srv/aios/src/work-runtime/main.py' \
+  "${ROOT}/payload/profile/airootfs/usr/lib/systemd/user/aios-work-runtime.service" \
+  || fail "user unit missing ConditionPathExists main.py"
 if grep -nE 'github\.com|git clone' "${ENACT}" >/dev/null; then
   fail "enact must not clone GitHub (HI-17)"
 fi
@@ -244,6 +247,22 @@ printf '%s\n' "${_plan}" | grep -q '"work_runtime": false' \
 [ ! -e "${TMP}/work-src" ] || fail "planner created AIOS_WORK_SRC"
 [ ! -e "${DEST}/srv/aios/src/work-runtime-bots" ] \
   || fail "planner synthesised bots"
+
+# Empty tick after destroot git must idle even if goals.json is waiting-accept.
+_idle=$(
+  AIOS_GOALS="${TMP}/goals.json" \
+    AIOS_NOTIFY="${TMP}/notify" \
+    AIOS_MEMORY="${MEM}" \
+    AIOS_BRAKE="${TMP}/brake" \
+    AIOS_ANSWERS="${TMP}/answers.json" \
+    AIOS_ENVELOPE_WORK="${TMP}/envelope-work.md" \
+    AIOS_WORK_SRC="${DEST}/srv/aios/src/work-runtime" \
+    python3 "${MAIN}" goals
+) || true
+printf '%s\n' "${_idle}" | grep -q '"status": "idle"' \
+  || fail "empty tick after synthesised git must idle: ${_idle}"
+printf '%s\n' "${_idle}" | grep -q '"proposal": null' \
+  || fail "empty tick after synthesised git must drop the plan: ${_idle}"
 
 # deny.py: bit off refuses; bit on allows synthesise work-runtime only.
 _d_off=$(

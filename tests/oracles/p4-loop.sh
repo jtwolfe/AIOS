@@ -67,6 +67,10 @@ _prov=$(grep -R -n -- 'provider' "${ROOT}/checker" 2>/dev/null | head -n 1 || tr
 
 TMP=$(mktemp -d)
 trap 'rm -rf "${TMP}"' EXIT
+# Isolate work-runtime bit so classify() never reads live answers (HI-15).
+AIOS_ANSWERS="${TMP}/answers.json"
+AIOS_ENVELOPE_WORK="${TMP}/envelope-work.md"
+export AIOS_ANSWERS AIOS_ENVELOPE_WORK
 MEM="${TMP}/memory"
 SK="${TMP}/skills/pacman"
 mkdir -p "${MEM}" "${SK}/references"
@@ -95,6 +99,8 @@ printf '%s\n' 'cite wiki Pacman this turn' > "${SK}/references/wiki.txt"
 turn() {
   AIOS_PROVIDER=fixture AIOS_FIXTURE="${TMP}/fix.json" \
     AIOS_MEMORY="${MEM}" AIOS_SKILLS="${TMP}/skills" \
+    AIOS_ANSWERS="${TMP}/answers.json" \
+    AIOS_ENVELOPE_WORK="${TMP}/envelope-work.md" \
     python3 "${MAIN}" turn "$@"
 }
 
