@@ -310,6 +310,8 @@ fi
 
 if ! "${SCRIPT_DIR}/p6-work-slice.sh"; then
   fail "p6-work-slice"
+fi
+
 if ! "${SCRIPT_DIR}/p7-notify.sh"; then
   fail "p7-notify"
 fi
