@@ -1,9 +1,5 @@
 #!/usr/bin/python3
-<<<<<<< HEAD
-"""OS operator client (P7.1, P7.2, P7.3, L-18, L-12, HI-14). Unprivileged. One binary."""
-=======
-"""OS operator client (P7.1–P7.6, L-18, L-12, L-17, HI-14). Unprivileged. One binary."""
->>>>>>> 8efd979 (feat(tui): OS catalog, login view, keyboard-complete)
+"""OS operator client (P7.1, P7.3, P7.5, P7.6, L-18, L-12, L-17). Unprivileged. One binary."""
 
 import io
 import json
@@ -57,10 +53,6 @@ WORK_REFUSED = (
 
 ACTIONS = {
     "chrome": ("view", "brake", "send", "mode"),
-<<<<<<< HEAD
-    "conversation": ("send", "view", "brake", "mode"),
-    "notify": ("open", "view", "brake", "mode"),
-=======
     "conversation": ("send", "attach", "view", "brake", "mode"),
     "envelope": ("inspect", "view", "brake"),
     "intents": ("open", "inspect", "view", "brake"),
@@ -68,7 +60,6 @@ ACTIONS = {
     "snapper": ("inspect", "rollback", "view", "brake"),
     "packages": ("inspect", "view", "brake"),
     "login": ("start", "cancel", "poll", "view", "brake"),
->>>>>>> 8efd979 (feat(tui): OS catalog, login view, keyboard-complete)
 }
 
 _SHORT_VIEW = {
@@ -210,12 +201,11 @@ def _installer_dir():
 
 
 def _write_login_request(path, text):
-    # Truncate the accept-created 0660 inode. Do not os.replace.
+    # Operator is not the owner (aios-agent is). Write only; chmod(2)
+    # is owner-only. Missing file stays rendezvous-missing (L-17).
     payload = text if text.endswith("\n") else "%s\n" % text
-    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
-    fd = os.open(path, flags, 0o660)
+    fd = os.open(path, os.O_WRONLY | os.O_TRUNC)
     try:
-        os.fchmod(fd, 0o660)
         data = payload.encode("utf-8")
         while data:
             n = os.write(fd, data)
@@ -438,16 +428,6 @@ class Session:
             "writes: %s" % ("frozen" if self.writes_frozen else "live"),
         )
         if self.note_text:
-<<<<<<< HEAD
-            _line(out, "note: %s" % self.note_text)
-        if self.view == "chrome":
-            self._chrome(out)
-        elif self.view == "conversation":
-            self._conversation(out)
-        elif self.view == "notify":
-            self._notify(out)
-        else:
-=======
             self._emit(out, "note: %s" % self.note_text)
         body = {
             "chrome": self._chrome,
@@ -460,11 +440,13 @@ class Session:
             "login": self._login,
         }.get(self.view)
         if body is None:
->>>>>>> 8efd979 (feat(tui): OS catalog, login view, keyboard-complete)
             self._stub(out)
         else:
             body(out)
         self._emit(out, "--")
+
+    def _notify(self, out):
+        notify.render(self, out)
 
     def _chrome(self, out):
         self._emit(out, "surface: os")
@@ -563,19 +545,6 @@ class Session:
             )
         if self.login_status == "ok":
             self._emit(out, "token: written 0600 (not in transcript)")
-
-    def _notify(self, out):
-        for line in notify.render_lines(notify.load_payloads()):
-            _line(out, line)
-
-    def open_handoff(self):
-        payloads = notify.load_payloads()
-        if not payloads:
-            self.note_text = "no HI-14 payload"
-            return
-        self.transcript.append(notify.conversation_line(payloads[0]))
-        self.view = "conversation"
-        self.note_text = "opened notify into conversation (HI-14)"
 
     def _stub(self, out):
         self._emit(out, "not this PR")
@@ -911,12 +880,6 @@ class Session:
 
         if cmd in ("brake", "b") and not arg:
             self.brake()
-            return None
-        if cmd == "open":
-            if self.view != "notify":
-                self.note_text = "open is a notify action (HI-14)"
-                return None
-            self.open_handoff()
             return None
         if cmd == "send":
             self.send(arg)

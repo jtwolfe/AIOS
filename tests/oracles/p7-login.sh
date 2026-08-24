@@ -43,6 +43,33 @@ grep -q 'os.replace(' "${GATE}" \
   && fail "login_gate must not os.replace rendezvous inodes" || true
 grep -q '_write_inplace' "${GATE}" \
   || fail "login_gate must write rendezvous in place"
+python3 - "${MAIN}" <<'PY' || fail "TUI must not chmod the login-request inode"
+import ast
+import sys
+
+src = open(sys.argv[1], encoding="utf-8").read()
+tree = ast.parse(src)
+fn = None
+for node in tree.body:
+    if isinstance(node, ast.FunctionDef) and node.name == "_write_login_request":
+        fn = node
+if fn is None:
+    raise SystemExit("missing _write_login_request")
+banned = set()
+for node in ast.walk(fn):
+    if isinstance(node, ast.Attribute) and node.attr in (
+        "fchmod",
+        "chmod",
+        "fchown",
+        "chown",
+        "O_CREAT",
+    ):
+        banned.add(node.attr)
+    if isinstance(node, ast.Name) and node.id in ("fchmod", "chmod"):
+        banned.add(node.id)
+if banned:
+    raise SystemExit("TUI login write uses %s" % sorted(banned))
+PY
 python3 - "${MAIN}" <<'PY' || fail "production start must not construct LiveProvider"
 import ast
 import sys
