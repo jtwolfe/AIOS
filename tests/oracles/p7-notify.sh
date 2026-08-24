@@ -1,6 +1,7 @@
 #!/bin/sh
 # P7.2: HI-14 notify view. Five-name payload into OS conversation. Not a coding CLI.
-# Envelope: P7.2, HI-14, L-18. Host isolate via AIOS_NOTIFY / AIOS_BRAKE.
+# Envelope: P7.2, HI-14, L-18. Host isolate via AIOS_NOTIFY / AIOS_BRAKE /
+# AIOS_ANSWERS / AIOS_ROOT / AIOS_ENVELOPE_WORK.
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -161,29 +162,41 @@ LIVE_NOTIFY_STATE="/srv/aios/state/notify"
 LIVE_NOTIFY_RUN="/run/aios/notify"
 LIVE_NOTIFY_MEM="/srv/aios/memory/notify"
 LIVE_BRAKE="/srv/aios/state/brake.d/stamp"
+LIVE_ANS="/srv/aios/state/bootstrap-in-progress/answers.json"
 _live_state=0
 _live_run=0
 _live_mem=0
 _live_brake=0
+_live_ans=0
 [ -e "${LIVE_NOTIFY_STATE}" ] && _live_state=1
 [ -e "${LIVE_NOTIFY_RUN}" ] && _live_run=1
 [ -e "${LIVE_NOTIFY_MEM}" ] && _live_mem=1
 [ -e "${LIVE_BRAKE}" ] && _live_brake=1
+[ -e "${LIVE_ANS}" ] && _live_ans=1
 
 TMP=$(mktemp -d)
 trap 'rm -rf "${TMP}"' EXIT
 
-drive() {
-  printf '%s\n' "$@" | AIOS_BRAKE="${TMP}/unused-brake" \
-    AIOS_NOTIFY="${TMP}/notify" python3 -u "${MAIN}"
+mkdir -p "${TMP}/notify" "${TMP}/empty" "${TMP}/alt" "${TMP}/skill" \
+  "${TMP}/root" "${TMP}/work-src"
+printf '%s\n' '{"work_runtime":false}' > "${TMP}/off.json"
+
+run_tui() {
+  AIOS_ANSWERS="${TMP}/off.json" \
+  AIOS_BRAKE="${AIOS_BRAKE:-${TMP}/unused-brake}" \
+  AIOS_ROOT="${TMP}/root" \
+  AIOS_WORK_SRC="${TMP}/work-src" \
+  AIOS_ENVELOPE_WORK="${TMP}/missing-envelope.md" \
+  AIOS_NOTIFY="${AIOS_NOTIFY:-${TMP}/notify}" \
+  python3 -u "${MAIN}"
 }
 
-mkdir -p "${TMP}/notify" "${TMP}/empty" "${TMP}/alt" "${TMP}/skill"
+drive() {
+  printf '%s\n' "$@" | run_tui
+}
 
 _empty=$(
-  printf '%s\n' 'view notify' 'quit' \
-    | AIOS_BRAKE="${TMP}/unused-brake" AIOS_NOTIFY="${TMP}/empty" \
-      python3 -u "${MAIN}"
+  printf '%s\n' 'view notify' 'quit' | AIOS_NOTIFY="${TMP}/empty" run_tui
 ) || true
 printf '%s\n' "${_empty}" | grep -q '^view: notify$' \
   || fail "view notify must set view id: ${_empty}"
@@ -199,17 +212,13 @@ printf '%s\n' "${_empty}" | grep -q 'not this PR' \
   && fail "notify view still stubbed: ${_empty}" || true
 
 _vn=$(
-  printf '%s\n' 'v n' 'quit' \
-    | AIOS_BRAKE="${TMP}/unused-brake" AIOS_NOTIFY="${TMP}/empty" \
-      python3 -u "${MAIN}"
+  printf '%s\n' 'v n' 'quit' | AIOS_NOTIFY="${TMP}/empty" run_tui
 ) || true
 printf '%s\n' "${_vn}" | grep -q '^view: notify$' \
   || fail "v n must open notify: ${_vn}"
 
 _n=$(
-  printf '%s\n' 'n' 'quit' \
-    | AIOS_BRAKE="${TMP}/unused-brake" AIOS_NOTIFY="${TMP}/empty" \
-      python3 -u "${MAIN}"
+  printf '%s\n' 'n' 'quit' | AIOS_NOTIFY="${TMP}/empty" run_tui
 ) || true
 printf '%s\n' "${_n}" | grep -q '^view: notify$' \
   || fail "n must open notify: ${_n}"
@@ -282,9 +291,7 @@ cat > "${TMP}/alt/alt.json" <<'EOF'
 }
 EOF
 _alt=$(
-  printf '%s\n' 'view notify' 'open' 'quit' \
-    | AIOS_BRAKE="${TMP}/unused-brake" AIOS_NOTIFY="${TMP}/alt" \
-      python3 -u "${MAIN}"
+  printf '%s\n' 'view notify' 'open' 'quit' | AIOS_NOTIFY="${TMP}/alt" run_tui
 ) || true
 printf '%s\n' "${_alt}" | grep -q '^unit: dummy-fail$' \
   || fail "alias executable must render as unit: ${_alt}"
@@ -308,9 +315,7 @@ cat > "${TMP}/skill/skill.json" <<'EOF'
 }
 EOF
 _sk=$(
-  printf '%s\n' 'view notify' 'open' 'quit' \
-    | AIOS_BRAKE="${TMP}/unused-brake" AIOS_NOTIFY="${TMP}/skill" \
-      python3 -u "${MAIN}"
+  printf '%s\n' 'view notify' 'open' 'quit' | AIOS_NOTIFY="${TMP}/skill" run_tui
 ) || true
 printf '%s\n' "${_sk}" | grep -q '^skill: skills/repair.md$' \
   || fail "skill path must render when present: ${_sk}"
@@ -320,9 +325,7 @@ printf '%s\n' "${_sk}" | grep -q 'skill: skills/repair.md' \
 mkdir -p "${TMP}/bad"
 printf '%s\n' '{"unit":"only-unit"}' > "${TMP}/bad/incomplete.json"
 _bad=$(
-  printf '%s\n' 'view notify' 'open' 'quit' \
-    | AIOS_BRAKE="${TMP}/unused-brake" AIOS_NOTIFY="${TMP}/bad" \
-      python3 -u "${MAIN}"
+  printf '%s\n' 'view notify' 'open' 'quit' | AIOS_NOTIFY="${TMP}/bad" run_tui
 ) || true
 printf '%s\n' "${_bad}" | grep -q '^handoff: none$' \
   || fail "incomplete payload must not be a handoff: ${_bad}"
@@ -338,7 +341,12 @@ printf '%s\n' "${_bad}" | grep -q '^unit: only-unit$' \
 _iso=$(
   printf '%s\n' 'view notify' 'open' 'quit' \
     | AIOS_CLIENT="${MAIN}" AIOS_BRAKE="${TMP}/wrap-brake" \
-      AIOS_NOTIFY="${TMP}/notify" "${ISO_BIN}"
+      AIOS_NOTIFY="${TMP}/notify" \
+      AIOS_ANSWERS="${TMP}/off.json" \
+      AIOS_ROOT="${TMP}/root" \
+      AIOS_WORK_SRC="${TMP}/work-src" \
+      AIOS_ENVELOPE_WORK="${TMP}/missing-envelope.md" \
+      "${ISO_BIN}"
 ) || true
 printf '%s\n' "${_iso}" | grep -q '^view: conversation$' \
   || fail "ISO bin/aios open must reach conversation: ${_iso}"
@@ -357,6 +365,10 @@ fi
 if [ "${_live_brake}" -eq 0 ] && [ -e "${LIVE_BRAKE}" ]; then
   rm -f "${LIVE_BRAKE}"
   fail "oracle created ${LIVE_BRAKE}"
+fi
+if [ "${_live_ans}" -eq 0 ] && [ -e "${LIVE_ANS}" ]; then
+  rm -f "${LIVE_ANS}"
+  fail "oracle created ${LIVE_ANS}"
 fi
 
 (cd "${ROOT}" && grep -E '^[0-9a-f]{64} ' "${HASHES}" | sha256sum -c --strict - >/dev/null) \

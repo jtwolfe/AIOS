@@ -137,49 +137,6 @@ def _brake_on():
     return os.path.isfile(_brake_path())
 
 
-def _answers_path():
-    return os.environ.get("AIOS_ANSWERS") or ANSWERS_PATH
-
-
-def _clause_enabled(path):
-    if not path or not os.path.isfile(path):
-        return False
-    try:
-        with open(path, "r", encoding="utf-8") as fh:
-            text = fh.read()
-    except OSError:
-        return False
-    for line in text.splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        key, sep, val = stripped.partition("=")
-        if not sep:
-            key, sep, val = stripped.partition(":")
-        if not sep:
-            continue
-        if key.strip().lower() == "enabled" and val.strip().lower() in (
-            "true",
-            "yes",
-            "1",
-        ):
-            return True
-    return False
-
-
-def work_runtime_on():
-    path = _answers_path()
-    if path and os.path.isfile(path):
-        try:
-            with open(path, "r", encoding="utf-8") as fh:
-                doc = json.load(fh)
-        except (OSError, ValueError):
-            doc = None
-        if isinstance(doc, dict) and doc.get("work_runtime") is True:
-            return True
-    return _clause_enabled(os.environ.get("AIOS_ENVELOPE_WORK"))
-
-
 def write_brake():
     path = _brake_path()
     parent = os.path.dirname(path)
@@ -309,6 +266,45 @@ def _answers_path():
     if boot:
         return os.path.join(boot, "answers.json")
     return _path("AIOS_ANSWERS", ANSWERS_PATH)
+
+
+def _clause_enabled(path):
+    if not path or not os.path.isfile(path):
+        return False
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            text = fh.read()
+    except OSError:
+        return False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        key, sep, val = stripped.partition("=")
+        if not sep:
+            key, sep, val = stripped.partition(":")
+        if not sep:
+            continue
+        if key.strip().lower() == "enabled" and val.strip().lower() in (
+            "true",
+            "yes",
+            "1",
+        ):
+            return True
+    return False
+
+
+def work_runtime_on():
+    path = _answers_path()
+    if path and os.path.isfile(path):
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                doc = json.load(fh)
+        except (OSError, ValueError):
+            doc = None
+        if isinstance(doc, dict) and doc.get("work_runtime") is True:
+            return True
+    return _clause_enabled(os.environ.get("AIOS_ENVELOPE_WORK"))
 
 
 def _load_answers_doc():
