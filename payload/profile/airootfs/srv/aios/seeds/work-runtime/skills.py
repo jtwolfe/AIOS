@@ -1,4 +1,4 @@
-"""Work-tree skills. Catalog is name + description. Body is a this-turn read."""
+"""Work-tree skills catalog and this-turn body load."""
 
 import os
 
@@ -56,7 +56,6 @@ def _skills_dir(root):
 
 
 def catalog(root):
-    """This tree only. OS /srv/aios/skills is not a privilege back door."""
     skills_dir = _skills_dir(root)
     out = []
     if not os.path.isdir(skills_dir):

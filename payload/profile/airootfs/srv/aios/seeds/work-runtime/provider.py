@@ -1,4 +1,4 @@
-"""Fixture provider only (L-08). Work uid cannot read the OS token (L-16)."""
+"""Fixture provider. Live Grok is refused."""
 
 import json
 import os
@@ -23,7 +23,6 @@ def _user_text(messages):
 
 
 def refuse_os_token(path=None):
-    """Always. /srv/aios/state is inaccessible to this uid (L-16)."""
     path = path if path is not None else OS_TOKEN_PATH
     raise ProviderError("work uid cannot read the OS token (L-16): %s" % path)
 

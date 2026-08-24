@@ -21,7 +21,7 @@ f8445fa0af1eca344c0032d5becfc01c5361709198814360cf9d21be4cc8919b  /srv/aios/seed
 8d60d430d485dce9e9c78d6fc94e079ca76700c3743f8a90e51d6a52c45f97ad  /srv/aios/seeds/work-runtime/skills/wake.md
 1dfab8088c3562fa1238017fb8a0a67af26846cca6b76a0dc7546d6290153da5  /usr/lib/sysusers.d/aios.conf
 108900bb7235cf40d9c1ab6dead6c3e256a30ea3185ca416c302f4372be27076  /usr/lib/tmpfiles.d/aios.conf
-5c053c9e9451e45724a2406336dfc2762f852a68de43d67f178f0efc4b9631a9  bin/enact
+4253bd6669bcf859faf23ec70b56edd4e83e01aafa5b14656738330826b7c5c5  bin/enact
 40e950813f665bc36eb806a48713fae7d6fff8999c95819f4aa8b5598c08f813  bin/firstboot
 93195926224817bc0c6ce5232ddaa5005f048b5b576df2a89d9ad484d7c4b2d9  agent/AGENTS.md
 e6350a9e7101b666b4239b02d443513f506c42e718f8ce88c4767ba739d779de  agent/aios_agent/deny.py
@@ -102,7 +102,7 @@ f4c4b6d04d00766230da67d9fa657403128dd01ccce4ec713384593ae1bd09ff  /usr/lib/syste
 460430dfbc9480c3494621607bb8169fba285ddc0069b57d53a475db8a9783c5  operator-client/tty/notify.py
 ead3cc3cb403e623060323ba8e83c5fb6ab7d2961de9ef5de006fe2d308f2ef6  agent/aios_agent/rollback_gate.py
 a1ed294e109bc17e332625f4217d863a0ae83caecbf7b006a9d3133ff3a72638  checker/policy/work-runtime-git.sh
-2b12979cb22eb476189e2fa89b18ee422e20b52d2c8f339f5404d9ea89a0eaf6  /srv/aios/seeds/work-runtime/main.py
-866d09935145d3bb74352ff84b30fde9b14c95a07f787c14c61cba9d71aa9ab0  /srv/aios/seeds/work-runtime/provider.py
-e035f83cd6c6e3e65b9db5129e269478d29c5093a657b5980dcc08a6ab441c24  /srv/aios/seeds/work-runtime/skills.py
-b084ecfd21c550481e834c12796c26460b49521bb190135643ab565a5bc0ad59  /srv/aios/seeds/work-runtime/wake.py
+16888a7bf276937b05d34f85f118ee5b8be289b063afd582e4020b84d168df24  /srv/aios/seeds/work-runtime/main.py
+923decfe405a78a31866d0f66cbd02c2b1f9e988334877043fb8e42985f4f1bf  /srv/aios/seeds/work-runtime/provider.py
+737d9b21fd5a785ade61ce4844bace1a38f79b0d9e975beccf52b955cdb25c03  /srv/aios/seeds/work-runtime/skills.py
+1c666865bc48123f6140d3570520903615084aa0676cc784893873bd50d775ef  /srv/aios/seeds/work-runtime/wake.py

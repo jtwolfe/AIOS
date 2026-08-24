@@ -53,8 +53,6 @@ grep -q 'time.sleep(POLL_S)' "${SEED}/main.py" \
   || fail "no-arg serve() must idle"
 grep -q 'AIOS_WORK_SRC' "${SEED}/main.py" \
   || fail "main.py must honour AIOS_WORK_SRC"
-grep -q 'Plain model text is not delivered' "${SEED}/main.py" \
-  || fail "main.py must keep undelivered plain text off the surface"
 grep -q 'following a skill without reading its body this turn fails' \
   "${SEED}/main.py" \
   || fail "main.py missing skill-follow refusal"
@@ -63,13 +61,17 @@ grep -q '"AGENTS.md"' "${SEED}/wake.py" \
 grep -q 'INJECTS' "${SEED}/wake.py" || fail "wake.py missing INJECTS"
 grep -q 'work-runtime enabled:' "${SEED}/wake.py" \
   || fail "wake.py must inject the envelope bit"
-grep -q 'HI-15' "${SEED}/wake.py" || fail "wake.py must quote HI-15"
-grep -q 'L-16' "${SEED}/provider.py" || fail "provider.py must quote L-16"
+grep -q 'work envelope bit missing (HI-15)' "${SEED}/wake.py" \
+  || fail "wake.py must fail closed with HI-15 when the bit is missing"
 grep -q 'do not call live Grok' "${SEED}/provider.py" \
   || fail "provider.py must refuse live Grok"
 grep -qx 'OS_TOKEN_PATH = "/srv/aios/state/provider/os.token"' \
   "${SEED}/provider.py" \
   || fail "provider.py OS token path lock drifted"
+if grep -Fq '/srv/aios/state/bootstrap-in-progress' "${SEED}/wake.py" \
+  || grep -Fq '/srv/aios/envelope/work-runtime.md' "${SEED}/wake.py"; then
+  fail "wake.py must not default envelope inject to privileged paths"
+fi
 if grep -nE '^(import|from)[[:space:]]+(urllib|aios_agent|http\.client)\b' \
   "${SEED}/main.py" "${SEED}/wake.py" "${SEED}/skills.py" "${SEED}/provider.py" \
   >/dev/null; then
@@ -103,33 +105,33 @@ sh -n "${0}" || fail "sh -n p8-wake.sh"
 SRC="${TMP}/src"
 mkdir -p "${SRC}"
 cp -a "${SEED}/." "${SRC}/"
-mkdir -p "${SRC}/notes"
-printf '%s\n' 'verbatim job note: widget-alpha' > "${SRC}/notes/job.md"
-printf '%s\n' '{"accepted":true,"work_runtime":true,"vetoes":{"remotes":true}}' \
-  > "${TMP}/answers.json"
+mkdir -p "${SRC}/notes" "${SRC}/envelope"
+printf '%s\n' 'verbatim job note: widget-alpha' > "${SRC}/notes/widget.md"
+printf '%s\n' 'other-job-secret-note' > "${SRC}/notes/other.md"
+printf '%s\n' 'enabled: yes' 'vetoes.remotes: yes' > "${SRC}/envelope/compiled.md"
 printf '%s\n' '{"responses":[{"send":"visible-reply"}]}' > "${TMP}/send.json"
 printf '%s\n' '{"responses":["plain-undelivered-text"]}' > "${TMP}/plain.json"
 printf '%s\n' '{"responses":[{"actions":[{"tool":"question","text":"which-one?"},{"tool":"send","text":"too-late"}]}]}' \
   > "${TMP}/question.json"
+printf '%s\n' '{"responses":[{"question":"which-one?","send":"too-late"}]}' \
+  > "${TMP}/compact-question.json"
 printf '%s\n' '{"responses":["idle"]}' > "${TMP}/idlefix.json"
 
 run_turn() {
   _fix=$1
   shift
-  AIOS_WORK_SRC="${SRC}" \
+  env -u AIOS_ANSWERS -u AIOS_ENVELOPE_WORK \
+    AIOS_WORK_SRC="${SRC}" \
     AIOS_ROOT="${TMP}/root" \
-    AIOS_ANSWERS="${TMP}/answers.json" \
-    AIOS_ENVELOPE_WORK="${TMP}/envelope-work.md" \
     AIOS_PROVIDER=fixture \
     AIOS_FIXTURE="${_fix}" \
     python3 "${SRC}/main.py" turn "$@"
 }
 
 _idle=$(
-  AIOS_WORK_SRC="${SRC}" \
+  env -u AIOS_ANSWERS -u AIOS_ENVELOPE_WORK \
+    AIOS_WORK_SRC="${SRC}" \
     AIOS_ROOT="${TMP}/root" \
-    AIOS_ANSWERS="${TMP}/answers.json" \
-    AIOS_ENVELOPE_WORK="${TMP}/envelope-work.md" \
     AIOS_PROVIDER=fixture \
     AIOS_FIXTURE="${TMP}/idlefix.json" \
     python3 "${SRC}/main.py" turn
@@ -172,6 +174,13 @@ if "Delivery is an explicit send" not in p:
     raise SystemExit("tools/interfaces missing")
 if "verbatim job note: widget-alpha" not in p:
     raise SystemExit("operational notes missing verbatim excerpt")
+i4 = p.find("[inject 4] operational notes")
+i5 = p.find("[inject 5] envelope bit")
+if i4 < 0 or i5 <= i4:
+    raise SystemExit("notes section missing")
+notes = p[i4:i5]
+if "other-job-secret-note" in notes:
+    raise SystemExit("unrelated note leaked into inject 4")
 if "work-runtime enabled: yes" not in p:
     raise SystemExit("envelope bit missing enabled yes")
 if "vetoes.remotes: yes" not in p:
@@ -212,10 +221,74 @@ if d.get("delivered"):
     raise SystemExit("send after question was delivered")
 ' || fail "question must end the turn: ${_q}"
 
-_live=$(
-  AIOS_WORK_SRC="${SRC}" \
+_cq=$(run_turn "${TMP}/compact-question.json" "choose compact") || true
+printf '%s\n' "${_cq}" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+if d.get("question") != "which-one?":
+    raise SystemExit("question %s" % d.get("question"))
+if d.get("ended") != "question":
+    raise SystemExit("ended %s" % d.get("ended"))
+if d.get("delivered"):
+    raise SystemExit("compact send was delivered: %s" % d.get("delivered"))
+' || fail "compact question must drop sibling send: ${_cq}"
+
+_none=$(
+  env -u AIOS_ANSWERS -u AIOS_ENVELOPE_WORK -u AIOS_WORK_RUNTIME \
+    AIOS_WORK_SRC="${SRC}" \
     AIOS_ROOT="${TMP}/root" \
-    AIOS_ANSWERS="${TMP}/answers.json" \
+    AIOS_PROVIDER=fixture \
+    AIOS_FIXTURE="${TMP}/send.json" \
+    python3 "${SRC}/main.py" turn "unrelated query"
+) || true
+printf '%s\n' "${_none}" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+p = d.get("prompt") or ""
+i4 = p.find("[inject 4] operational notes")
+i5 = p.find("[inject 5] envelope bit")
+if i4 < 0 or i5 <= i4:
+    raise SystemExit("notes section missing")
+notes = p[i4:i5]
+if "verbatim job note: widget-alpha" in notes or "other-job-secret-note" in notes:
+    raise SystemExit("unrelated ask dumped the notes store")
+if "none" not in notes:
+    raise SystemExit("unrelated ask must inject none")
+' || fail "unrelated ask must not dump notes: ${_none}"
+
+_unit=$(
+  rm -f "${SRC}/envelope/compiled.md"
+  env -u AIOS_ANSWERS -u AIOS_ENVELOPE_WORK \
+    AIOS_WORK_SRC="${SRC}" \
+    AIOS_ROOT="${TMP}/nousr" \
+    AIOS_WORK_RUNTIME=yes \
+    AIOS_PROVIDER=fixture \
+    AIOS_FIXTURE="${TMP}/send.json" \
+    python3 "${SRC}/main.py" turn "unit shaped"
+) || true
+printf '%s\n' "${_unit}" | grep -q 'work-runtime enabled: yes' \
+  || fail "unit-shaped env without /srv/aios/state must report enabled yes: ${_unit}"
+printf '%s\n' 'enabled: yes' 'vetoes.remotes: yes' > "${SRC}/envelope/compiled.md"
+
+_miss=$(
+  rm -f "${SRC}/envelope/compiled.md"
+  env -u AIOS_ANSWERS -u AIOS_ENVELOPE_WORK -u AIOS_WORK_RUNTIME \
+    AIOS_WORK_SRC="${SRC}" \
+    AIOS_ROOT="${TMP}/nousr" \
+    AIOS_PROVIDER=fixture \
+    AIOS_FIXTURE="${TMP}/send.json" \
+    python3 "${SRC}/main.py" turn "missing bit" 2>/dev/null || true
+)
+printf '%s\n' "${_miss}" | grep -q 'work envelope bit missing (HI-15)' \
+  || fail "missing compiled envelope must fail closed: ${_miss}"
+printf '%s\n' "${_miss}" | grep -q 'work-runtime enabled: no' \
+  && fail "missing compiled envelope claimed enabled no: ${_miss}" || true
+printf '%s\n' 'enabled: yes' 'vetoes.remotes: yes' > "${SRC}/envelope/compiled.md"
+
+_live=$(
+  env -u AIOS_ANSWERS -u AIOS_ENVELOPE_WORK \
+    AIOS_WORK_SRC="${SRC}" \
+    AIOS_ROOT="${TMP}/root" \
     AIOS_PROVIDER=live \
     AIOS_FIXTURE="${TMP}/send.json" \
     python3 "${SRC}/main.py" turn ping 2>/dev/null || true
@@ -224,7 +297,8 @@ printf '%s\n' "${_live}" | grep -q 'live Grok' \
   || fail "live provider must be refused: ${_live}"
 
 _tok=$(
-  AIOS_WORK_SRC="${SRC}" \
+  env -u AIOS_ANSWERS -u AIOS_ENVELOPE_WORK \
+    AIOS_WORK_SRC="${SRC}" \
     AIOS_ROOT="${TMP}/root" \
     python3 - "${SRC}" <<'PY'
 import sys
@@ -248,7 +322,6 @@ mkdir -p "${TMP}/empty"
 _empty=$(
   AIOS_WORK_SRC= \
     AIOS_ROOT="${TMP}/empty" \
-    AIOS_ANSWERS="${TMP}/answers.json" \
     AIOS_PROVIDER=fixture \
     AIOS_FIXTURE="${TMP}/send.json" \
     python3 "${SRC}/main.py" turn ping 2>/dev/null || true

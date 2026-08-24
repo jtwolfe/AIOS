@@ -556,6 +556,43 @@ work_runtime_yes() {
   return 1
 }
 
+compile_work_envelope() {
+  _tree=$1
+  _compiled="${_tree}/envelope/compiled.md"
+  [ -f "${_compiled}" ] && return 0
+  mkdir -p "${_tree}/envelope" || die "mkdir ${_tree}/envelope failed"
+  _ans="${DESTROOT}/srv/aios/state/bootstrap-in-progress/answers.json"
+  if [ -f "${_ans}" ]; then
+    python3 - "${_ans}" "${_compiled}" <<'PY' || die "compile work envelope failed"
+import json
+import sys
+
+src, dest = sys.argv[1], sys.argv[2]
+with open(src, encoding="utf-8") as fh:
+    doc = json.load(fh)
+if not isinstance(doc, dict):
+    raise SystemExit("answers.json is not an object")
+lines = ["enabled: yes"]
+vetoes = doc.get("vetoes") or {}
+if isinstance(vetoes, dict):
+    for key in sorted(vetoes):
+        value = vetoes[key]
+        if value is True:
+            shown = "yes"
+        elif value is False:
+            shown = "no"
+        else:
+            shown = str(value)
+        lines.append("vetoes.%s: %s" % (key, shown))
+with open(dest, "w", encoding="utf-8") as fh:
+    fh.write("\n".join(lines) + "\n")
+PY
+  else
+    printf 'enabled: yes\n' > "${_compiled}" \
+      || die "write ${_compiled} failed"
+  fi
+}
+
 materialise_work_tree() {
   _seed="${DESTROOT}/srv/aios/seeds/work-runtime"
   _dest="${DESTROOT}/srv/aios/src/work-runtime"
@@ -564,6 +601,7 @@ materialise_work_tree() {
   if [ -d "${_dest}/.git" ]; then
     git -c safe.directory="${_dest}" -C "${_dest}" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
       || die "${_dest} is not a git repository"
+    compile_work_envelope "${_dest}"
     return 0
   fi
   [ ! -e "${_dest}" ] || die "${_dest} exists but is not a git repository"
@@ -571,6 +609,7 @@ materialise_work_tree() {
   mkdir -p "${_dest}" || die "mkdir ${_dest} failed"
   cp -a "${_seed}/." "${_dest}/" || die "copy seed to ${_dest} failed"
   rm -rf "${_dest}/.git"
+  compile_work_envelope "${_dest}"
   clear_git_env
   git -c safe.directory="${_dest}" -C "${_dest}" init -b main \
     || die "git init ${_dest} failed"

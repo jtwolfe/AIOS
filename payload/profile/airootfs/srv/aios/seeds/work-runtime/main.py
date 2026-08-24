@@ -12,6 +12,10 @@ if HERE not in sys.path:
     sys.path.insert(0, HERE)
 
 PRIVILEGED_TOOLS = ("enact", "pacman", "systemctl", "bootctl", "pacstrap")
+MAX_TOOL_ROUNDS = 8
+FOLLOW_WITHOUT_READ = (
+    "following a skill without reading its body this turn fails"
+)
 
 
 class WorkError(Exception):
@@ -19,6 +23,7 @@ class WorkError(Exception):
 
 
 def work_src():
+    # Unset → this tree. Empty must not fall through to live /srv.
     env = os.environ.get("AIOS_WORK_SRC")
     if env is None:
         return HERE
@@ -29,7 +34,6 @@ def work_src():
 
 
 def serve():
-    # Available, not always proposing. One malformed wake must not exit the unit.
     while True:
         try:
             time.sleep(POLL_S)
@@ -60,15 +64,13 @@ def _actions_from_obj(obj):
         if text is None:
             text = obj.get("body")
         return [(name, str(text or ""))]
+    compact = dict(obj)
+    if "question" in compact:
+        compact.pop("send", None)
     out = []
-    if "skill_read" in obj:
-        out.append(("skill_read", str(obj.get("skill_read") or "")))
-    if "skill_follow" in obj:
-        out.append(("skill_follow", str(obj.get("skill_follow") or "")))
-    if "send" in obj:
-        out.append(("send", str(obj.get("send") or "")))
-    if "question" in obj:
-        out.append(("question", str(obj.get("question") or "")))
+    for key, value in compact.items():
+        if key in ("skill_read", "skill_follow", "send", "question"):
+            out.append((key, str(value or "")))
     return out or None
 
 
@@ -98,6 +100,16 @@ def parse_actions(text):
     return actions
 
 
+def _messages_text(messages):
+    parts = []
+    for item in messages:
+        if isinstance(item, dict):
+            parts.append(str(item.get("content", "")))
+        else:
+            parts.append(str(item))
+    return "\n".join(parts)
+
+
 def _result(
     asked,
     injects,
@@ -110,11 +122,13 @@ def _result(
     skills_read=None,
     skills_followed=None,
     error=None,
+    context="",
 ):
     return {
         "asked": asked,
         "injects": list(injects),
         "prompt": prompt,
+        "context": context,
         "model_text": model_text,
         "delivered": delivered,
         "surface": delivered,
@@ -151,29 +165,7 @@ def run_turn(asked):
             error=str(exc),
         )
 
-    try:
-        reply = load().complete([{"role": "user", "content": prompt}])
-    except ProviderError as exc:
-        return _result(
-            asked,
-            injects,
-            prompt,
-            ended="failed",
-            outcome="failed",
-            error=str(exc),
-        )
-    except Exception as exc:
-        return _result(
-            asked,
-            injects,
-            prompt,
-            ended="failed",
-            outcome="failed",
-            error=str(exc),
-        )
-
-    reply = reply if isinstance(reply, str) else str(reply or "")
-    actions = parse_actions(reply)
+    messages = [{"role": "user", "content": prompt}]
     delivered = []
     question = None
     ended = "idle"
@@ -182,74 +174,142 @@ def run_turn(asked):
     skills_read = []
     skills_followed = []
     read_set = set()
+    bodies_in_context = set()
+    last_reply = ""
+    context = prompt
 
-    if not actions:
-        # Plain model text is not delivered.
+    try:
+        provider = load()
+    except ProviderError as exc:
         return _result(
             asked,
             injects,
             prompt,
-            model_text=reply,
-            delivered="",
-            ended="idle",
-            outcome="idle",
+            context=context,
+            ended="failed",
+            outcome="failed",
+            error=str(exc),
         )
 
-    for name, text in actions:
-        tool = (name or "").strip().lower()
-        if tool in PRIVILEGED_TOOLS:
-            error = "work agents never enact privileged change (HI-13)"
+    for _round in range(MAX_TOOL_ROUNDS):
+        try:
+            reply = provider.complete(messages)
+        except ProviderError as exc:
+            return _result(
+                asked,
+                injects,
+                prompt,
+                context=context,
+                model_text=last_reply,
+                ended="failed",
+                outcome="failed",
+                error=str(exc),
+                skills_read=skills_read,
+                skills_followed=skills_followed,
+            )
+        except Exception as exc:
+            return _result(
+                asked,
+                injects,
+                prompt,
+                context=context,
+                model_text=last_reply,
+                ended="failed",
+                outcome="failed",
+                error=str(exc),
+                skills_read=skills_read,
+                skills_followed=skills_followed,
+            )
+        last_reply = reply if isinstance(reply, str) else str(reply or "")
+        actions = parse_actions(last_reply)
+        if not actions:
+            ended = "idle"
+            outcome = "idle"
+            break
+
+        queued = []
+        stop = False
+        for name, text in actions:
+            tool = (name or "").strip().lower()
+            if tool in PRIVILEGED_TOOLS:
+                error = "work agents never enact privileged change (HI-13)"
+                ended = "failed"
+                outcome = "failed"
+                stop = True
+                break
+            if tool == "skill_read":
+                skill = load_body(root, text)
+                if skill is None:
+                    error = "unknown skill %s" % text
+                    ended = "failed"
+                    outcome = "failed"
+                    stop = True
+                    break
+                if skill.name not in read_set:
+                    skills_read.append(skill.name)
+                    read_set.add(skill.name)
+                if skill.name not in bodies_in_context:
+                    queued.append(skill)
+                continue
+            if tool == "skill_follow":
+                skill = load_body(root, text)
+                if skill is None:
+                    error = "unknown skill %s" % text
+                    ended = "failed"
+                    outcome = "failed"
+                    stop = True
+                    break
+                if skill.name not in bodies_in_context:
+                    error = FOLLOW_WITHOUT_READ
+                    ended = "failed"
+                    outcome = "failed"
+                    stop = True
+                    break
+                if skill.name not in skills_followed:
+                    skills_followed.append(skill.name)
+                continue
+            if tool == "send":
+                delivered.append(text)
+                ended = "sent"
+                outcome = "sent"
+                continue
+            if tool == "question":
+                question = text
+                ended = "question"
+                outcome = "wait"
+                stop = True
+                break
+            error = "unknown tool %s" % tool
             ended = "failed"
             outcome = "failed"
+            stop = True
             break
-        if tool == "skill_read":
-            skill = load_body(root, text)
-            if skill is None:
-                error = "unknown skill %s" % text
-                ended = "failed"
-                outcome = "failed"
-                break
-            if skill.name not in read_set:
-                skills_read.append(skill.name)
-                read_set.add(skill.name)
-            continue
-        if tool == "skill_follow":
-            skill = load_body(root, text)
-            if skill is None:
-                error = "unknown skill %s" % text
-                ended = "failed"
-                outcome = "failed"
-                break
-            if skill.name not in read_set:
-                error = (
-                    "following a skill without reading its body this turn fails"
-                )
-                ended = "failed"
-                outcome = "failed"
-                break
-            if skill.name not in skills_followed:
-                skills_followed.append(skill.name)
-            continue
-        if tool == "send":
-            delivered.append(text)
-            ended = "sent"
-            outcome = "sent"
-            continue
-        if tool == "question":
-            question = text
-            ended = "question"
-            outcome = "wait"
+
+        if stop and error:
             break
-        error = "unknown tool %s" % tool
+        if queued:
+            messages.append({"role": "assistant", "content": last_reply})
+            parts = []
+            for skill in queued:
+                parts.append("skill body %s:\n%s" % (skill.name, skill.body))
+                bodies_in_context.add(skill.name)
+            messages.append({"role": "user", "content": "\n\n".join(parts)})
+            context = _messages_text(messages)
+            if question or error:
+                break
+            continue
+        break
+    else:
+        error = "skill read exceeded this-turn rounds"
         ended = "failed"
         outcome = "failed"
-        break
 
     return _result(
         asked,
         injects,
         prompt,
-        model_text=reply,
+        context=context,
+        model_text=last_reply,
         delivered="\n".join(delivered),
         question=question,
         ended=ended,

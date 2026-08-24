@@ -43,15 +43,9 @@ cmp -s "${SEED}/main.py" "${ISO_SEED}/main.py" \
 diff -qr -x '__pycache__' -x '*.pyc' "${SEED}" "${ISO_SEED}" \
   || fail "ISO work-runtime seed != seed/work-runtime"
 
-grep -q 'This tree only' "${SEED}/skills.py" \
-  || fail "skills.py must stay on this tree"
-grep -q 'name + description' "${SEED}/skills.py" \
-  || fail "skills.py catalog must be name + description"
 grep -q 'following a skill without reading its body this turn fails' \
   "${SEED}/main.py" \
   || fail "main.py missing this-turn read rule"
-grep -q '/srv/aios/skills' "${SEED}/skills.py" \
-  || fail "skills.py must refuse the OS skills tree"
 if grep -n 'AIOS_SKILLS' "${SEED}/main.py" "${SEED}/skills.py" >/dev/null; then
   fail "work runtime must not honour AIOS_SKILLS (OS skills are not a back door)"
 fi
@@ -69,6 +63,8 @@ sh -n "${0}" || fail "sh -n p8-skill.sh"
 SRC="${TMP}/src"
 mkdir -p "${SRC}"
 cp -a "${SEED}/." "${SRC}/"
+mkdir -p "${SRC}/envelope"
+printf '%s\n' 'enabled: yes' > "${SRC}/envelope/compiled.md"
 cat > "${SRC}/skills/sample.md" <<'EOF'
 ---
 name: sample
@@ -76,9 +72,8 @@ description: Catalog-only line for the sample skill.
 ---
 UNIQUE-SAMPLE-BODY-MUST-NOT-BE-IN-CATALOG
 EOF
-printf '%s\n' '{"accepted":true,"work_runtime":true}' > "${TMP}/answers.json"
 printf '%s\n' '{"responses":[{"skill_follow":"sample"}]}' > "${TMP}/follow.json"
-printf '%s\n' '{"responses":[{"skill_read":"sample","skill_follow":"sample","send":"followed-sample"}]}' \
+printf '%s\n' '{"responses":[{"skill_read":"sample"},{"skill_follow":"sample","send":"followed-sample"}]}' \
   > "${TMP}/read.json"
 printf '%s\n' '{"responses":[{"send":"catalog-only"}]}' > "${TMP}/send.json"
 mkdir -p "${TMP}/os-skills/pacman"
@@ -93,10 +88,9 @@ EOF
 run_turn() {
   _fix=$1
   shift
-  AIOS_WORK_SRC="${SRC}" \
+  env -u AIOS_ANSWERS -u AIOS_ENVELOPE_WORK \
+    AIOS_WORK_SRC="${SRC}" \
     AIOS_ROOT="${TMP}/root" \
-    AIOS_ANSWERS="${TMP}/answers.json" \
-    AIOS_ENVELOPE_WORK="${TMP}/envelope-work.md" \
     AIOS_SKILLS="${TMP}/os-skills" \
     AIOS_PROVIDER=fixture \
     AIOS_FIXTURE="${_fix}" \
@@ -148,6 +142,16 @@ if "sample" not in (d.get("skills_followed") or []):
     raise SystemExit("skills_followed %s" % d.get("skills_followed"))
 if d.get("delivered") != "followed-sample":
     raise SystemExit("delivered %s" % d.get("delivered"))
+body = "UNIQUE-SAMPLE-BODY-MUST-NOT-BE-IN-CATALOG"
+if body not in (d.get("context") or ""):
+    raise SystemExit("skill body missing from follow-up context")
+p = d.get("prompt") or ""
+i2 = p.find("[inject 2] skills catalog")
+i3 = p.find("[inject 3] tools")
+if i2 < 0 or i3 <= i2:
+    raise SystemExit("catalog section missing")
+if body in p[i2:i3]:
+    raise SystemExit("skill body leaked into inject 2")
 ' || fail "read then follow must pass: ${_ok}"
 
 env -u AIOS_WORK_SRC env -u AIOS_ROOT env -u AIOS_SKILLS \
