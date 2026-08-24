@@ -1,0 +1,22 @@
+# /usr/lib/systemd/user/aios-work-runtime.service
+[Unit]
+Description=AIOS unprivileged work runtime
+# Skip start when the work tree is absent (HI-15); inactive, not failed.
+ConditionPathIsDirectory=/srv/aios/src/work-runtime
+
+[Service]
+MemoryMax=2G
+CPUQuota=200%
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/tmp /var/tmp /srv/aios/src/work-runtime
+InaccessiblePaths=/srv/aios/envelope /srv/aios/state /srv/aios/agent /srv/aios/checker /srv/aios/git /etc/systemd/system /usr/lib/aios/bin/enact
+ExecStart=/usr/bin/python3 /srv/aios/src/work-runtime/main.py
+
+[Install]
+WantedBy=default.target

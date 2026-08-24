@@ -129,9 +129,9 @@ grep -q 'HI-13' "${POLICY}/work-slice.sh" \
 grep -q 'HI-16' "${POLICY}/hi-16-os-privilege.sh" \
   || fail "hi-16-os-privilege.sh must quote HI-16"
 
-if [ -e "${AIROOTFS}/usr/lib/systemd/user/aios-work-runtime.service" ] \
-  || [ -e "${AIROOTFS}/etc/systemd/system/aios-work-runtime.service" ]; then
-  fail "aios-work-runtime.service must not be added (L-23)"
+if [ -e "${AIROOTFS}/etc/systemd/system/aios-work-runtime.service" ] \
+  || [ -e "${AIROOTFS}/usr/lib/systemd/system/aios-work-runtime.service" ]; then
+  fail "aios-work-runtime.service must not be a system unit (L-23)"
 fi
 if grep -q 'enable aios-work' "${FIRSTBOOT}"; then
   fail "firstboot must not enable work units"
@@ -196,9 +196,14 @@ fi
 
 TMP=$(mktemp -d)
 mkdir -p "${TMP}/root/etc/systemd/system" \
-  "${TMP}/root/usr/lib/systemd/system/aios-work-.service.d"
+  "${TMP}/root/usr/lib/systemd/system/aios-work-.service.d" \
+  "${TMP}/root/usr/lib/systemd/user"
 cp -a "${SLICE}" "${TMP}/root/etc/systemd/system/aios-work.slice"
 cp -a "${FLOOR}" "${TMP}/root/usr/lib/systemd/system/aios-work-.service.d/10-floor.conf"
+if [ -f "${AIROOTFS}/usr/lib/systemd/user/aios-work-runtime.service" ]; then
+  cp -a "${AIROOTFS}/usr/lib/systemd/user/aios-work-runtime.service" \
+    "${TMP}/root/usr/lib/systemd/user/aios-work-runtime.service"
+fi
 
 # Isolation is required; never probe the workstation's live /etc/systemd.
 if ! AIOS_POLICY_ROOT="${TMP}/root" "${POLICY}/work-slice.sh"; then

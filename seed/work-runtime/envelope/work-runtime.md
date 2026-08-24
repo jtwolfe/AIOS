@@ -11,6 +11,9 @@ Skipping the question is not a yes.
 When enabled:
 
 - `/srv/aios/src/work-runtime` exists as its own git repository.
+- Write set is only `/srv/aios/src/work-runtime` plus `/tmp` and
+  `/var/tmp`. Operator home including `~/src` is the approval-gated
+  bridge. `/home` is not in `ReadWritePaths`.
 - Its `AGENTS.md` forbids privileged system mutation.
 - User units are declared in `state/` and **enabled** only after the
   checker passes. Vendor unit **file** (P8.2 / L-23):
@@ -39,5 +42,7 @@ When disabled:
   absent or inert. Do not require `test ! -f` on the user-unit path.
 - `systemctl --user -M aios-work@ is-enabled aios-work-runtime.service`
   is enabled only when the clause is true.
+- User unit `ReadWritePaths=/tmp /var/tmp /srv/aios/src/work-runtime`
+  (single line; no `/home`).
 - `git -C /srv/aios/src/work-runtime rev-parse --is-inside-work-tree` is
   true when enabled.

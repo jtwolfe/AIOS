@@ -225,6 +225,7 @@ check_hashes() {
     'payload/profile/airootfs/etc/systemd/system/aios-intent.socket$' \
     'payload/profile/airootfs/etc/systemd/system/aios-work.slice$' \
     'aios-work-.service.d/10-floor.conf$' \
+    'usr/lib/systemd/user/aios-work-runtime.service$' \
     'payload/profile/airootfs/etc/sudoers.d/aios-checker-snapper$' \
     'payload/profile/airootfs/etc/sudoers.d/aios-agent-enact$' \
     'payload/profile/airootfs/usr/lib/aios/hard-invariants.md$' \
@@ -443,12 +444,17 @@ check_firstboot_payload() {
     || die "aios-work.slice CPUQuota must be 200% (L-06)"
   [[ -f "${iso}/usr/lib/systemd/system/aios-work-.service.d/10-floor.conf" ]] \
     || die "missing aios-work floor drop-in"
-  [[ ! -e "${iso}/usr/lib/systemd/user/aios-work-runtime.service" ]] \
-    || die "aios-work-runtime.service user unit must not ship (L-23)"
+  [[ -f "${iso}/usr/lib/systemd/user/aios-work-runtime.service" ]] \
+    || die "missing aios-work-runtime.service user unit (L-23)"
+  grep -qx 'ReadWritePaths=/tmp /var/tmp /srv/aios/src/work-runtime' \
+    "${iso}/usr/lib/systemd/user/aios-work-runtime.service" \
+    || die "user unit ReadWritePaths is not the L-15 set"
   [[ ! -e "${iso}/etc/systemd/system/aios-work-runtime.service" ]] \
     || die "aios-work-runtime.service must not be a system unit (L-23)"
   [[ ! -e "${iso}/usr/lib/systemd/system/aios-work-runtime.service" ]] \
     || die "aios-work-runtime.service must not be a system unit (L-23)"
+  [[ ! -e "${iso}/usr/lib/systemd/user/default.target.wants/aios-work-runtime.service" ]] \
+    || die "aios-work-runtime.service must not be enabled on the live ISO"
   [[ ! -e "${iso}/srv/aios/src" ]] || die "/srv/aios/src must not exist (HI-15)"
   [[ -f "${iso}/usr/lib/aios/intent/schema.json" ]] || die "missing intent schema.json"
   [[ -f "${iso}/usr/lib/aios/agent/aios_agent/intent_consume.py" ]] \

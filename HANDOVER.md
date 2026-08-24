@@ -141,7 +141,7 @@ decisions.” Changing one is a docs patch first.
 | L-12 | `aios brake`: stop+mask proposer, freeze enact. Human-only. |
 | L-13 | One non-root operator login. No sudo to enact. |
 | L-14 | OS surface ≠ work surface. One chat with both rights is a fail. |
-| L-15 | Work write set named before any work unit. Slice must match. |
+| L-15 | Work write set is `/srv/aios/src/work-runtime` plus tmp. Slice and user unit match. `~/src` is the bridge. |
 | L-16 | Work token ≠ OS token. Work uid cannot read the OS key. |
 | L-17 | Live Grok login is device-code (`grok login --device-auth`). URL + user code on TTY; finish on a phone or other PC. After accept. No pasted API key. |
 | L-18 | Named TUI views. GUI later is the same ids. Keyboard-complete. |
@@ -207,7 +207,7 @@ must-close, then lock it in `docs/implementation.md` before code.
 | Operator username: asked vs derived from purpose | P5 |
 | How summon names the surface (`aios` vs `aios work`) | P7 |
 | **System unit vs user unit for work runtime — pick one** | **Before any P8 unit** |
-| L-15 write set vs `~/src` — must agree with the slice | P8.2 |
+| L-15 write set vs `~/src` — `/srv/aios/src/work-runtime` plus tmp; `~/src` is the bridge | **P8.2 locked** |
 | How bots is asked (OS surface, after work-runtime already yes) | P8.13 |
 | LUKS / Secure Boot: asked or listed as hole | P10 |
 | Version scheme; where the public key lives out of band | P11 |

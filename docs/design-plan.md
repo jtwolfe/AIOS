@@ -86,7 +86,7 @@ Canonical table remains [docs/implementation.md](implementation.md) “Locked de
 | L-12 | `aios brake`: stop+mask proposer, freeze enact, write `/srv/aios/state/brake`. Human-only. Installer stays up. | HI-05, human emergency brake. |
 | L-13 | One non-root operator login. No sudo to enact. Service uids `nologin`. Root is recovery only. | v1 hole: multi-operator. |
 | L-14 | OS surface ≠ work surface. One chat with both rights is a fail. | Mixing privilege into chat is how the kernel boundary dies. |
-| L-15 | Work write set named before any work unit. Slice `ReadWritePaths` equals that set plus tmp. Floor until P8.2: `/srv/aios/src/work-runtime` only. | Shipping P8 while the slice only writes the work-runtime tree *and* claiming `~/src` is a fail. |
+| L-15 | Work write set is only `/srv/aios/src/work-runtime` plus `/tmp` and `/var/tmp`. Slice and user-unit `ReadWritePaths` equal that set. Operator home including `~/src` is the approval-gated bridge (P8.9). | Do not put `/home` in `ReadWritePaths`. Do not claim `~/src` as the workspace. |
 | L-16 | Work token ≠ OS token. Work uid cannot read the OS key. | Two providers, two files. |
 | L-17 | Live Grok login is device-code (`grok login --device-auth`). URL + user code on TTY; finish on a phone or other PC. After accept. No pasted API key. | No DE in v1. Token `0600`, not in git or transcript. |
 | L-18 | Named TUI views. GUI later is the same ids. Keyboard-complete. Clickable URLs when the terminal allows. | Grok Build TUI transferred as *client class*, not as the OS. |
@@ -100,7 +100,7 @@ Canonical table remains [docs/implementation.md](implementation.md) “Locked de
 
 **Answered now (already locked in the spine; this design restates, does not reopen):**
 
-- Language, uids, git, enact, socket, slice, disk, provider, TUI-first, minisign, locale-until-envelope, brake, one operator, two surfaces, floor write set, two tokens, device-code, view catalog, seatbelts, two harnesses, idle/stall (L-01…L-21).
+- Language, uids, git, enact, socket, slice, disk, provider, TUI-first, minisign, locale-until-envelope, brake, one operator, two surfaces, L-15 write set (`/srv/aios/src/work-runtime` plus tmp; `~/src` is the bridge), two tokens, device-code, view catalog, seatbelts, two harnesses, idle/stall (L-01…L-21).
 - **Version string (L-22):** `/etc/os-release`. Human 2026-08-23.
 - **Work-runtime unit (L-23):** user unit at `/usr/lib/systemd/user/`. Human 2026-08-23.
 - P1 installed package set (see First `/execute` session).
@@ -119,13 +119,12 @@ Canonical table remains [docs/implementation.md](implementation.md) “Locked de
 | When a pattern earns a `SKILL.md` | **P4.3 locked:** two successful verbatim moments of the class, or the human asks. |
 | Operator username: asked vs derived | P5 |
 | How summon names the surface | P7 |
-| L-15 write set vs `~/src` | P8.2 |
 | How bots is asked | P8.13 |
 | LUKS / Secure Boot | P10 |
 | How the checker marks hardware-specific commits inapplicable | P10.2 |
 | Version scheme; where the public key lives out of band | P11 |
 
-Do not synthesise work-runtime “while we are in the ISO.” P8 still does not *enable* a unit until the matching drop-in lands (PR 32); the unit *type* is already locked.
+Do not synthesise work-runtime “while we are in the ISO.” P8 still does not *enable* a unit until synthesis (P8.1) when the envelope bit is yes. The vendor user-unit file may exist after P8.2 (HI-15). The unit *type* is already locked (L-23).
 
 ---
 
@@ -1033,7 +1032,7 @@ Reject → L-19 restore procedure, **P5 path**: RW-clone `snapper_pre` (snapshot
 | Question | Answer |
 | --- | --- |
 | Socket path, mode, owner | Already L-05. |
-| Floor write set until P8.2 | Work-runtime tree only (`ReadWritePaths=/tmp /var/tmp /srv/aios/src/work-runtime`). |
+| L-15 write set | `/tmp /var/tmp /srv/aios/src/work-runtime` (locked P8.2). `~/src` is the bridge. |
 
 #### Work packages
 
@@ -1054,7 +1053,7 @@ Units: `aios-intent.socket` as specified in the spine; `aios-work.slice`; `aios-
 
 `enact` is not executable by `aios-work`. Work uid cannot write `/srv/aios/envelope`. Work uid cannot read the privileged provider key path.
 
-sysusers and slice drop-in: **exactly** the floor text in implementation.md. P8.2 patches L-15 and that drop-in **together**.
+sysusers and slice drop-in: **exactly** the text in implementation.md. L-15 write set and that drop-in are patched **together** (P8.2).
 
 #### Oracles → `vm-privilege-deny`
 
@@ -1079,7 +1078,7 @@ Socket/slice are systemd units in git. Failed P6: revert unit files via checker-
 | Risk | Severity | Mitigation |
 | --- | --- | --- |
 | Intent socket is a shell | High | Schema; one JSON object; agent is only consumer. |
-| Write set disagrees with L-15 at P8 | High | Floor until P8.2; same-commit patch. |
+| Write set disagrees with L-15 at P8 | High | Locked P8.2: one `ReadWritePaths` line on slice and user unit. |
 | Work uid in a group that can read OS token | High | L-02; L-16 oracle. |
 
 ---
@@ -1172,7 +1171,7 @@ Brake freezes `enact`. Snapper view rollback is the L-19 path. Do not require li
 
 | Question | Rule |
 | --- | --- |
-| Write set (L-15) | Which directories. Patch the slice drop-in in the **same commit**. `~/src` vs `/srv/aios/src/work-runtime` may not disagree. Options: [Open Questions](#open-questions). |
+| Write set (L-15) | **Locked (P8.2):** `/srv/aios/src/work-runtime` plus `/tmp` and `/var/tmp`. Slice and user-unit `ReadWritePaths` match. Operator home including `~/src` is the approval-gated bridge (P8.9). Do not put `/home` in `ReadWritePaths`. |
 | System unit vs user unit | **Locked (L-23, human 2026-08-23): user unit.** Rationale: work runtime is the multi-agent environment for user tasks *outside* OS configure/manage (HI-15, L-14). OS agent / checker / installer stay system units. Do **not** ship both. Unit file: `/usr/lib/systemd/user/aios-work-runtime.service` (bots: `aios-work-runtime-bots.service`). System-managed; PR 32 installs the vendor **file** (may exist when the bit is no). Enable only at synthesis (P8.1) when the envelope bit is yes: `systemctl --user -M aios-work@`. Linger `aios-work` (`/var/lib/systemd/linger/aios-work` via tmpfiles, not a live homedir). Not `~/.config/systemd/user/` as the only copy (HI-09). Disabled oracles: `is-enabled`/`is-active` false, no linger-started service, work tree inert — not `test ! -f` on the user-unit path. Never `/etc/systemd/system/aios-work-runtime.service`. |
 | How bots is asked | On the OS definition surface, **after** work-runtime is already yes. Never as a third bootstrap question. Options: [Open Questions](#open-questions). |
 
@@ -1684,7 +1683,7 @@ sudoers: `aios-agent ALL=(root) NOPASSWD: /usr/lib/aios/bin/enact`.
 
 ### Slice drop-in
 
-Floor as in implementation.md. P8.2 may extend `ReadWritePaths` only to the declared L-15 set, in the same commit as the envelope oracle.
+L-15 write set as in implementation.md: `ReadWritePaths=/tmp /var/tmp /srv/aios/src/work-runtime` on the slice drop-in and the user unit. Operator home including `~/src` is the approval-gated bridge (P8.9).
 
 ### sysusers
 
@@ -1914,15 +1913,9 @@ Procedure: download once, `sha256sum`, record URL + hash in `payload/build.sh` a
 
 **Lock (L-23):** user unit. See Alternatives §4. Seed oracles use `/usr/lib/systemd/user/aios-work-runtime.service` and `systemctl --user -M aios-work@`. OS loop units stay system units.
 
-### L-15 write set vs `~/src` — P8.2
+### L-15 write set vs `~/src` — P8.2 — **Resolved** (P8.2)
 
-**Options:**
-
-- Write set is only `/srv/aios/src/work-runtime` (+ tmp). `~/src` is bridge-gated (operator home outside the set).
-- Write set includes `/home/<operator>/src`. Slice `ReadWritePaths` and `ProtectHome` must match. Envelope oracle matches.
-- Bind-mount `~/src` into the work tree (still must be declared).
-
-Floor until then: work-runtime tree only. Shipping P8 while the slice only writes the work-runtime tree **and** claiming user work in `~/src` is a fail.
+**Lock:** Write set is only `/srv/aios/src/work-runtime` plus `/tmp` and `/var/tmp`. Operator home including `~/src` is the approval-gated bridge (P8.9). Do not put `/home` in `ReadWritePaths`. Do not claim `~/src` as the workspace. Slice drop-in and user-unit `ReadWritePaths` are the same single line.
 
 ### How bots is asked — P8.13
 

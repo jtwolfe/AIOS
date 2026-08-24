@@ -120,7 +120,7 @@ is a docs patch on this file, not a silent drift in code.
 | L-12 | Emergency brake | TTY command `aios brake`: stop and mask `aios-agent.service`, freeze `enact`, write `/srv/aios/state/brake`. Installer stays up. Human-only. |
 | L-13 | Operator login | Bootstrap creates one non-root human login. After accept, `tty1` autologin is that user. No sudo to enact. They may run `/usr/lib/aios/bin/aios` (summon, status, brake). Service uids stay `nologin`. Root is recovery only. |
 | L-14 | Two surfaces | OS definition surface and work definition surface are different sessions. Summon names which. A work turn does not receive privileged tools. An OS turn does not run in `aios-work.slice`. One chat with both rights is a fail. |
-| L-15 | Workspace write set | Before any work unit is enabled, this plan and the envelope name the directories a work process may write. Slice `ReadWritePaths` equals that set plus tmp. Operator home outside the set is the approval-gated bridge. Privileged trees stay `InaccessiblePaths`. Shipping P8 while the slice only writes `/srv/aios/src/work-runtime` *and* claiming user work in `~/src` is a fail. |
+| L-15 | Workspace write set | A work process may write only `/srv/aios/src/work-runtime`, `/tmp`, and `/var/tmp`. Slice and user-unit `ReadWritePaths` equal that set (one line). Operator home including `~/src` is the approval-gated bridge (P8.9). Do not put `/home` in `ReadWritePaths`. Do not claim `~/src` as the workspace. Privileged trees stay `InaccessiblePaths`. |
 | L-16 | Work provider | The work runtime has its own provider config and secret path. The privileged OS token is `/srv/aios/state/provider/os.token` (mode `0600`, uid `aios-agent`, directory `0700`, not in git). The work uid cannot read it: `/srv/aios/state` is on work-slice `InaccessiblePaths`, and the file is owner-only. Fixture is default in the VM. Live is L-17 on a separate token file (P8.10), never this path. |
 | L-17 | Live Grok login | Same browser OAuth as Grok Build (`grok login --device-auth`): TTY prints a verification URL and user code; the human opens that URL on a **phone or other PC**, completes sign-in at `auth.x.ai` / grok.com, the box polls until confirmed. Token file mode `0600`, not in git, not in the transcript. The AIOS box does not open a local browser (no DE in v1). Refused if the envelope vetoed remotes. First live login is after envelope accept. Fixture covers the matrix. OS token and work token are different files (L-16). |
 | L-18 | Views | One named view catalog for installer, OS, work, and bots. TUI is v1. GUI is a later restyle of the **same** view ids and actions (visual similarity, identical functionality). Every action has a keyboard path. Mouse and clickable URLs (Grok Build TUI) when the terminal supports them. Serial/QEMU fixtures are keyboard-complete. |
@@ -131,9 +131,11 @@ is a docs patch on this file, not a silent drift in code.
 | L-23 | Work-runtime unit | systemd **user** unit, system-managed at `/usr/lib/systemd/user/`. Work runtime and bots: user units only. Do not ship system units for them. OS agent, checker, and installer stay **system** units. Human lock 2026-08-23. |
 
 
-The system-slice and L-23 user-unit floor snippets later in this file
-are the **floor** (write the work-runtime tree only). P8.2 must patch
-L-15 and those snippets together. They are not allowed to disagree.
+The system-slice drop-in and L-23 user-unit snippets later in this file
+declare the L-15 write set (`/srv/aios/src/work-runtime` plus `/tmp`
+and `/var/tmp`). They are not allowed to disagree. Operator home
+including `~/src` is the approval-gated bridge (P8.9), not the write
+set.
 
 ---
 
@@ -274,11 +276,15 @@ CPUQuota=200%
 
 L-23 user-unit floor (work-runtime and bots). `User=`/`Group=` are
 implied by the `aios-work` user manager — do not set them on the user
-unit. Copy `MemoryMax`/`CPUQuota` onto the user unit. Prefer
-`Slice=aios-work.slice` only if systemd accepts it.
+unit. Copy `MemoryMax`/`CPUQuota` onto the user unit. Do not set
+`Slice=aios-work.slice` on the user unit (the system slice remains for
+system-level work cgroups).
 
 ```
 # /usr/lib/systemd/user/aios-work-runtime.service
+[Unit]
+Description=AIOS unprivileged work runtime
+ConditionPathIsDirectory=/srv/aios/src/work-runtime
 [Service]
 MemoryMax=2G
 CPUQuota=200%
@@ -291,6 +297,9 @@ CapabilityBoundingSet=
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 ReadWritePaths=/tmp /var/tmp /srv/aios/src/work-runtime
 InaccessiblePaths=/srv/aios/envelope /srv/aios/state /srv/aios/agent /srv/aios/checker /srv/aios/git /etc/systemd/system /usr/lib/aios/bin/enact
+ExecStart=/usr/bin/python3 /srv/aios/src/work-runtime/main.py
+[Install]
+WantedBy=default.target
 ```
 
 ### Socket
@@ -931,8 +940,8 @@ throwaway wizard.
 
 **Depends.** P3, P4.
 
-**Must close.** Socket path, mode, owner (already L-05). Floor write set
-until P8.2 (work-runtime tree only).
+**Must close.** Socket path, mode, owner (already L-05). L-15 write set
+is `/srv/aios/src/work-runtime` plus `/tmp` and `/var/tmp` (locked P8.2).
 
 **Deliverables**
 
@@ -1030,8 +1039,10 @@ oracle. Copying markdown is not done. A vague “agents work” is not done.
 
 **Must close before any work unit is enabled**
 
-- Write set (L-15): which directories. Patch the slice drop-in in the
-  same commit. `~/src` vs `/srv/aios/src/work-runtime` may not disagree.
+- Write set (L-15): `/srv/aios/src/work-runtime` plus `/tmp` and
+  `/var/tmp`. Operator home including `~/src` is the approval-gated
+  bridge (P8.9). Slice and user-unit `ReadWritePaths` match. Do not
+  put `/home` in `ReadWritePaths`. Do not claim `~/src` as the workspace.
 - Unit type is **locked** (L-23): user unit at
   `/usr/lib/systemd/user/`. Do not ship a system unit for work-runtime
   or bots. Vendor user-unit **file** may exist after P8.2 when the bit

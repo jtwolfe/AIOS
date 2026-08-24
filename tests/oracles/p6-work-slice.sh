@@ -1,5 +1,5 @@
 #!/bin/sh
-# P6.2: aios-work.slice + floor drop-in. HI-13 HI-16. Not L-23 user units.
+# P6.2: aios-work.slice + floor drop-in. HI-13 HI-16. L-23 user unit is a file, not a system unit.
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -7,6 +7,7 @@ ROOT=$(CDPATH= cd -- "${SCRIPT_DIR}/../.." && pwd)
 AIROOTFS="${ROOT}/payload/profile/airootfs"
 SLICE="${AIROOTFS}/etc/systemd/system/aios-work.slice"
 FLOOR="${AIROOTFS}/usr/lib/systemd/system/aios-work-.service.d/10-floor.conf"
+USER_UNIT="${AIROOTFS}/usr/lib/systemd/user/aios-work-runtime.service"
 FIRSTBOOT="${AIROOTFS}/usr/lib/aios/bin/firstboot"
 POLICY="${ROOT}/checker/policy"
 ISO_POLICY="${AIROOTFS}/usr/lib/aios/checker/policy"
@@ -33,6 +34,14 @@ fi
 LIVE_FLOOR_BEFORE=0
 if [ -e /usr/lib/systemd/system/aios-work-.service.d/10-floor.conf ]; then
   LIVE_FLOOR_BEFORE=1
+fi
+LIVE_USER_UNIT_BEFORE=0
+if [ -e /usr/lib/systemd/user/aios-work-runtime.service ]; then
+  LIVE_USER_UNIT_BEFORE=1
+fi
+LIVE_LINGER_BEFORE=0
+if [ -e /var/lib/systemd/linger/aios-work ]; then
+  LIVE_LINGER_BEFORE=1
 fi
 
 TMP=$(mktemp -d)
@@ -77,9 +86,7 @@ if grep '^ReadWritePaths=' "${FLOOR}" | grep -Eq '/home|/srv/aios/envelope|/srv/
   fail "floor ReadWritePaths includes a privileged or home path"
 fi
 
-if [ -e "${AIROOTFS}/usr/lib/systemd/user/aios-work-runtime.service" ]; then
-  fail "aios-work-runtime.service user unit must not be added (L-23)"
-fi
+[ -f "${USER_UNIT}" ] || fail "missing aios-work-runtime.service user unit (L-23)"
 if [ -e "${AIROOTFS}/etc/systemd/system/aios-work-runtime.service" ]; then
   fail "aios-work-runtime.service must not be a system unit (L-23)"
 fi
@@ -132,9 +139,11 @@ sh -n "${ISO_POLICY}/work-slice.sh" || fail "sh -n ISO work-slice.sh"
 sh -n "${ISO_POLICY}/hi-16-os-privilege.sh" || fail "sh -n ISO hi-16-os-privilege.sh"
 
 mkdir -p "${TMP}/root/etc/systemd/system" \
-  "${TMP}/root/usr/lib/systemd/system/aios-work-.service.d"
+  "${TMP}/root/usr/lib/systemd/system/aios-work-.service.d" \
+  "${TMP}/root/usr/lib/systemd/user"
 cp -a "${SLICE}" "${TMP}/root/etc/systemd/system/aios-work.slice"
 cp -a "${FLOOR}" "${TMP}/root/usr/lib/systemd/system/aios-work-.service.d/10-floor.conf"
+cp -a "${USER_UNIT}" "${TMP}/root/usr/lib/systemd/user/aios-work-runtime.service"
 
 # Isolation is required; never probe the workstation's live /etc/systemd.
 if ! AIOS_POLICY_ROOT="${TMP}/root" "${POLICY}/work-slice.sh"; then
@@ -159,10 +168,14 @@ grep -Fq 'payload/profile/airootfs/etc/systemd/system/aios-work.slice' "${HASHES
   || fail "payload/hashes.txt must pin aios-work.slice"
 grep -Fq 'aios-work-.service.d/10-floor.conf' "${HASHES}" \
   || fail "payload/hashes.txt must pin floor drop-in"
+grep -Fq 'usr/lib/systemd/user/aios-work-runtime.service' "${HASHES}" \
+  || fail "payload/hashes.txt must pin aios-work-runtime user unit"
 grep -Fq '/etc/systemd/system/aios-work.slice' "${ISO_HASHES}" \
   || fail "ISO hashes.txt must pin aios-work.slice"
 grep -Fq '/usr/lib/systemd/system/aios-work-.service.d/10-floor.conf' "${ISO_HASHES}" \
   || fail "ISO hashes.txt must pin floor drop-in"
+grep -Fq '/usr/lib/systemd/user/aios-work-runtime.service' "${ISO_HASHES}" \
+  || fail "ISO hashes.txt must pin aios-work-runtime user unit"
 
 (cd "${ROOT}" && grep -E '^[0-9a-f]{64} ' "${HASHES}" | sha256sum -c --strict - >/dev/null) \
   || fail "sha256sum -c payload/hashes.txt --strict"
@@ -193,6 +206,14 @@ fi
 if [ "${LIVE_FLOOR_BEFORE}" -eq 0 ] \
   && [ -e /usr/lib/systemd/system/aios-work-.service.d/10-floor.conf ]; then
   fail "oracle wrote live floor drop-in"
+fi
+if [ "${LIVE_USER_UNIT_BEFORE}" -eq 0 ] \
+  && [ -e /usr/lib/systemd/user/aios-work-runtime.service ]; then
+  fail "oracle wrote live aios-work-runtime.service"
+fi
+if [ "${LIVE_LINGER_BEFORE}" -eq 0 ] \
+  && [ -e /var/lib/systemd/linger/aios-work ]; then
+  fail "oracle wrote live linger/aios-work"
 fi
 
 if [ "${failed}" -ne 0 ]; then

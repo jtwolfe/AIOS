@@ -13,16 +13,16 @@ f33f6243ae5f1ae0f0f706068c0889f4552f9df877a5d434c0b094601e57d1d6  /srv/aios/seed
 2d10e6a61690ba7ca54878679cf1e89770c7465af5841e6ea277357c3c0c3063  /srv/aios/seeds/work-runtime-bots/skills/roster.md
 daf7f2808ba380489357b680cb34a7695c5058cfa8d353d7a086362038e067f4  /srv/aios/seeds/work-runtime/boundaries/interfaces.md
 a6ece76f8124aa597b5dcc1de200d88f6d313ecacbde68a03b7af8c868974c03  /srv/aios/seeds/work-runtime/boundaries/invariants.md
-e60bbfee2d5d3653df026c987e589c94b4e1cedd571d6c440334b4d3127e21f3  /srv/aios/seeds/work-runtime/envelope/work-runtime.md
+7bd1d47030e7cf8183d096e391765e54438b1f31505765d85503cb7c690cf1db  /srv/aios/seeds/work-runtime/envelope/work-runtime.md
 211a223e5343c3f2ab9bbde77278607f69e5cac2e573ac778d5b4e263c8f8661  /srv/aios/seeds/work-runtime/README.md
 f8445fa0af1eca344c0032d5becfc01c5361709198814360cf9d21be4cc8919b  /srv/aios/seeds/work-runtime/skills/bridge.md
 048b6a234e5f39b25e6daf1b447a103abd347f7dc10ad7e0d7c1c05d9f2c4358  /srv/aios/seeds/work-runtime/skills/connectors.md
 645de55fbadbbda5069821a2652b100cf145c7c82ef0774de1007d550627df2a  /srv/aios/seeds/work-runtime/skills/handoff.md
 8d60d430d485dce9e9c78d6fc94e079ca76700c3743f8a90e51d6a52c45f97ad  /srv/aios/seeds/work-runtime/skills/wake.md
 1dfab8088c3562fa1238017fb8a0a67af26846cca6b76a0dc7546d6290153da5  /usr/lib/sysusers.d/aios.conf
-af88e368bddfde9102e36769afbecb18024e0f942e8ac2daec083354391d8934  /usr/lib/tmpfiles.d/aios.conf
+108900bb7235cf40d9c1ab6dead6c3e256a30ea3185ca416c302f4372be27076  /usr/lib/tmpfiles.d/aios.conf
 e1d970e23c577b03a4f75287e664c17220c767dba5521aa57e78a966d65cc973  bin/enact
-ff7180ccf2fccb65e3a7da4b5176a95bb0470f5b3e88095201e2c52e120ff257  bin/firstboot
+40e950813f665bc36eb806a48713fae7d6fff8999c95819f4aa8b5598c08f813  bin/firstboot
 15c84dd09bfdd20d04c324a4ef7aabb11ff7798842f4ffb09903037af02cddec  agent/AGENTS.md
 2fe8409585a96711decd7c023cb652d077cb8fcde843e1c3f4ee428ade81387f  agent/aios_agent/deny.py
 741573efec00a9b24663972f318db1ecd013209ab1f1a24f29e62e0adeec4bf1  agent/aios_agent/main.py
@@ -98,5 +98,6 @@ ffbd519941c76fb5ee0e011edfa5c08fe4981b03b6b0041495e269641138ff06  intent/schema.
 020205e349958f06b5bc38ac05614147963064699e3bd223ed2668f13e894d39  /etc/systemd/system/aios-intent.socket
 b780ee3b2395594e5206dd37d8d73dc8d2287469ec57cabffeb2606227a66b02  /etc/systemd/system/aios-work.slice
 f4c4b6d04d00766230da67d9fa657403128dd01ccce4ec713384593ae1bd09ff  /usr/lib/systemd/system/aios-work-.service.d/10-floor.conf
+0ae2cbf113b389434b0a4e5a379d38eae3998302cfd2bcfb594a4092fa68113f  /usr/lib/systemd/user/aios-work-runtime.service
 460430dfbc9480c3494621607bb8169fba285ddc0069b57d53a475db8a9783c5  operator-client/tty/notify.py
 ead3cc3cb403e623060323ba8e83c5fb6ab7d2961de9ef5de006fe2d308f2ef6  agent/aios_agent/rollback_gate.py

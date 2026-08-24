@@ -534,6 +534,7 @@ copy_payload_into_target() {
     "${TARGET}/usr/lib/tmpfiles.d" \
     "${TARGET}/etc/systemd/system" \
     "${TARGET}/usr/lib/systemd/system/aios-work-.service.d" \
+    "${TARGET}/usr/lib/systemd/user" \
     "${TARGET}/srv/aios/envelope" \
     "${TARGET}/srv/aios/seeds" \
     "${TARGET}/srv/aios/checker" \
@@ -556,6 +557,8 @@ copy_payload_into_target() {
     "${TARGET}/etc/systemd/system/aios-work.slice"
   copy_if_present /usr/lib/systemd/system/aios-work-.service.d/10-floor.conf \
     "${TARGET}/usr/lib/systemd/system/aios-work-.service.d/10-floor.conf"
+  copy_if_present /usr/lib/systemd/user/aios-work-runtime.service \
+    "${TARGET}/usr/lib/systemd/user/aios-work-runtime.service"
   copy_if_present "${AIOS_LIB}/intent/schema.json" \
     "${TARGET}/usr/lib/aios/intent/schema.json"
   copy_if_present "${AIOS_LIB}/intent/README.md" \
@@ -615,6 +618,16 @@ copy_payload_into_target() {
     || die "aios-work.slice missing on target"
   [ -f "${TARGET}/usr/lib/systemd/system/aios-work-.service.d/10-floor.conf" ] \
     || die "aios-work floor drop-in missing on target"
+  [ -f "${TARGET}/usr/lib/systemd/user/aios-work-runtime.service" ] \
+    || die "aios-work-runtime user unit missing on target"
+  [ ! -e "${TARGET}/etc/systemd/system/aios-work-runtime.service" ] \
+    || die "aios-work-runtime.service must not be a system unit (L-23)"
+  [ ! -e "${TARGET}/usr/lib/systemd/system/aios-work-runtime.service" ] \
+    || die "aios-work-runtime.service must not be a system unit (L-23)"
+  [ ! -e "${TARGET}/usr/lib/systemd/user/default.target.wants/aios-work-runtime.service" ] \
+    || die "aios-work-runtime.service user unit must stay disabled (HI-15)"
+  [ ! -e "${TARGET}/etc/systemd/user/default.target.wants/aios-work-runtime.service" ] \
+    || die "aios-work-runtime.service user unit must stay disabled (HI-15)"
   [ -f "${TARGET}/usr/lib/aios/intent/schema.json" ] \
     || die "intent schema.json missing on target"
   [ -f "${TARGET}/etc/sudoers.d/aios-checker-snapper" ] \
@@ -747,7 +760,8 @@ EOF
   copy_payload_into_target
   systemd-sysusers --root="${TARGET}"
   systemd-tmpfiles --root="${TARGET}" --create \
-    --prefix=/srv/aios --prefix=/run/aios --prefix=/etc/aios || true
+    --prefix=/srv/aios --prefix=/run/aios --prefix=/etc/aios \
+    --prefix=/var/lib/systemd/linger || true
   mkdir -p "${TARGET}/etc/aios" || die "mkdir /etc/aios failed"
   chmod 0755 "${TARGET}/etc/aios" || die "chmod /etc/aios failed"
   chown root:root "${TARGET}/etc/aios" || die "chown /etc/aios failed"
