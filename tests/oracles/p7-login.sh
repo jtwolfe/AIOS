@@ -7,8 +7,10 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ROOT=$(CDPATH= cd -- "${SCRIPT_DIR}/../.." && pwd)
 MAIN="${ROOT}/operator-client/tty/aios.py"
 LIVE="${ROOT}/agent/aios_agent/provider/live.py"
+GATE="${ROOT}/agent/aios_agent/login_gate.py"
 ISO_OC="${ROOT}/payload/profile/airootfs/usr/lib/aios/operator-client"
 ISO_LIVE="${ROOT}/payload/profile/airootfs/usr/lib/aios/agent/aios_agent/provider/live.py"
+ISO_GATE="${ROOT}/payload/profile/airootfs/usr/lib/aios/agent/aios_agent/login_gate.py"
 HASHES="${ROOT}/payload/hashes.txt"
 failed=0
 PYTHONDONTWRITEBYTECODE=1
@@ -21,8 +23,10 @@ fail() {
 
 [ -f "${MAIN}" ] || fail "missing ${MAIN}"
 [ -f "${LIVE}" ] || fail "missing ${LIVE}"
+[ -f "${GATE}" ] || fail "missing ${GATE}"
 [ -f "${ISO_OC}/tty/aios.py" ] || fail "missing ISO aios.py"
 [ -f "${ISO_LIVE}" ] || fail "missing ISO live.py"
+[ -f "${ISO_GATE}" ] || fail "missing ISO login_gate.py"
 
 grep -q 'P7.6' "${MAIN}" || fail "aios.py must quote P7.6"
 grep -q 'L-17' "${MAIN}" || fail "aios.py must quote L-17"
@@ -31,11 +35,33 @@ grep -q 'never a pasted API key' "${MAIN}" \
   || fail "aios.py must refuse a pasted API key (L-17)"
 grep -q 'http_from_fixture' "${LIVE}" \
   || fail "live.py must offer an injected http fixture (L-17)"
+grep -q 'login-request' "${MAIN}" \
+  || fail "aios.py must file login-request (L-16)"
+grep -q 'tick_login' "${GATE}" \
+  || fail "login_gate.py must tick live login for the unit"
+python3 - "${MAIN}" <<'PY' || fail "production start must not construct LiveProvider"
+import ast
+import sys
+
+tree = ast.parse(open(sys.argv[1], encoding="utf-8").read())
+for node in tree.body:
+    if not isinstance(node, ast.ClassDef) or node.name != "Session":
+        continue
+    for item in node.body:
+        if not isinstance(item, ast.FunctionDef):
+            continue
+        if item.name != "_login_start_rendezvous":
+            continue
+        names = [n.id for n in ast.walk(item) if isinstance(n, ast.Name)]
+        if "LiveProvider" in names:
+            raise SystemExit("rendezvous constructs LiveProvider")
+PY
 
 _pyct=$(mktemp -d)
 cp -a "${MAIN}" "${_pyct}/aios.py" || fail "copy aios.py for py_compile"
 cp -a "${LIVE}" "${_pyct}/live.py" || fail "copy live.py for py_compile"
-python3 -m py_compile "${_pyct}/aios.py" "${_pyct}/live.py" \
+cp -a "${GATE}" "${_pyct}/login_gate.py" || fail "copy login_gate.py for py_compile"
+python3 -m py_compile "${_pyct}/aios.py" "${_pyct}/live.py" "${_pyct}/login_gate.py" \
   || fail "py_compile failed"
 rm -rf "${_pyct}"
 
@@ -45,6 +71,8 @@ cmp -s "${MAIN}" "${ISO_OC}/tty/aios.py" \
   || fail "ISO aios.py bytes differ"
 cmp -s "${LIVE}" "${ISO_LIVE}" \
   || fail "ISO live.py bytes differ"
+cmp -s "${GATE}" "${ISO_GATE}" \
+  || fail "ISO login_gate.py bytes differ"
 
 _prov=$(grep -RIn -- 'provider' "${ROOT}/installer" 2>/dev/null | head -n 1 || true)
 [ -z "${_prov}" ] || fail "installer names provider (HI-02): ${_prov}"
@@ -67,7 +95,12 @@ mkdir -p \
   "${TMP}/root/etc/aios" \
   "${TMP}/root/srv/aios/state/bootstrap-in-progress" \
   "${TMP}/root/srv/aios/state/provider" \
+  "${TMP}/root/run/aios" \
   "${TMP}/nowrite-parent"
+: > "${TMP}/root/run/aios/login-request"
+: > "${TMP}/root/run/aios/login-status"
+chmod 0660 "${TMP}/root/run/aios/login-request"
+chmod 0640 "${TMP}/root/run/aios/login-status"
 
 TOKEN="${TMP}/root/srv/aios/state/provider/os.token"
 STAMP="${TMP}/root/etc/aios/envelope-accepted"
@@ -228,6 +261,126 @@ printf '%s\n' "${_nowrite}" | grep -q 'L-16' \
   || fail "unwritable token must quote L-16: ${_nowrite}"
 printf '%s\n' "${_nowrite}" | grep -Eqi 'sudo' \
   && fail "unwritable token must not sudo: ${_nowrite}" || true
+
+REQ="${TMP}/root/run/aios/login-request"
+STU="${TMP}/root/run/aios/login-status"
+rm -f "${TOKEN}"
+: > "${REQ}"
+: > "${STU}"
+chmod 0660 "${REQ}"
+chmod 0640 "${STU}"
+
+prod() {
+  printf '%s\n' "$@" | \
+    AIOS_BRAKE="${TMP}/unused-brake" \
+    AIOS_ROOT="${TMP}/root" \
+    AIOS_ACCEPT_STAMP="${STAMP}" \
+    AIOS_ANSWERS="${ANSWERS}" \
+    AIOS_AGENT="${ROOT}/agent/aios_agent" \
+    python3 -u "${MAIN}" 2>&1
+}
+
+agent_tick() {
+  AIOS_ROOT="${TMP}/root" \
+  AIOS_OS_TOKEN="${TOKEN}" \
+  AIOS_ACCEPT_STAMP="${STAMP}" \
+  AIOS_ANSWERS="${ANSWERS}" \
+  AIOS_PROVIDER_HTTP="${1}" \
+  AIOS_AGENT="${ROOT}/agent/aios_agent" \
+  PYTHONPATH="${ROOT}/agent/aios_agent" \
+  python3 -c 'from login_gate import reset_for_tests, tick_login
+reset_for_tests()
+tick_login()
+tick_login()'
+}
+
+_prod=$(prod 'view login' 'start' 'quit') || true
+printf '%s\n' "${_prod}" | grep -q 'login started (L-17)' \
+  || fail "production start must file a request: ${_prod}"
+printf '%s\n' "${_prod}" | grep -q 'https://auth.x.ai/device' \
+  && fail "production start must not device-code in-process: ${_prod}" || true
+grep -qx 'start' "${REQ}" \
+  || fail "production start must write login-request"
+[ ! -f "${TOKEN}" ] || fail "production TUI wrote os.token (L-16)"
+
+agent_tick "${HTTP}" || fail "agent tick failed"
+[ -f "${TOKEN}" ] || fail "agent tick did not write token"
+_mode=$(stat -c '%a' "${TOKEN}")
+[ "${_mode}" = 600 ] || fail "agent token mode is ${_mode}, not 0600"
+if grep -E 'test-access-token|test-refresh-token|hidden-device' "${STU}"
+then
+  fail "login-status leaked a secret"
+fi
+_shown=$(prod 'view login' 'quit') || true
+printf '%s\n' "${_shown}" | grep -q 'https://auth.x.ai/device' \
+  || fail "TUI must read URL from login-status: ${_shown}"
+printf '%s\n' "${_shown}" | grep -q 'user_code: WDJB-MJHT' \
+  || fail "TUI must read user_code from login-status: ${_shown}"
+printf '%s\n' "${_shown}" | grep -q 'test-access-token' \
+  && fail "status path leaked access_token: ${_shown}" || true
+printf '%s\n' "${_shown}" | grep -q 'login-status: ok' \
+  || fail "agent tick must complete login: ${_shown}"
+
+python3 - "${ROOT}" "${HTTP}" "${STAMP}" "${ANSWERS}" "${TMP}" <<'PY' || fail "agent write must chown aios-agent"
+import io
+import json
+import os
+import sys
+
+root, http, stamp, answers, tmp = sys.argv[1:]
+sys.path.insert(0, os.path.join(root, "agent", "aios_agent"))
+os.environ["AIOS_ROOT"] = os.path.join(tmp, "chown-root")
+os.environ["AIOS_OS_TOKEN"] = os.path.join(tmp, "chown-root", "srv", "aios", "state", "provider", "os.token")
+os.environ["AIOS_ACCEPT_STAMP"] = stamp
+os.environ["AIOS_ANSWERS"] = answers
+os.environ["AIOS_PROVIDER_HTTP"] = http
+os.makedirs(os.path.join(tmp, "chown-root", "run", "aios"), exist_ok=True)
+os.makedirs(os.path.join(tmp, "chown-root", "srv", "aios", "state", "provider"), exist_ok=True)
+req = os.path.join(tmp, "chown-root", "run", "aios", "login-request")
+st = os.path.join(tmp, "chown-root", "run", "aios", "login-status")
+open(req, "w").write("start\n")
+open(st, "w").close()
+import login_gate
+import provider.live as live_mod
+
+class FakePw(object):
+    pw_uid = 4242
+    pw_gid = 4243
+
+class FakePwd(object):
+    @staticmethod
+    def getpwnam(name):
+        if name != "aios-agent":
+            raise KeyError(name)
+        return FakePw()
+
+chowned = []
+saved_euid = live_mod.os.geteuid
+saved_chown = live_mod.os.chown
+saved_pwd = live_mod.pwd
+live_mod.os.geteuid = lambda: 0
+live_mod.os.chown = lambda path, uid, gid: chowned.append((path, uid, gid))
+live_mod.pwd = FakePwd
+login_gate.reset_for_tests()
+try:
+    login_gate.tick_login()
+    login_gate.tick_login()
+finally:
+    live_mod.os.geteuid = saved_euid
+    live_mod.os.chown = saved_chown
+    live_mod.pwd = saved_pwd
+tok = os.environ["AIOS_OS_TOKEN"]
+if not any(t[0] == tok and t[1] == 4242 for t in chowned):
+    raise SystemExit("token not chowned to aios-agent: %s" % (chowned,))
+PY
+
+if [ -f "${LIVE_TOKEN}" ]; then
+  _owner=$(stat -c '%U' "${LIVE_TOKEN}")
+  if id -u aios-agent >/dev/null 2>&1; then
+    [ "${_owner}" = aios-agent ] \
+      || fail "production os.token uid is ${_owner}, not aios-agent (L-16)"
+  fi
+fi
 
 if [ "${_live_token}" -eq 0 ] && [ -e "${LIVE_TOKEN}" ]; then
   rm -f "${LIVE_TOKEN}"

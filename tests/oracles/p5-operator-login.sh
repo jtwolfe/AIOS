@@ -155,6 +155,22 @@ expect_alice() {
   _dmode=$(stat -c '%a' "${_drop}")
   [ "${_dmode}" = 1731 ] \
     || fail "${_label}: brake drop must be 1731, got ${_dmode}"
+  _req="${_tree}/run/aios/login-request"
+  _lst="${_tree}/run/aios/login-status"
+  [ -f "${_req}" ] || fail "${_label}: missing login-request (L-17)"
+  [ -f "${_lst}" ] || fail "${_label}: missing login-status (L-17)"
+  _rmode=$(stat -c '%a' "${_req}")
+  _smode=$(stat -c '%a' "${_lst}")
+  [ "${_rmode}" = 660 ] \
+    || fail "${_label}: login-request must be 0660, got ${_rmode}"
+  [ "${_smode}" = 640 ] \
+    || fail "${_label}: login-status must be 0640, got ${_smode}"
+  _tf="${_tree}/etc/tmpfiles.d/aios-os-login.conf"
+  [ -f "${_tf}" ] || fail "${_label}: missing tmpfiles login rendezvous"
+  grep -q 'login-request' "${_tf}" \
+    || fail "${_label}: tmpfiles drop-in missing login-request"
+  grep -qi 'provider' "${_tf}" \
+    && fail "${_label}: login tmpfiles must not name provider" || true
   _state=$(dirname "${_drop}")
   _smode=$(stat -c '%a' "${_state}")
   case "${_smode}" in

@@ -31,14 +31,24 @@ def cmd_deny(argv):
 
 def serve():
     # L-21: available, not always proposing. Turns are CLI (`turn`).
-    # Machine goals are CLI (`goals`). Empty restart invents nothing.
-    # Socket: consume + ACK only (L-05, HI-13). One bad record must not exit.
+    # Socket: consume + ACK only (L-05, HI-13). Login gate ticks inside POLL_S.
     from intent_consume import handle_connection, listen_socket
 
     sock = listen_socket()
     while True:
+        try:
+            from login_gate import tick_login
+
+            tick_login()
+        except Exception:
+            pass
         if sock is None:
-            time.sleep(POLL_S)
+            try:
+                from login_gate import drain_slice
+
+                drain_slice(POLL_S)
+            except Exception:
+                time.sleep(POLL_S)
             continue
         try:
             ready, _, _ = select.select([sock], [], [], POLL_S)
@@ -62,7 +72,6 @@ def serve():
                     conn.close()
                 except OSError:
                     pass
-
 
 def _provider_fail(exc):
     sys.stderr.write("denied: %s\n" % exc)

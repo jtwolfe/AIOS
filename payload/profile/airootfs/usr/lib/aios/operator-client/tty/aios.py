@@ -2,7 +2,7 @@
 <<<<<<< HEAD
 """OS operator client (P7.1, P7.2, P7.3, L-18, L-12, HI-14). Unprivileged. One binary."""
 =======
-"""OS operator client (P7.1, P7.3, P7.5, P7.6, L-18, L-12, L-17). Unprivileged. One binary."""
+"""OS operator client (P7.1–P7.6, L-18, L-12, L-17, HI-14). Unprivileged. One binary."""
 >>>>>>> 8efd979 (feat(tui): OS catalog, login view, keyboard-complete)
 
 import io
@@ -38,7 +38,7 @@ WORK_VIEWS = (
     "job",
 )
 # P7.2 notify bodies land in a later PR.
-STUB_VIEWS = ("notify",)
+STUB_VIEWS = ()
 
 MODE = "os"
 BRAKE_PATH = "/srv/aios/state/brake.d/stamp"
@@ -47,6 +47,9 @@ ANSWERS_PATH = "/srv/aios/state/bootstrap-in-progress/answers.json"
 PACKAGES_PATH = "/srv/aios/state/packages.txt"
 INTENTS_DIR = "/srv/aios/state/intents"
 ESP_MAP = "/srv/aios/state/esp-generations"
+LOGIN_REQUEST = "/run/aios/login-request"
+LOGIN_STATUS = "/run/aios/login-status"
+OS_TOKEN_PATH = "/srv/aios/state/provider/os.token"
 WORK_REFUSED = (
     "refused: work (HI-15); work runtime is off until bootstrap "
     "records an explicit yes"
@@ -61,7 +64,7 @@ ACTIONS = {
     "conversation": ("send", "attach", "view", "brake", "mode"),
     "envelope": ("inspect", "view", "brake"),
     "intents": ("open", "inspect", "view", "brake"),
-    "notify": ("view", "brake"),
+    "notify": ("open", "view", "brake", "mode"),
     "snapper": ("inspect", "rollback", "view", "brake"),
     "packages": ("inspect", "view", "brake"),
     "login": ("start", "cancel", "poll", "view", "brake"),
@@ -403,8 +406,11 @@ class Session:
         _line(out, text)
 
     def render(self, out):
-        if self.view == "login" and self.login_status == "waiting":
-            self._login_tick()
+        if self.view == "login":
+            if self._login_provider is not None and self.login_status == "waiting":
+                self._login_tick_inject()
+            elif self._login_provider is None:
+                self._login_tick_rendezvous()
         self._emit(out, "-- AIOS --")
         self._emit(out, "mode: %s" % self.mode)
         self._emit(out, "view: %s" % self.view)
@@ -432,6 +438,7 @@ class Session:
             "conversation": self._conversation,
             "envelope": self._envelope,
             "intents": self._intents,
+            "notify": self._notify,
             "snapper": self._snapper,
             "packages": self._packages,
             "login": self._login,
@@ -660,9 +667,63 @@ class Session:
         self._device_code = ""
         self._login_provider = None
 
-    def _login_tick(self):
-        if self.login_status != "waiting":
+    def _inject_login(self):
+        # Host oracles: temp token path and/or HTTP fixture, never the
+        # production lock. The operator TUI must not write os.token (L-16).
+        http = (os.environ.get("AIOS_PROVIDER_HTTP") or "").strip()
+        token = (os.environ.get("AIOS_OS_TOKEN") or "").strip()
+        if token == OS_TOKEN_PATH:
+            return False
+        return bool(http or token)
+
+    def _login_request_path(self):
+        return _path("AIOS_LOGIN_REQUEST", LOGIN_REQUEST)
+
+    def _login_status_path(self):
+        return _path("AIOS_LOGIN_STATUS", LOGIN_STATUS)
+
+    def _apply_login_status_doc(self, data):
+        if not isinstance(data, dict):
             return
+        uri = data.get("verification") or ""
+        if isinstance(uri, str) and uri.startswith("https://") and not any(
+            c.isspace() for c in uri
+        ):
+            self.login_uri = uri
+        code = data.get("user_code") or ""
+        if isinstance(code, str) and code and not any(c.isspace() for c in code):
+            self.login_user_code = code
+        err = data.get("error") or ""
+        state = (data.get("state") or "").strip().lower()
+        if state == "waiting":
+            self.login_status = "waiting"
+        elif state == "ok":
+            self.login_status = "ok"
+            self.note_text = "login ok (L-17); token not in transcript"
+        elif state == "cancelled":
+            self.login_status = "cancelled"
+            self.note_text = "login cancelled (L-17)"
+        elif state == "refused":
+            self.login_status = "refused"
+            if err:
+                self.note_text = str(err)
+
+    def _login_tick_rendezvous(self):
+        path = self._login_status_path()
+        try:
+            with open(path, encoding="utf-8") as fh:
+                raw = fh.read()
+        except OSError:
+            return
+        if not raw.strip():
+            return
+        try:
+            data = json.loads(raw)
+        except ValueError:
+            return
+        self._apply_login_status_doc(data)
+
+    def _login_tick_inject(self):
         if self._login_provider is None or not self._device_code:
             return
         try:
@@ -685,21 +746,32 @@ class Session:
         self.note_text = "device-code %s (L-17)" % result
         self._forget_device()
 
-    def login_start(self, arg=""):
-        if arg:
-            self.note_text = "never a pasted API key (L-17)"
+    def _login_tick(self):
+        if self.login_status != "waiting":
             return
-        if self.writes_frozen:
-            self.note_text = "refused: writes frozen (L-12)"
+        if self._login_provider is not None:
+            self._login_tick_inject()
             return
-        if self.login_status == "waiting":
-            self.note_text = "login: already waiting"
-            return
-        kind = (os.environ.get("AIOS_PROVIDER") or "").strip()
-        if kind == "fixture":
+        self._login_tick_rendezvous()
+
+    def _login_start_rendezvous(self):
+        path = self._login_request_path()
+        try:
+            parent = os.path.dirname(path)
+            if parent and not os.path.isdir(parent):
+                raise OSError("login rendezvous missing")
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write("start\n")
+                fh.flush()
+        except OSError as exc:
             self.login_status = "refused"
-            self.note_text = "fixture has no live login (L-17)"
+            self.note_text = "login rendezvous missing: %s (L-17)" % exc
             return
+        self.login_status = "waiting"
+        self.note_text = "login started (L-17)"
+        self._login_tick()
+
+    def _login_start_inject(self):
         try:
             _add_sys_path(_agent_dir())
             from provider.base import ProviderError
@@ -716,9 +788,9 @@ class Session:
             self.login_status = "refused"
             self.note_text = "%s" % exc
             return
-        except OSError as exc:
+        except OSError:
             self.login_status = "refused"
-            self.note_text = "cannot write OS token: %s (L-16)" % exc
+            self.note_text = "device-code request failed (L-17)"
             return
         self._login_provider = provider
         self.login_uri = sess.get("uri") or ""
@@ -731,12 +803,44 @@ class Session:
         self.note_text = "login started (L-17)"
         self._login_tick()
 
+    def login_start(self, arg=""):
+        if arg:
+            self.note_text = "never a pasted API key (L-17)"
+            return
+        if self.writes_frozen:
+            self.note_text = "refused: writes frozen (L-12)"
+            return
+        if self.login_status == "waiting":
+            self.note_text = "login: already waiting"
+            return
+        kind = (os.environ.get("AIOS_PROVIDER") or "").strip()
+        if kind == "fixture":
+            self.login_status = "refused"
+            self.note_text = "fixture has no live login (L-17)"
+            return
+        if self._inject_login():
+            self._login_start_inject()
+            return
+        self._login_start_rendezvous()
+
     def login_cancel(self):
-        if self.login_status != "waiting":
-            self.note_text = "login: not started"
+        if self._login_provider is not None:
+            if self.login_status != "waiting":
+                self.note_text = "login: not started"
+                return
+            self.login_status = "cancelled"
+            self._forget_device()
+            self.note_text = "login cancelled (L-17)"
+            return
+        path = self._login_request_path()
+        try:
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write("cancel\n")
+                fh.flush()
+        except OSError as exc:
+            self.note_text = "login rendezvous missing: %s (L-17)" % exc
             return
         self.login_status = "cancelled"
-        self._forget_device()
         self.note_text = "login cancelled (L-17)"
 
     def login_poll(self):

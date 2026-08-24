@@ -30,7 +30,8 @@ Work runtime stays default off (HI-15).
    Human-only. No enact sudo.
 5. `mode installer` is refused. This is not firstboot (L-09).
 6. No sysupgrade. No curl. Live login is L-17 after envelope accept.
-   Device-code: one https URL + user_code. Never a pasted API key. Token
-   file `/srv/aios/state/provider/os.token` mode `0600`, not in the
+   Device-code: one https URL + user_code. Never a pasted API key. `start`
+   writes `/run/aios/login-request`; the agent uid writes
+   `/srv/aios/state/provider/os.token` mode `0600`. Token not in the
    transcript. Do not sudo live login. Remotes veto refuses login (L-17).
 7. Never commit to `main`. Never force-push (HI-03).

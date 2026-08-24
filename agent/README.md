@@ -61,8 +61,9 @@ TUI rollback; corrupt/unknown state restores paused. VM tests set
 `agent/<date>-memory-<id>`, never on `main` (HI-03, HI-11). Live login prints a verification URL and user code on
 stderr; the token never appears in the transcript. Run `provider live
 login` as `aios-agent` (the unit). Do not `sudo` it; P7.6 TUI must not
-sudo this CLI. If invoked as root, the adapter `chown`s the token to
-`aios-agent`.
+sudo this CLI. The idle `serve()` loop honours `/run/aios/login-request`
+and writes `/run/aios/login-status` (URL + user_code only). If invoked
+as root, the adapter `chown`s the token to `aios-agent`.
 
 A class of work earns a `SKILL.md` after two successful verbatim moments
 of that class, or when the human asks. Promotion is a proposal in

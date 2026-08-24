@@ -32,7 +32,7 @@ if [ -z "${_root}" ]; then
   _mod=$(stat -c '%a' /run/aios)
   [ "${_own}" = aios-agent ] || fail "/run/aios owner is ${_own}, not aios-agent"
   [ "${_grp}" = aios-work ] || fail "/run/aios group is ${_grp}, not aios-work"
-  [ "${_mod}" = 750 ] || fail "/run/aios mode is ${_mod}, not 750"
+  [ "${_mod}" = 751 ] || fail "/run/aios mode is ${_mod}, not 751"
 
   if [ -S /run/aios/intent.sock ]; then
     _own=$(stat -c '%U' /run/aios/intent.sock)

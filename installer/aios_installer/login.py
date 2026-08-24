@@ -1,6 +1,7 @@
 """One non-root operator login on accept (L-13). No enact sudo."""
 
 import os
+import pwd
 import shutil
 import subprocess
 import time
@@ -50,6 +51,7 @@ def enact(name):
         os.makedirs(root, exist_ok=True)
     _create_user(root, name)
     _grant_brake_drop(root, name)
+    _grant_login_rendezvous(root, name)
     _write_autologin(root, name)
     _write_operator_stamp(root, name)
     _release_console(root)
@@ -380,6 +382,53 @@ def _grant_brake_drop(root, name):
         except OSError as exc:
             raise OSError("brake drop chown failed (L-12): %s" % exc)
     # Do not chmod /srv/aios/state (HI-16).
+
+
+def _grant_login_rendezvous(root, name):
+    # L-17: operator writes the request; aios-agent writes the token (L-16).
+    # Do not mention the token path here. Do not chmod /srv/aios/state.
+    fields = _passwd_record(root, name)
+    gid = _gid_of(fields) if fields is not None else None
+    if gid is None:
+        raise OSError("operator gid missing for login rendezvous (L-17)")
+    run_dir = _under(root, "run", "aios")
+    os.makedirs(run_dir, exist_ok=True)
+    try:
+        os.chmod(run_dir, 0o751)
+    except OSError:
+        pass
+    req = os.path.join(run_dir, "login-request")
+    status = os.path.join(run_dir, "login-status")
+    _touch_mode(req, 0o660)
+    _touch_mode(status, 0o640)
+    drop_in = _under(root, "etc", "tmpfiles.d", "aios-os-login.conf")
+    _atomic_write(
+        drop_in,
+        "# Recreate live-login rendezvous after /run is wiped (L-17).\n"
+        "f /run/aios/login-request 0660 aios-agent %s -\n"
+        "f /run/aios/login-status 0640 aios-agent %s -\n" % (name, name),
+        mode=0o644,
+    )
+    if root == "/" and not os.environ.get("AIOS_ROOT"):
+        try:
+            uid = pwd.getpwnam("aios-agent").pw_uid
+        except KeyError:
+            raise OSError("aios-agent missing for login rendezvous (L-16)")
+        try:
+            os.chown(req, uid, gid)
+            os.chown(status, uid, gid)
+            os.chmod("/run/aios", 0o751)
+        except OSError as exc:
+            raise OSError("login rendezvous chown failed (L-17): %s" % exc)
+
+
+def _touch_mode(path, mode):
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT, mode)
+    try:
+        os.fchmod(fd, mode)
+    finally:
+        os.close(fd)
+    os.chmod(path, mode)
 
 
 def _create_user(root, name):
