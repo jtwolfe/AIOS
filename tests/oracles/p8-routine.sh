@@ -45,8 +45,8 @@ diff -qr -x '__pycache__' -x '*.pyc' "${SEED}" "${ISO_SEED}" \
 
 grep -q 'cron or listeners, never both' "${SEED}/routines.py" \
   || fail "routines.py missing cron xor listeners"
-grep -q 'disable leaves git' "${SEED}/routines.py" \
-  || fail "routines.py missing disable-leaves-git"
+grep -q 'record\["enabled"\] = False' "${SEED}/routines.py" \
+  || fail "routines.py missing disable enabled=false"
 if grep -nE '^(import|from)[[:space:]]+(urllib|aios_agent|http\.client)\b' \
   "${SEED}/routines.py" >/dev/null; then
   fail "routines must not import urllib/aios_agent/http.client"

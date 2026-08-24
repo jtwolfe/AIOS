@@ -11,6 +11,17 @@ PRIVILEGED = re.compile(
 )
 VOICE_KEYS = ("voice", "speak", "utterance", "chat")
 MAIN_BRANCHES = ("main", "master")
+PRIVILEGED_PREFIXES = (
+    "/usr",
+    "/etc",
+    "/boot",
+    "/srv/aios/envelope",
+    "/srv/aios/state",
+    "/srv/aios/agent",
+    "/srv/aios/checker",
+    "/srv/aios/git",
+    "/usr/lib/aios/bin/enact",
+)
 
 
 class WorkerError(Exception):
@@ -71,6 +82,20 @@ def _refuse_enact(spec):
         raise WorkerError("workers cannot enact (HI-13)")
 
 
+def _is_under(path, root):
+    path = os.path.abspath(path)
+    root = os.path.abspath(root)
+    return path == root or path.startswith(root + os.sep)
+
+
+def _privileged_path(path):
+    abs_path = os.path.abspath(path)
+    for prefix in PRIVILEGED_PREFIXES:
+        if abs_path == prefix or abs_path.startswith(prefix + os.sep):
+            return True
+    return False
+
+
 def _git_env():
     env = dict(os.environ)
     for key in list(env):
@@ -128,8 +153,16 @@ def coding(root, spec):
     _refuse_enact(spec)
     if spec.get("merge") or spec.get("commit_to_main"):
         raise WorkerError("coding on a branch is a branch plus merge request")
-    repo = spec.get("repo") or root
-    repo = os.path.abspath(str(repo))
+    repo = os.path.abspath(root)
+    extra = spec.get("repo")
+    if extra:
+        extra = os.path.abspath(str(extra))
+        if _privileged_path(extra):
+            raise WorkerError("workers cannot enact (HI-13)")
+        if extra != repo and not _is_under(extra, repo):
+            raise WorkerError("coding is pinned to the work tree")
+    if _privileged_path(repo):
+        raise WorkerError("workers cannot enact (HI-13)")
     if not os.path.isdir(os.path.join(repo, ".git")):
         raise WorkerError("coding on a branch requires git")
     worker_id = _safe_id(spec.get("id") or spec.get("slug") or "coding")

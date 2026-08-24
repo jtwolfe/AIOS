@@ -92,18 +92,11 @@ def create(root, spec):
 
 
 def disable(root, spec):
-    # Disable leaves the file (and git) in place.
     spec = dict(spec or {})
     routine_id = _safe_id(spec.get("id") or spec.get("name") or spec.get("text"))
     record = _load(root, routine_id)
     record["enabled"] = False
-    path = _path(root, routine_id)
-    if not os.path.isfile(path):
-        raise RoutineError("disable leaves git")
-    saved = _save(root, record)
-    if not os.path.isfile(path):
-        raise RoutineError("disable leaves git")
-    return saved
+    return _save(root, record)
 
 
 expire = disable

@@ -180,7 +180,7 @@ def _actions_from_obj(obj):
         compact.pop("send", None)
     out = []
     for key, value in compact.items():
-        if key in COMPACT_TEXT or key in ("connector_discover", "connector_connect"):
+        if key in COMPACT_TEXT:
             out.append((key, str(value or "")))
         elif key in COMPACT_OBJ:
             out.append((key, _payload_text(value)))
@@ -287,6 +287,7 @@ def _result(
     workers=None,
     routines=None,
     bridge=None,
+    bridge_operator=None,
     view=None,
 ):
     return {
@@ -305,6 +306,7 @@ def _result(
         "workers": list(workers or []),
         "routines": list(routines or []),
         "bridge": bridge,
+        "bridge_operator": bridge_operator,
         "view": view,
         "error": error,
     }
@@ -313,9 +315,8 @@ def _result(
 def run_turn(asked):
     from connectors import ConnectorError, ConnectorSession, chat_secret_error
     from bridge import (
+        APPROVAL_IS_OPERATOR_VIEW,
         BridgeError,
-        approve as bridge_approve,
-        deny as bridge_deny,
         request as bridge_request,
         view_for as bridge_view_for,
     )
@@ -370,6 +371,7 @@ def run_turn(asked):
     workers_out = []
     routines_out = []
     bridge_out = None
+    bridge_operator = None
     view = None
     read_set = set()
     bodies_in_context = set()
@@ -411,6 +413,7 @@ def run_turn(asked):
                 workers=workers_out,
                 routines=routines_out,
                 bridge=bridge_out,
+                bridge_operator=bridge_operator,
                 view=view,
             )
         except Exception as exc:
@@ -429,6 +432,7 @@ def run_turn(asked):
                 workers=workers_out,
                 routines=routines_out,
                 bridge=bridge_out,
+                bridge_operator=bridge_operator,
                 view=view,
             )
         last_reply = reply if isinstance(reply, str) else str(reply or "")
@@ -593,47 +597,17 @@ def run_turn(asked):
                     stop = True
                     break
                 view = "bridge"
-                bridge_out = bridge_view_for(record)
+                bridge_out = bridge_view_for(record, audience="work")
+                bridge_operator = bridge_view_for(record, audience="operator")
                 ended = "pending"
                 outcome = "wait"
                 continue
-            if tool == "bridge_approve":
-                try:
-                    record = bridge_approve(root, spec)
-                except BridgeError as exc:
-                    error = str(exc)
-                    ended = "failed"
-                    outcome = "failed"
-                    stop = True
-                    break
-                view = "bridge"
-                bridge_out = bridge_view_for(record, reveal=True)
-                if record.get("op") == "read" and record.get("body"):
-                    delivered.append(record["body"])
-                    ended = "sent"
-                    outcome = "sent"
-                elif record.get("op") == "shell":
-                    delivered.append(str(record.get("stdout") or ""))
-                    ended = "sent"
-                    outcome = "sent"
-                else:
-                    ended = "approved"
-                    outcome = "approved"
-                continue
-            if tool == "bridge_deny":
-                try:
-                    record = bridge_deny(root, spec)
-                except BridgeError as exc:
-                    error = str(exc)
-                    ended = "failed"
-                    outcome = "failed"
-                    stop = True
-                    break
-                view = "bridge"
-                bridge_out = bridge_view_for(record)
-                ended = "denied"
-                outcome = "denied"
-                continue
+            if tool in ("bridge_approve", "bridge_deny", "approve", "deny"):
+                error = APPROVAL_IS_OPERATOR_VIEW
+                ended = "failed"
+                outcome = "failed"
+                stop = True
+                break
 
             if tool == "connector_discover":
                 try:
@@ -742,9 +716,19 @@ def run_turn(asked):
         workers=workers_out,
         routines=routines_out,
         bridge=bridge_out,
+        bridge_operator=bridge_operator,
         view=view,
         error=error,
     )
+
+
+def _emit(result):
+    sys.stdout.write(json.dumps(result, indent=2, sort_keys=True))
+    sys.stdout.write("\n")
+    sys.stdout.flush()
+    if result.get("outcome") == "failed":
+        return 1
+    return 0
 
 
 def cmd_turn(argv):
@@ -760,16 +744,91 @@ def cmd_turn(argv):
             outcome="failed",
             error=str(exc),
         )
-    sys.stdout.write(json.dumps(result, indent=2, sort_keys=True))
-    sys.stdout.write("\n")
-    sys.stdout.flush()
-    if result.get("outcome") == "failed":
-        return 1
-    return 0
+    return _emit(result)
+
+
+def cmd_approve(argv):
+    from bridge import BridgeError, approve, view_for
+
+    if len(argv) < 2:
+        return _usage()
+    spec = {"id": argv[0], "grant": argv[1]}
+    try:
+        record = approve(work_src(), spec)
+    except (BridgeError, WorkError) as exc:
+        return _emit(
+            _result(
+                "",
+                [],
+                "",
+                ended="failed",
+                outcome="failed",
+                error=str(exc),
+                view="bridge",
+            )
+        )
+    delivered = ""
+    ended = "approved"
+    outcome = "approved"
+    if record.get("op") == "read" and record.get("body"):
+        delivered = record["body"]
+        ended = "sent"
+        outcome = "sent"
+    elif record.get("op") == "shell":
+        delivered = str(record.get("stdout") or "")
+        ended = "sent"
+        outcome = "sent"
+    return _emit(
+        _result(
+            "",
+            [],
+            "",
+            delivered=delivered,
+            ended=ended,
+            outcome=outcome,
+            bridge=view_for(record, audience="work"),
+            bridge_operator=view_for(record, audience="operator"),
+            view="bridge",
+        )
+    )
+
+
+def cmd_deny(argv):
+    from bridge import BridgeError, deny, view_for
+
+    if not argv:
+        return _usage()
+    spec = {"id": argv[0]}
+    try:
+        record = deny(work_src(), spec)
+    except (BridgeError, WorkError) as exc:
+        return _emit(
+            _result(
+                "",
+                [],
+                "",
+                ended="failed",
+                outcome="failed",
+                error=str(exc),
+                view="bridge",
+            )
+        )
+    return _emit(
+        _result(
+            "",
+            [],
+            "",
+            ended="denied",
+            outcome="denied",
+            bridge=view_for(record, audience="work"),
+            bridge_operator=view_for(record, audience="operator"),
+            view="bridge",
+        )
+    )
 
 
 def _usage():
-    sys.stderr.write("usage: main.py [turn [TEXT]]\n")
+    sys.stderr.write("usage: main.py [turn [TEXT] | approve ID GRANT | deny ID]\n")
     return 2
 
 
@@ -784,6 +843,10 @@ def main(argv=None):
             return 0
     if argv[0] == "turn":
         return cmd_turn(argv[1:])
+    if argv[0] == "approve":
+        return cmd_approve(argv[1:])
+    if argv[0] == "deny":
+        return cmd_deny(argv[1:])
     return _usage()
 
 

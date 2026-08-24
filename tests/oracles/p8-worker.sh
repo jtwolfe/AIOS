@@ -51,6 +51,8 @@ grep -q 'results are sent, not only acknowledged' "${SEED}/workers.py" \
   || fail "workers.py missing result-sent rule"
 grep -q 'coding on a branch is a branch plus merge request' "${SEED}/workers.py" \
   || fail "workers.py missing branch+MR rule"
+grep -q 'coding is pinned to the work tree' "${SEED}/workers.py" \
+  || fail "workers.py missing work-tree pin"
 if grep -nE '^(import|from)[[:space:]]+(urllib|aios_agent|http\.client)\b' \
   "${SEED}/main.py" "${SEED}/workers.py" >/dev/null; then
   fail "workers must not import urllib/aios_agent/http.client"
@@ -94,6 +96,8 @@ printf '%s\n' '{"responses":[{"check":"bg"}]}' > "${TMP}/check.json"
 printf '%s\n' '{"responses":[{"stop":"bg"}]}' > "${TMP}/stop.json"
 printf '%s\n' '{"responses":[{"coding":{"id":"code1","slug":"widget","result":"mr-open"}}]}' \
   > "${TMP}/coding.json"
+printf '%s\n' '{"responses":[{"coding":{"id":"priv","repo":"/srv/aios/state","slug":"nope"}}]}' \
+  > "${TMP}/coding-priv.json"
 printf '%s\n' '{"responses":[{"actions":[{"tool":"dispatch","id":"w2","result":"via-actions"}]}]}' \
   > "${TMP}/actions.json"
 
@@ -248,6 +252,29 @@ if [ "${HEAD}" = "main" ] || [ "${HEAD}" = "master" ]; then
 fi
 git -C "${SRC}" show-ref --verify --quiet "refs/heads/${HEAD}" \
   || fail "coding branch missing"
+
+OUT="${TMP}/outside-git"
+mkdir -p "${OUT}"
+git -C "${OUT}" init -b main >/dev/null
+git -C "${OUT}" config user.name aios-work
+git -C "${OUT}" config user.email aios-work@localhost
+printf '%s\n' 'outside' > "${OUT}/tracked.txt"
+git -C "${OUT}" add tracked.txt
+git -C "${OUT}" commit -q -m "outside"
+OUT_HEAD=$(git -C "${OUT}" rev-parse --abbrev-ref HEAD)
+printf '%s\n' "{\"responses\":[{\"coding\":{\"id\":\"out\",\"repo\":\"${OUT}\",\"slug\":\"out\"}}]}" \
+  > "${TMP}/coding-out.json"
+_outrepo=$(run_turn "${TMP}/coding-out.json" "coding outside") || true
+printf '%s\n' "${_outrepo}" | grep -q 'coding is pinned to the work tree' \
+  || fail "coding outside work tree must fail: ${_outrepo}"
+NOW_OUT=$(git -C "${OUT}" rev-parse --abbrev-ref HEAD)
+if [ "${NOW_OUT}" != "${OUT_HEAD}" ]; then
+  fail "coding moved HEAD outside the work tree"
+fi
+
+_priv=$(run_turn "${TMP}/coding-priv.json" "coding privileged") || true
+printf '%s\n' "${_priv}" | grep -q 'cannot enact' \
+  || fail "coding privileged repo must fail HI-13: ${_priv}"
 
 _act=$(run_turn "${TMP}/actions.json" "actions dispatch") || true
 printf '%s\n' "${_act}" | python3 -c '

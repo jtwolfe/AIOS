@@ -25,6 +25,7 @@ PRIVILEGED_PREFIXES = (
     "/usr/lib/aios/bin/enact",
 )
 VIEW_ID = "bridge"
+APPROVAL_IS_OPERATOR_VIEW = "approval is an operator view, not a model tool"
 
 
 class BridgeError(Exception):
@@ -32,7 +33,6 @@ class BridgeError(Exception):
 
 
 def _dir(root):
-    # Keep operator paths out of the workspace tree (not a mount, not visible).
     env = os.environ.get("AIOS_BRIDGE_STATE")
     if env is not None:
         env = env.strip()
@@ -60,12 +60,21 @@ def _path(root, req_id):
     return os.path.join(_dir(root), "%s.json" % req_id)
 
 
+def _secure_dir(path):
+    os.makedirs(path, exist_ok=True)
+    os.chmod(path, 0o700)
+
+
 def _save(root, record):
-    os.makedirs(_dir(root), exist_ok=True)
+    _secure_dir(_dir(root))
     path = _path(root, record["id"])
-    with open(path, "w", encoding="utf-8") as fh:
-        json.dump(record, fh, indent=2, sort_keys=True)
-        fh.write("\n")
+    payload = json.dumps(record, indent=2, sort_keys=True) + "\n"
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        os.write(fd, payload.encode("utf-8"))
+    finally:
+        os.close(fd)
+    os.chmod(path, 0o600)
     return record
 
 
@@ -101,8 +110,19 @@ def _privileged_path(path):
     for prefix in PRIVILEGED_PREFIXES:
         if abs_path == prefix or abs_path.startswith(prefix + os.sep):
             return True
-    if abs_path == "/usr/lib/aios/bin/enact":
-        return True
+    return False
+
+
+def _is_home(path):
+    abs_path = os.path.abspath(path)
+    return abs_path == "/home" or abs_path.startswith("/home/")
+
+
+def _in_tmp_dropbox(path):
+    abs_path = os.path.abspath(path)
+    for prefix in ("/tmp", "/var/tmp"):
+        if abs_path == prefix or abs_path.startswith(prefix + os.sep):
+            return True
     return False
 
 
@@ -123,6 +143,8 @@ def _expand(path, root, side):
     if not os.path.isabs(raw):
         if side == "workspace":
             raw = os.path.join(root, raw)
+        elif side == "dropbox":
+            raw = os.path.join("/tmp", raw)
         else:
             home = _operator_home()
             if home is None:
@@ -131,12 +153,12 @@ def _expand(path, root, side):
     abs_path = os.path.abspath(raw)
     if _privileged_path(abs_path):
         raise BridgeError("work agents never enact privileged change (HI-13)")
-    live_home = abs_path == "/home" or abs_path.startswith("/home/")
-    if live_home and _operator_home() is None:
+    if side != "dropbox" and _is_home(abs_path) and _operator_home() is None:
         raise BridgeError("refusing live /home without AIOS_OPERATOR_HOME")
     home = _operator_home()
-    if live_home and home is not None and not _is_under(abs_path, home):
-        raise BridgeError("refusing live /home without AIOS_OPERATOR_HOME")
+    if side != "dropbox" and _is_home(abs_path) and home is not None:
+        if not _is_under(abs_path, home):
+            raise BridgeError("refusing live /home without AIOS_OPERATOR_HOME")
     return abs_path
 
 
@@ -159,7 +181,24 @@ def _next_id(root, prefix):
     return "%s%s" % (prefix, n)
 
 
-def view_for(record, reveal=False):
+def _grant_fields(record):
+    return {
+        "command": record.get("command") or "",
+        "cwd": record.get("cwd") or "",
+        "dst": record.get("dst") or "",
+        "id": record.get("id") or "",
+        "op": record.get("op") or "",
+        "path": record.get("path") or "",
+        "src": record.get("src") or "",
+    }
+
+
+def grant_hash(record):
+    blob = json.dumps(_grant_fields(record), sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def view_for(record, audience="work"):
     status = record.get("status") or "pending"
     actions = ["approve", "deny"] if status == "pending" else []
     out = {
@@ -170,8 +209,20 @@ def view_for(record, reveal=False):
         "path_visible": False,
         "view": VIEW_ID,
     }
-    if reveal and status == "approved":
-        # Contents may be returned after approval; paths stay one-sided.
+    if audience == "operator":
+        out["path_visible"] = True
+        out["grant"] = record.get("grant")
+        op = record.get("op")
+        if op == "copy_to_workspace":
+            out["path"] = record.get("src")
+        elif op == "copy_from_workspace":
+            out["path"] = record.get("dst")
+        elif op == "read":
+            out["path"] = record.get("path")
+        elif op == "shell":
+            out["command"] = record.get("command")
+        return out
+    if status == "approved":
         if record.get("body"):
             out["body"] = record.get("body")
         if record.get("copied"):
@@ -212,11 +263,12 @@ def request(root, spec):
         "command": str(spec.get("command") or ""),
         "src": "",
         "dst": "",
-        "path": str(spec.get("path") or spec.get("src") or ""),
+        "path": "",
         "body": "",
         "stdout": "",
         "copied": False,
         "ran": False,
+        "grant": "",
     }
 
     if op in ("copy_to_workspace", "copy_from_workspace"):
@@ -231,11 +283,16 @@ def request(root, spec):
                 raise BridgeError("workspace dest required")
         else:
             src_abs = _expand(src, root, "workspace")
-            dst_abs = _expand(dst, root, "operator")
             if not _is_under(src_abs, root):
                 raise BridgeError("workspace src required")
-            if _is_under(dst_abs, root):
-                raise BridgeError("operator dest required")
+            dst_abs = _expand(dst, root, "dropbox")
+            if _is_home(dst_abs):
+                raise BridgeError("copy from workspace is client-mediated")
+            home = _operator_home()
+            if home is not None and _is_under(dst_abs, home) and not _in_tmp_dropbox(home):
+                raise BridgeError("copy from workspace is client-mediated")
+            if not _in_tmp_dropbox(dst_abs):
+                raise BridgeError("copy from workspace is client-mediated")
         if _privileged_path(src_abs) or _privileged_path(dst_abs):
             raise BridgeError("work agents never enact privileged change (HI-13)")
         record["src"] = src_abs
@@ -254,7 +311,7 @@ def request(root, spec):
         cwd = spec.get("cwd") or _operator_home() or root
         record["cwd"] = os.path.abspath(str(cwd))
 
-    # Does not run until approval. Copy is not a mount.
+    record["grant"] = grant_hash(record)
     return _save(root, record)
 
 
@@ -266,7 +323,6 @@ def _copy_verbatim(src, dst):
         os.makedirs(parent, exist_ok=True)
     if os.path.lexists(dst) and os.path.islink(dst):
         raise BridgeError("copy is verbatim, not a mount")
-    # Byte copy. Independent file, never a bind mount or symlink.
     with open(src, "rb") as inf:
         with open(dst, "wb") as outf:
             shutil.copyfileobj(inf, outf)
@@ -327,10 +383,17 @@ def _run_shell(record):
 
 def approve(root, spec):
     spec = dict(spec or {})
-    req_id = spec.get("id") or spec.get("text") or spec.get("name")
+    req_id = spec.get("id") or spec.get("name")
+    grant = str(spec.get("grant") or "").strip()
     if not req_id:
         raise BridgeError("bridge request id missing")
+    if not grant:
+        raise BridgeError("bridge grant missing")
     record = _load(root, _safe_id(req_id))
+    frozen = grant_hash(record)
+    stored = str(record.get("grant") or "")
+    if grant != stored or grant != frozen:
+        raise BridgeError("bridge grant mismatch")
     if record.get("status") == "denied":
         raise BridgeError("bridge request denied")
     if record.get("status") != "pending" and record.get("status") != "approved":
@@ -344,6 +407,9 @@ def approve(root, spec):
         dst = record.get("dst")
         if not src or not dst:
             raise BridgeError("bridge copy paths missing")
+        if op == "copy_from_workspace":
+            if _is_home(dst) or not _in_tmp_dropbox(dst):
+                raise BridgeError("copy from workspace is client-mediated")
         if not os.path.isfile(src):
             raise BridgeError("bridge copy src missing")
         _copy_verbatim(src, dst)
@@ -361,15 +427,17 @@ def approve(root, spec):
     else:
         raise BridgeError("unknown bridge op %s" % op)
     record["status"] = "approved"
+    record["grant"] = grant_hash(record)
     return _save(root, record)
 
 
 def deny(root, spec):
     spec = dict(spec or {})
-    req_id = spec.get("id") or spec.get("text") or spec.get("name")
+    req_id = spec.get("id") or spec.get("name")
     if not req_id:
         raise BridgeError("bridge request id missing")
     record = _load(root, _safe_id(req_id))
     record["status"] = "denied"
     record["ran"] = False
+    record["grant"] = grant_hash(record)
     return _save(root, record)
