@@ -482,7 +482,35 @@ printf '%s\n' "${_out}" | grep -q '"status": "idle"' \
 printf '%s\n' "${_out}" | grep -q '"proposal": null' \
   || fail "second empty tick with live git must not propose: ${_out}"
 
+_out=$(goals '{"kind":"work-runtime"}') || true
+printf '%s\n' "${_out}" | grep -q '"status": "idle"' \
+  || fail "work-runtime event with live git and no plan must idle: ${_out}"
+printf '%s\n' "${_out}" | grep -q '"proposal": null' \
+  || fail "work-runtime event with live git and no plan must not propose: ${_out}"
+
+_out=$(goals '{"kind":"unit-failed","unit":"x.service","journal":"j","commit":"c","snapper_id":1,"clause":"HI-14"}') || true
+printf '%s\n' "${_out}" | grep -q '"status": "waiting-accept"' \
+  || fail "unit-failed with live git must still plan: ${_out}"
+printf '%s\n' "${_out}" | grep -q 'policy/hi-14-failure-handoff.sh' \
+  || fail "unit-failed with live git must name HI-14 oracle: ${_out}"
+_out=$(goals '{"kind":"work-runtime"}') || true
+printf '%s\n' "${_out}" | grep -q '"status": "idle"' \
+  && fail "work-runtime event must not wipe a unit-failed plan: ${_out}" || true
+printf '%s\n' "${_out}" | grep -q '"status": "waiting-accept"' \
+  || fail "work-runtime event with live git must keep unit-failed plan: ${_out}"
+printf '%s\n' "${_out}" | grep -q 'policy/hi-14-failure-handoff.sh' \
+  || fail "unit-failed oracles must survive work-runtime event: ${_out}"
+python3 - "${TMP}/goals.json" <<'PY' || fail "work-runtime event wiped unit-failed plan on disk"
+import json, sys
+doc = json.load(open(sys.argv[1], encoding="utf-8"))
+oracles = (doc.get("proposal") or {}).get("oracles") or []
+assert doc.get("status") == "waiting-accept", doc
+assert "policy/hi-14-failure-handoff.sh" in oracles, oracles
+assert "policy/work-runtime-git.sh" not in oracles, oracles
+PY
+
 rm -rf "${TMP}/work-src"
+rm -f "${TMP}/goals.json"
 mkdir -p "${TMP}/work-src/.git"
 _out=$(goals) || true
 printf '%s\n' "${_out}" | grep -q '"status": "waiting-accept"' \

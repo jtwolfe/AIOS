@@ -819,6 +819,12 @@ def _tick(
                 state, False, reason, "HI-15", memory_root=memory_root
             )
         if _live_work_git():
+            if (
+                state.get("status") in ("waiting-accept", "verify")
+                and state.get("proposal")
+                and not _is_work_runtime_plan(state.get("proposal"))
+            ):
+                return _resume_plan(state, path, memory_root)
             return _idle_synthesis_done(state, path, memory_root)
         if state.get("status") in ("waiting-accept", "verify") and _is_work_runtime_plan(
             state.get("proposal")
