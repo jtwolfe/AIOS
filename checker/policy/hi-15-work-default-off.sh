@@ -19,25 +19,11 @@ if [ -z "${_root}" ]; then
     || fail "hard-invariants.md missing; cannot read the work-runtime bit"
 fi
 
-# Keep in sync with goals.py _ENABLED_LINE/_DISABLED_LINE and enact work_runtime_yes.
-_ans=$(p /srv/aios/state/bootstrap-in-progress/answers.json)
-_clause=$(p /srv/aios/envelope/work-runtime.md)
-YES=0
-OFF=0
-if [ -f "${_clause}" ]; then
-  if grep -Eq '^[[:space:]]*enabled[[:space:]]*[:=][[:space:]]*(false|no|0)[[:space:]]*$' \
-    "${_clause}"; then
-    OFF=1
-  elif grep -Eq '^[[:space:]]*enabled[[:space:]]*[:=][[:space:]]*(true|yes|1)[[:space:]]*$' \
-    "${_clause}"; then
-    YES=1
-  fi
-fi
-if [ "${OFF}" -eq 0 ] && [ "${YES}" -eq 0 ] && [ -f "${_ans}" ] \
-  && grep -Eq '"accepted"[[:space:]]*:[[:space:]]*true' "${_ans}" \
-  && grep -Eq '"work_runtime"[[:space:]]*:[[:space:]]*true' "${_ans}"; then
-  YES=1
-fi
+here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+# shellcheck disable=SC1091
+. "${here}/work-runtime-bit.sh"
+work_runtime_compute_yes "${_root}"
+YES=${WORK_RUNTIME_YES}
 
 [ ! -e "$(p /etc/systemd/system/aios-work-runtime.service)" ] \
   || fail "aios-work-runtime.service must not be a system unit (L-23)"
@@ -54,19 +40,9 @@ user_on() {
   return 1
 }
 
-inert_tree() {
-  _tree=$(p /srv/aios/src/work-runtime)
-  _src=$(p /srv/aios/src)
-  [ -e "${_src}" ] || return 0
-  git -c safe.directory="${_tree}" -C "${_tree}" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
-    || fail "/srv/aios/src exists while work-runtime is not an explicit yes"
-  _inside=$(git -c safe.directory="${_tree}" -C "${_tree}" rev-parse --is-inside-work-tree)
-  [ "${_inside}" = true ] \
-    || fail "/srv/aios/src exists while work-runtime is not an explicit yes"
-}
-
 if [ "${YES}" -eq 0 ]; then
-  inert_tree
+  work_runtime_inert_git "${_root}" \
+    || fail "/srv/aios/src exists while work-runtime is not an explicit yes"
   [ ! -e "$(p /etc/systemd/user/default.target.wants/aios-work-runtime.service)" ] \
     || fail "aios-work-runtime.service enabled without an explicit yes"
   [ ! -e "$(p /etc/systemd/user/default.target.wants/aios-work-runtime-bots.service)" ] \

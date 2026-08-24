@@ -70,6 +70,7 @@ _KIND_ORACLES = {
     "work-runtime": (
         "policy/hi-17-seeds-local.sh",
         "policy/work-runtime-git.sh",
+        "policy/work-runtime-store.sh",
         "policy/hi-15-work-default-off.sh",
         "policy/hi-13-work-slice.sh",
         "policy/hi-16-os-privilege.sh",

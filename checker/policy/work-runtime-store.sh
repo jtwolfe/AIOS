@@ -13,25 +13,11 @@ p() {
   printf '%s%s' "${_root}" "$1"
 }
 
-# Keep in sync with goals.py _ENABLED_LINE/_DISABLED_LINE and enact work_runtime_yes.
-_ans=$(p /srv/aios/state/bootstrap-in-progress/answers.json)
-_clause=$(p /srv/aios/envelope/work-runtime.md)
-YES=0
-OFF=0
-if [ -f "${_clause}" ]; then
-  if grep -Eq '^[[:space:]]*enabled[[:space:]]*[:=][[:space:]]*(false|no|0)[[:space:]]*$' \
-    "${_clause}"; then
-    OFF=1
-  elif grep -Eq '^[[:space:]]*enabled[[:space:]]*[:=][[:space:]]*(true|yes|1)[[:space:]]*$' \
-    "${_clause}"; then
-    YES=1
-  fi
-fi
-if [ "${OFF}" -eq 0 ] && [ "${YES}" -eq 0 ] && [ -f "${_ans}" ] \
-  && grep -Eq '"accepted"[[:space:]]*:[[:space:]]*true' "${_ans}" \
-  && grep -Eq '"work_runtime"[[:space:]]*:[[:space:]]*true' "${_ans}"; then
-  YES=1
-fi
+here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+# shellcheck disable=SC1091
+. "${here}/work-runtime-bit.sh"
+work_runtime_compute_yes "${_root}"
+YES=${WORK_RUNTIME_YES}
 
 if [ -n "${AIOS_WORK_SRC-}" ]; then
   _tree=${AIOS_WORK_SRC}
@@ -54,7 +40,7 @@ is_git() {
 
 if is_git "${_mem}"; then
   if git -c safe.directory="${_mem}" -C "${_mem}" ls-files \
-    | grep -E 'routines|connectors' >/dev/null; then
+    | grep -E '(^|/)(routines|connectors)(/|$)' >/dev/null; then
     fail "memory git tracks routines or connectors; work store is the work tree"
   fi
 fi

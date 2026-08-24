@@ -1,11 +1,36 @@
 #!/bin/sh
 # HI-09: a file under /srv/aios that git does not know is a snowflake.
+# Host oracles set AIOS_POLICY_ROOT; never mkdir live paths.
 set -eu
 
 fail() {
   printf 'HI-09: %s\n' "$*" >&2
   exit 1
 }
+
+_root=${AIOS_POLICY_ROOT-}
+p() {
+  printf '%s%s' "${_root}" "$1"
+}
+
+here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+# shellcheck disable=SC1091
+. "${here}/work-runtime-bit.sh"
+work_runtime_compute_yes "${_root}"
+_yes=${WORK_RUNTIME_YES}
+
+if [ "${_yes}" -eq 0 ]; then
+  work_runtime_inert_git "${_root}" \
+    || fail "/srv/aios/src exists while work-runtime is not an explicit yes (HI-15)"
+else
+  git -c safe.directory="$(p /srv/aios/src/work-runtime)" \
+    -C "$(p /srv/aios/src/work-runtime)" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+    || fail "work-runtime tree is not git (HI-09)"
+fi
+
+if [ -n "${_root}" ]; then
+  exit 0
+fi
 
 [ -d /srv/aios ] || fail "/srv/aios missing"
 [ ! -e /srv/aios/.git ] || fail "/srv/aios must not be a single git repository"
@@ -36,22 +61,6 @@ for _n in ${TREES}; do
   [ -z "${_untracked}" ] || fail "${_wt} has untracked paths (HI-09)"
 done
 
-_ans=/srv/aios/state/bootstrap-in-progress/answers.json
-_yes=0
-if [ -f "${_ans}" ] \
-  && grep -Eq '"accepted"[[:space:]]*:[[:space:]]*true' "${_ans}" \
-  && grep -Eq '"work_runtime"[[:space:]]*:[[:space:]]*true' "${_ans}"; then
-  _yes=1
-fi
-if [ "${_yes}" -eq 0 ] && [ -e /srv/aios/src ]; then
-  fail "/srv/aios/src exists while work-runtime is not an explicit yes (HI-15)"
-fi
-if [ "${_yes}" -eq 1 ]; then
-  git -C /srv/aios/src/work-runtime rev-parse --is-inside-work-tree >/dev/null 2>&1 \
-    || fail "work-runtime tree is not git (HI-09)"
-fi
-
-here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 [ -x "${here}/packages-drift.sh" ] || fail "packages-drift.sh missing"
 "${here}/packages-drift.sh"
 

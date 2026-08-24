@@ -80,6 +80,8 @@ grep -q 'policy/hi-17-seeds-local.sh' "${GOALS}" \
   || fail "goals.py must name hi-17-seeds-local.sh"
 grep -q 'policy/work-runtime-git.sh' "${GOALS}" \
   || fail "goals.py must name work-runtime-git.sh"
+grep -q 'policy/work-runtime-store.sh' "${GOALS}" \
+  || fail "goals.py must name work-runtime-store.sh"
 grep -q 'Do not synthesise the work runtime (HI-15).' "${LOOP}" \
   || fail "loop.py must keep the HI-15 prompt when the bit is off"
 grep -q 'is a user unit (L-23)' "${DENY}" \
@@ -248,6 +250,8 @@ printf '%s\n' "${_plan}" | grep -q 'policy/hi-17-seeds-local.sh' \
   || fail "goals tick must name hi-17 oracle: ${_plan}"
 printf '%s\n' "${_plan}" | grep -q 'policy/work-runtime-git.sh' \
   || fail "goals tick must name work-runtime-git oracle: ${_plan}"
+printf '%s\n' "${_plan}" | grep -q 'policy/work-runtime-store.sh' \
+  || fail "goals tick must name work-runtime-store oracle: ${_plan}"
 printf '%s\n' "${_plan}" | grep -q '"work_runtime": false' \
   || fail "plan tick work_runtime must stay false: ${_plan}"
 [ ! -e "${TMP}/work-src" ] || fail "planner created AIOS_WORK_SRC"

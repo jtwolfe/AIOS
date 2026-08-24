@@ -66,6 +66,11 @@ cmp -s "${POLICY}/work-runtime-git.sh" "${ISO_POLICY}/work-runtime-git.sh" \
   || fail "work-runtime-git.sh dual-tree mismatch"
 cmp -s "${POLICY}/work-slice.sh" "${ISO_POLICY}/work-slice.sh" \
   || fail "work-slice.sh dual-tree mismatch"
+cmp -s "${POLICY}/hi-09-no-undeclared-state.sh" "${ISO_POLICY}/hi-09-no-undeclared-state.sh" \
+  || fail "hi-09 dual-tree mismatch"
+cmp -s "${POLICY}/work-runtime-bit.sh" "${ISO_POLICY}/work-runtime-bit.sh" \
+  || fail "work-runtime-bit.sh dual-tree mismatch"
+[ -f "${POLICY}/work-runtime-bit.sh" ] || fail "missing work-runtime-bit.sh"
 
 grep -q 'disable' "${ENACT}" || fail "enact must grow a disable verb"
 grep -q 'systemctl --user -M aios-work@ stop' "${ENACT}" \
@@ -74,6 +79,22 @@ grep -q 'systemctl --user -M aios-work@ disable' "${ENACT}" \
   || fail "enact live disable must use systemctl --user -M aios-work@ disable"
 grep -q 'default.target.wants' "${ENACT}" \
   || fail "enact destroot disable must name wants symlink"
+grep -q '/etc/systemd/user/default.target.wants' "${ENACT}" \
+  || fail "enact live disable must drop /etc/systemd/user/default.target.wants"
+grep -q 'envelope.git' "${ENACT}" \
+  || fail "enact disable must land the clause in envelope.git (HI-01)"
+grep -q 'aios-agent:aios-agent' "${ENACT}" \
+  || fail "enact disable must chown the clause to aios-agent"
+_patch=$(sed -n '/^patch_work_runtime_enabled()/,/^materialise_work_tree()/p' "${ENACT}")
+printf '%s\n' "${_patch}" | grep -q 'seeds/work-runtime' \
+  && fail "disable must not copy work seed docs into the OS envelope" || true
+_disu=$(sed -n '/^disable_work_user_unit()/,/^cmd_disable()/p' "${ENACT}")
+printf '%s\n' "${_disu}" | grep 'stop "${_unit}"' | grep -q '|| true' \
+  && fail "stop aios-work-runtime.service must fail-close" || true
+printf '%s\n' "${_disu}" | grep 'disable "${_unit}"' | grep -q '|| true' \
+  && fail "disable aios-work-runtime.service must fail-close" || true
+printf '%s\n' "${_disu}" | grep 'stop "${_bots}"' | grep -q '|| true' \
+  || fail "bots stop may || true"
 grep -q '_DISABLED_LINE' "${GOALS}" \
   || fail "goals.py must match envelope enabled: false"
 _dis=$(sed -n '/^cmd_disable()/,/^cmd_synthesise()/p' "${ENACT}")
@@ -94,6 +115,8 @@ python3 -m py_compile "${GOALS}" "${DENY}" "${LOOP}" "${MAIN}" \
   || fail "py_compile failed"
 sh -n "${ENACT}" || fail "sh -n enact"
 sh -n "${POLICY}/hi-15-work-default-off.sh" || fail "sh -n hi-15"
+sh -n "${POLICY}/hi-09-no-undeclared-state.sh" || fail "sh -n hi-09"
+sh -n "${POLICY}/work-runtime-bit.sh" || fail "sh -n work-runtime-bit.sh"
 sh -n "${0}" || fail "sh -n p8-disable.sh"
 
 _unit_out=$("${ENACT}" unit disable aios-work-runtime.service 2>&1 || true)
@@ -122,6 +145,26 @@ cp -a "${SEED}" "${DEST}/srv/aios/seeds/work-runtime"
 cp -a "${ROOT}/seed/work-runtime-bots" "${DEST}/srv/aios/seeds/work-runtime-bots"
 printf '%s\n' '{"accepted":true,"work_runtime":true}' \
   > "${DEST}/srv/aios/state/bootstrap-in-progress/answers.json"
+
+init_envelope_git() {
+  _env=$1
+  _bare=$2
+  mkdir -p "${_env}" "${_bare%/*}"
+  git -C "${_env}" init -b main >/dev/null
+  git -C "${_env}" config user.name aios
+  git -C "${_env}" config user.email aios@localhost
+  printf '%s\n' '# Hard invariants' > "${_env}/hard-invariants.md"
+  git -C "${_env}" add hard-invariants.md
+  git -C "${_env}" -c user.name=aios -c user.email=aios@localhost \
+    commit -m 'chore(envelope): initialise tree' >/dev/null
+  git init --bare -b main "${_bare}" >/dev/null
+  git -C "${_env}" remote add origin "${_bare}"
+  git -C "${_env}" push -u origin main >/dev/null
+}
+
+init_envelope_git \
+  "${DEST}/srv/aios/envelope" \
+  "${DEST}/srv/aios/git/envelope.git"
 
 BIN="${TMP}/bin"
 mkdir -p "${BIN}"
@@ -169,6 +212,23 @@ _rev2=$(git -C "${TREE}" rev-parse HEAD)
 grep -Eq '^[[:space:]]*enabled[[:space:]]*[:=][[:space:]]*(false|no|0)[[:space:]]*$' \
   "${DEST}/srv/aios/envelope/work-runtime.md" \
   || fail "disable did not patch envelope enabled: false"
+if ! git --git-dir="${DEST}/srv/aios/git/envelope.git" cat-file -e main:work-runtime.md; then
+  fail "disable did not commit work-runtime.md on envelope.git main (HI-01)"
+fi
+if ! git --git-dir="${DEST}/srv/aios/git/envelope.git" \
+  --work-tree="${DEST}/srv/aios/envelope" diff --quiet; then
+  fail "envelope worktree dirty after disable (HI-09)"
+fi
+_untracked=$(git --git-dir="${DEST}/srv/aios/git/envelope.git" \
+  --work-tree="${DEST}/srv/aios/envelope" ls-files --others --exclude-standard)
+[ -z "${_untracked}" ] || fail "envelope has untracked paths after disable: ${_untracked}"
+_clause_uid=$(stat -c '%u' "${DEST}/srv/aios/envelope/work-runtime.md")
+[ "${_clause_uid}" != 0 ] \
+  || fail "destroot clause is root-owned (L-03)"
+if git --git-dir="${DEST}/srv/aios/git/envelope.git" \
+  --work-tree="${DEST}/srv/aios/envelope" ls-files --others | grep -q .; then
+  fail "envelope.git ls-files --others not empty after disable"
+fi
 
 if PATH="${ORACLE_PATH}" AIOS_ROOT="${DEST}" "${ENACT}" synthesise work-runtime \
   >"${TMP}/re.out" 2>"${TMP}/re.err"; then
@@ -193,6 +253,47 @@ fi
 if ! AIOS_POLICY_ROOT="${DEST}" "${POLICY}/work-runtime-git.sh"; then
   fail "work-runtime-git.sh failed against disabled destroot"
 fi
+if ! AIOS_POLICY_ROOT="${DEST}" "${POLICY}/hi-09-no-undeclared-state.sh"; then
+  fail "hi-09 failed against disabled destroot (inert git + enabled: false)"
+fi
+if ! AIOS_POLICY_ROOT="${DEST}" "${ISO_POLICY}/hi-09-no-undeclared-state.sh"; then
+  fail "ISO hi-09 failed against disabled destroot"
+fi
+
+STR="${TMP}/string-true"
+mkdir -p \
+  "${STR}/srv/aios/state/bootstrap-in-progress" \
+  "${STR}/srv/aios/envelope" \
+  "${STR}/srv/aios/src"
+printf '%s\n' '{"accepted":true,"work_runtime":"true"}' \
+  > "${STR}/srv/aios/state/bootstrap-in-progress/answers.json"
+mkdir -p "${STR}/srv/aios/src/work-runtime"
+git -C "${STR}/srv/aios/src/work-runtime" init -b main >/dev/null
+git -C "${STR}/srv/aios/src/work-runtime" config user.name aios
+git -C "${STR}/srv/aios/src/work-runtime" config user.email aios@localhost
+printf '%s\n' inert > "${STR}/srv/aios/src/work-runtime/README.md"
+git -C "${STR}/srv/aios/src/work-runtime" add README.md
+git -C "${STR}/srv/aios/src/work-runtime" \
+  -c user.name=aios -c user.email=aios@localhost \
+  commit -m 'chore: leftover git' >/dev/null
+if ! AIOS_POLICY_ROOT="${STR}" "${POLICY}/hi-15-work-default-off.sh"; then
+  fail "hi-15 must treat JSON string true as not a yes"
+fi
+if ! AIOS_POLICY_ROOT="${STR}" "${POLICY}/hi-09-no-undeclared-state.sh"; then
+  fail "hi-09 must treat JSON string true as not a yes with inert git"
+fi
+_str_yes=$(
+  AIOS_ANSWERS="${STR}/srv/aios/state/bootstrap-in-progress/answers.json" \
+    AIOS_ENVELOPE_WORK="${STR}/srv/aios/envelope/missing.md" \
+    python3 - "${ROOT}/agent/aios_agent" <<'PY'
+import sys
+sys.path.insert(0, sys.argv[1])
+from goals import work_runtime_yes
+print("yes" if work_runtime_yes() else "no")
+PY
+)
+[ "${_str_yes}" = no ] \
+  || fail "goals work_runtime_yes must reject JSON string true: ${_str_yes}"
 
 MEM="${TMP}/memory"
 mkdir -p "${MEM}" "${TMP}/notify"

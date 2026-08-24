@@ -75,6 +75,8 @@ cmp -s "${SEED}/connectors/README.md" "${ISO_SEED}/connectors/README.md" \
 cmp -s "${SEED}/envelope/work-runtime.md" "${ISO_SEED}/envelope/work-runtime.md" \
   || fail "seed work-runtime.md dual-tree mismatch"
 
+grep -q 'policy/work-runtime-store.sh' "${GOALS}" \
+  || fail "goals.py must name work-runtime-store.sh"
 grep -q '/srv/aios/memory' "${SEED}/notes/README.md" \
   || fail "seed notes must name /srv/aios/memory"
 grep -q 'routines' "${SEED}/envelope/work-runtime.md" \
@@ -147,7 +149,7 @@ printf '%s\n' "${_listed}" | grep -q '^routines/' \
   || fail "work git does not track routines/"
 printf '%s\n' "${_listed}" | grep -q '^connectors/' \
   || fail "work git does not track connectors/"
-if git -c safe.directory="${MEM}" -C "${MEM}" ls-files | grep -E 'routines|connectors' >/dev/null; then
+if git -c safe.directory="${MEM}" -C "${MEM}" ls-files | grep -E '(^|/)(routines|connectors)(/|$)' >/dev/null; then
   fail "memory git tracks routines or connectors before ingest"
 fi
 
@@ -157,7 +159,7 @@ if ! (
 ); then
   fail "memory ingest failed"
 fi
-if git -c safe.directory="${MEM}" -C "${MEM}" ls-files | grep -E 'routines|connectors' >/dev/null; then
+if git -c safe.directory="${MEM}" -C "${MEM}" ls-files | grep -E '(^|/)(routines|connectors)(/|$)' >/dev/null; then
   fail "memory ingest wrote routines or connectors"
 fi
 git -c safe.directory="${MEM}" -C "${MEM}" ls-files | grep -q 'exchanges/' \
