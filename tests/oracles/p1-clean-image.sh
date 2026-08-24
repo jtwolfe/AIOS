@@ -304,16 +304,24 @@ if ! "${SCRIPT_DIR}/p6-intent-sock.sh"; then
   fail "p6-intent-sock"
 fi
 
-if ! "${SCRIPT_DIR}/p7-summon-brake.sh"; then
-  fail "p7-summon-brake"
-fi
-
 if ! "${SCRIPT_DIR}/p6-work-slice.sh"; then
   fail "p6-work-slice"
 fi
 
+if ! "${SCRIPT_DIR}/p7-summon-brake.sh"; then
+  fail "p7-summon-brake"
+fi
+
 if ! "${SCRIPT_DIR}/p7-notify.sh"; then
   fail "p7-notify"
+fi
+
+if ! "${SCRIPT_DIR}/p7-os-views.sh"; then
+  fail "p7-os-views"
+fi
+
+if ! "${SCRIPT_DIR}/p7-login.sh"; then
+  fail "p7-login"
 fi
 
 if ! "${SCRIPT_DIR}/p9-vm-harness.sh"; then

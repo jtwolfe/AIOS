@@ -1,8 +1,15 @@
 #!/usr/bin/python3
+<<<<<<< HEAD
 """OS operator client (P7.1, P7.2, P7.3, L-18, L-12, HI-14). Unprivileged. One binary."""
+=======
+"""OS operator client (P7.1, P7.3, P7.5, P7.6, L-18, L-12, L-17). Unprivileged. One binary."""
+>>>>>>> 8efd979 (feat(tui): OS catalog, login view, keyboard-complete)
 
+import io
+import json
 import os
 import signal
+import subprocess
 import sys
 import time
 
@@ -30,9 +37,16 @@ WORK_VIEWS = (
     "roster",
     "job",
 )
+# P7.2 notify bodies land in a later PR.
+STUB_VIEWS = ("notify",)
 
 MODE = "os"
 BRAKE_PATH = "/srv/aios/state/brake.d/stamp"
+ACCEPT_STAMP = "/etc/aios/envelope-accepted"
+ANSWERS_PATH = "/srv/aios/state/bootstrap-in-progress/answers.json"
+PACKAGES_PATH = "/srv/aios/state/packages.txt"
+INTENTS_DIR = "/srv/aios/state/intents"
+ESP_MAP = "/srv/aios/state/esp-generations"
 WORK_REFUSED = (
     "refused: work (HI-15); work runtime is off until bootstrap "
     "records an explicit yes"
@@ -40,8 +54,18 @@ WORK_REFUSED = (
 
 ACTIONS = {
     "chrome": ("view", "brake", "send", "mode"),
+<<<<<<< HEAD
     "conversation": ("send", "view", "brake", "mode"),
     "notify": ("open", "view", "brake", "mode"),
+=======
+    "conversation": ("send", "attach", "view", "brake", "mode"),
+    "envelope": ("inspect", "view", "brake"),
+    "intents": ("open", "inspect", "view", "brake"),
+    "notify": ("view", "brake"),
+    "snapper": ("inspect", "rollback", "view", "brake"),
+    "packages": ("inspect", "view", "brake"),
+    "login": ("start", "cancel", "poll", "view", "brake"),
+>>>>>>> 8efd979 (feat(tui): OS catalog, login view, keyboard-complete)
 }
 
 _SHORT_VIEW = {
@@ -55,9 +79,32 @@ _SHORT_VIEW = {
     "l": "login",
 }
 
+_INSPECT_VIEWS = ("envelope", "intents", "snapper", "packages")
+
+
 def _line(out, text=""):
     out.write("%s\n" % text)
     out.flush()
+
+
+def _root():
+    env = os.environ.get("AIOS_ROOT")
+    if env is None:
+        return ""
+    env = env.strip()
+    if not env:
+        raise OSError("AIOS_ROOT empty")
+    return os.path.abspath(env)
+
+
+def _path(env_name, default):
+    env = os.environ.get(env_name)
+    if env:
+        return env
+    root = _root()
+    if root:
+        return root + default
+    return default
 
 
 def _brake_path():
@@ -119,6 +166,216 @@ def _fresh_stdin(current):
     return opened
 
 
+def _add_sys_path(path):
+    if path and os.path.isdir(path) and path not in sys.path:
+        sys.path.insert(0, path)
+
+
+def _here():
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+def _agent_dir():
+    env = os.environ.get("AIOS_AGENT")
+    if env:
+        return env
+    candidates = (
+        os.path.normpath(os.path.join(_here(), "..", "..", "agent", "aios_agent")),
+        "/usr/lib/aios/agent/aios_agent",
+        "/srv/aios/agent/aios_agent",
+    )
+    for path in candidates:
+        if os.path.isfile(os.path.join(path, "provider", "live.py")):
+            return path
+    return candidates[0]
+
+
+def _installer_dir():
+    env = os.environ.get("AIOS_INSTALLER")
+    if env:
+        return env
+    candidates = (
+        os.path.normpath(
+            os.path.join(_here(), "..", "..", "installer", "aios_installer")
+        ),
+        "/usr/lib/aios/installer/aios_installer",
+    )
+    for path in candidates:
+        if os.path.isfile(os.path.join(path, "compiler.py")):
+            return path
+    return candidates[0]
+
+
+def _clickable(out, url):
+    try:
+        tty = out.isatty()
+    except Exception:
+        tty = False
+    if tty:
+        return "\033]8;;%s\033\\%s\033]8;;\033\\" % (url, url)
+    return url
+
+
+def _read_text(path):
+    with open(path, encoding="utf-8") as fh:
+        return fh.read()
+
+
+def _answers_path():
+    env = os.environ.get("AIOS_ANSWERS")
+    if env:
+        return env
+    boot = os.environ.get("AIOS_BOOTSTRAP")
+    if boot:
+        return os.path.join(boot, "answers.json")
+    return _path("AIOS_ANSWERS", ANSWERS_PATH)
+
+
+def _load_answers_doc():
+    path = _answers_path()
+    if not os.path.isfile(path):
+        return {}
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError, TypeError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    nested = data.get("answers")
+    if isinstance(nested, dict):
+        return nested
+    return data
+
+
+def _envelope_text():
+    data = _load_answers_doc()
+    try:
+        _add_sys_path(_installer_dir())
+        import compiler
+    except Exception:
+        compiler = None
+    if compiler is not None:
+        try:
+            answers = compiler.from_mapping(data)
+            return compiler.draft(answers)
+        except Exception as exc:
+            return "error: envelope inspect failed: %s\n" % exc
+    lines = ["derived:"]
+    if data:
+        lines.append("  %s" % json.dumps(data, sort_keys=True))
+    else:
+        lines.append("  (no answers)")
+    hi = os.environ.get("AIOS_HI") or ""
+    if not hi:
+        for cand in (
+            _path("AIOS_HI", "/srv/aios/envelope/hard-invariants.md"),
+            "/usr/lib/aios/envelope/hard-invariants.md",
+            os.path.normpath(
+                os.path.join(
+                    _here(), "..", "..", "docs", "envelope", "hard-invariants.md"
+                )
+            ),
+        ):
+            if cand and os.path.isfile(cand):
+                hi = cand
+                break
+    lines.append("canonical-hard-invariants:")
+    if hi and os.path.isfile(hi):
+        body = _read_text(hi).replace("\r\n", "\n").replace("\r", "\n")
+        if body.endswith("\n"):
+            body = body[:-1]
+        return "\n".join(lines) + "\n" + body + "\n"
+    return "\n".join(lines) + "\n(hi-file missing)\n"
+
+
+def _packages_pin():
+    return _path("AIOS_PACKAGES", PACKAGES_PATH)
+
+
+def _live_packages():
+    env = os.environ.get("AIOS_LIVE_PACKAGES")
+    if env:
+        if not os.path.isfile(env):
+            return None
+        return _read_text(env)
+    try:
+        proc = subprocess.run(
+            ["pacman", "-Qqe"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if proc.returncode != 0:
+        return None
+    out = proc.stdout.decode("utf-8", "replace")
+    return out
+
+
+def _intents_dir():
+    return os.environ.get("AIOS_INTENTS") or _path("AIOS_INTENTS", INTENTS_DIR)
+
+
+def _intent_files():
+    path = _intents_dir()
+    if not os.path.isdir(path):
+        return []
+    names = []
+    try:
+        listing = os.listdir(path)
+    except OSError:
+        return []
+    for name in sorted(listing):
+        if name.startswith("."):
+            continue
+        full = os.path.join(path, name)
+        if os.path.isfile(full):
+            names.append(name)
+    return names
+
+
+def _intent_path(ident):
+    ident = (ident or "").strip()
+    if not ident or "/" in ident or ident in (".", ".."):
+        return None
+    directory = _intents_dir()
+    direct = os.path.join(directory, ident)
+    if os.path.isfile(direct):
+        return direct
+    if not ident.endswith(".json"):
+        alt = os.path.join(directory, ident + ".json")
+        if os.path.isfile(alt):
+            return alt
+    return None
+
+
+def _snapper_text():
+    env = os.environ.get("AIOS_SNAPPER_LIST")
+    if env:
+        if os.path.isfile(env):
+            return _read_text(env)
+        return env
+    try:
+        proc = subprocess.run(
+            ["snapper", "--no-dbus", "-c", "root", "list"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+        )
+        if proc.returncode == 0:
+            text = proc.stdout.decode("utf-8", "replace")
+            if text.strip():
+                return text
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    mapped = _path("AIOS_ESP_GENERATIONS", ESP_MAP)
+    if os.path.isfile(mapped):
+        return _read_text(mapped)
+    return ""
+
+
 class Session:
     def __init__(self):
         self.mode = MODE
@@ -128,22 +385,38 @@ class Session:
         self.writes_frozen = self.braked
         self.note_text = ""
         self.piped = False
+        self.login_status = "idle"
+        self.login_uri = ""
+        self.login_user_code = ""
+        self.login_complete = ""
+        self._device_code = ""
+        self._login_provider = None
+        self._secrets = []
 
     def actions(self):
         return ACTIONS.get(self.view, ("view", "brake", "mode"))
 
+    def _emit(self, out, text=""):
+        for secret in self._secrets:
+            if secret:
+                text = text.replace(secret, "(redacted)")
+        _line(out, text)
+
     def render(self, out):
-        _line(out, "-- AIOS --")
-        _line(out, "mode: %s" % self.mode)
-        _line(out, "view: %s" % self.view)
-        _line(out, "actions: %s" % " ".join(self.actions()))
-        _line(out, "catalog: %s" % " ".join(VIEWS))
-        _line(out, "brake: %s" % ("on" if self.braked else "off"))
-        _line(
+        if self.view == "login" and self.login_status == "waiting":
+            self._login_tick()
+        self._emit(out, "-- AIOS --")
+        self._emit(out, "mode: %s" % self.mode)
+        self._emit(out, "view: %s" % self.view)
+        self._emit(out, "actions: %s" % " ".join(self.actions()))
+        self._emit(out, "catalog: %s" % " ".join(VIEWS))
+        self._emit(out, "brake: %s" % ("on" if self.braked else "off"))
+        self._emit(
             out,
             "writes: %s" % ("frozen" if self.writes_frozen else "live"),
         )
         if self.note_text:
+<<<<<<< HEAD
             _line(out, "note: %s" % self.note_text)
         if self.view == "chrome":
             self._chrome(out)
@@ -152,23 +425,121 @@ class Session:
         elif self.view == "notify":
             self._notify(out)
         else:
+=======
+            self._emit(out, "note: %s" % self.note_text)
+        body = {
+            "chrome": self._chrome,
+            "conversation": self._conversation,
+            "envelope": self._envelope,
+            "intents": self._intents,
+            "snapper": self._snapper,
+            "packages": self._packages,
+            "login": self._login,
+        }.get(self.view)
+        if body is None:
+>>>>>>> 8efd979 (feat(tui): OS catalog, login view, keyboard-complete)
             self._stub(out)
-        _line(out, "--")
+        else:
+            body(out)
+        self._emit(out, "--")
 
     def _chrome(self, out):
-        _line(out, "surface: os")
-        _line(out, "switch: work refused (HI-15); installer refused (not firstboot)")
-        _line(out, "brake: human-only; freeze privileged writes; TUI stays (L-12)")
-        _line(out, "send: conversation line")
-        _line(out, "os-views: %s" % " ".join(VIEWS))
+        self._emit(out, "surface: os")
+        self._emit(
+            out,
+            "switch: work refused (HI-15); installer refused (not firstboot)",
+        )
+        self._emit(
+            out,
+            "brake: human-only; freeze privileged writes; TUI stays (L-12)",
+        )
+        self._emit(out, "send: conversation line")
+        self._emit(out, "os-views: %s" % " ".join(VIEWS))
 
     def _conversation(self, out):
-        _line(out, "transcript:")
+        self._emit(out, "transcript:")
         if not self.transcript:
-            _line(out, "  (empty)")
+            self._emit(out, "  (empty)")
         else:
             for item in self.transcript[-20:]:
-                _line(out, "  %s" % item)
+                self._emit(out, "  %s" % item)
+        self._emit(out, "attach: not allowed in OS mode")
+
+    def _envelope(self, out):
+        stamp = _path("AIOS_ACCEPT_STAMP", ACCEPT_STAMP)
+        accepted = os.path.isfile(stamp)
+        self._emit(out, "envelope-inspect: compiled HI + derived (L-18)")
+        self._emit(out, "envelope-accepted: %s" % ("yes" if accepted else "no"))
+        for line in _envelope_text().splitlines():
+            self._emit(out, line)
+
+    def _intents(self, out):
+        names = _intent_files()
+        self._emit(out, "intents: pending OS work (L-18)")
+        if not names:
+            self._emit(out, "(empty)")
+            return
+        for name in names:
+            self._emit(out, "  %s" % name)
+
+    def _snapper(self, out):
+        self._emit(out, "snapper-inspect: generations (L-18); rollback is L-19")
+        text = _snapper_text()
+        if not text.strip():
+            self._emit(out, "(empty)")
+            return
+        for line in text.splitlines():
+            self._emit(out, line)
+
+    def _packages(self, out):
+        pin_path = _packages_pin()
+        self._emit(out, "packages-inspect: packages.txt vs live (L-18)")
+        self._emit(out, "packages.txt: %s" % pin_path)
+        pin = None
+        if os.path.isfile(pin_path):
+            try:
+                pin = _read_text(pin_path)
+            except OSError:
+                pin = None
+        if pin is None:
+            self._emit(out, "pin: (unreadable)")
+        else:
+            for line in pin.splitlines() or ["(empty)"]:
+                self._emit(out, "pin: %s" % line)
+        live = _live_packages()
+        if live is None:
+            self._emit(out, "live: (unreadable)")
+            return
+        if pin is not None and pin == live:
+            self._emit(out, "live: match")
+            return
+        self._emit(out, "live: differ")
+        for line in live.splitlines() or ["(empty)"]:
+            self._emit(out, "live: %s" % line)
+
+    def _login(self, out):
+        self._emit(
+            out,
+            "L-17: live Grok login is after envelope accept. Never a pasted API key.",
+        )
+        self._emit(out, "login-status: %s" % self.login_status)
+        if self.login_uri:
+            self._emit(out, "verification: %s" % _clickable(out, self.login_uri))
+        if self.login_user_code:
+            self._emit(out, "user_code: %s" % self.login_user_code)
+        if self.login_complete and self.login_complete != self.login_uri:
+            self._emit(
+                out,
+                "verification-complete: %s"
+                % _clickable(out, self.login_complete),
+            )
+        if self.login_status == "waiting":
+            self._emit(
+                out,
+                "waiting: finish on a phone or other PC; this box polls (L-17)",
+            )
+        if self.login_status == "ok":
+            self._emit(out, "token: written 0600 (not in transcript)")
 
     def _notify(self, out):
         for line in notify.render_lines(notify.load_payloads()):
@@ -184,7 +555,7 @@ class Session:
         self.note_text = "opened notify into conversation (HI-14)"
 
     def _stub(self, out):
-        _line(out, "not this PR")
+        self._emit(out, "not this PR")
 
     def switch(self, view_id):
         view_id = (view_id or "").strip().lower()
@@ -215,16 +586,166 @@ class Session:
         self.writes_frozen = True
         self.note_text = "brake on (L-12); writes frozen; TUI stays"
 
+    def _complete(self, text):
+        fixture = os.environ.get("AIOS_FIXTURE")
+        kind = (os.environ.get("AIOS_PROVIDER") or "").strip()
+        if not fixture or kind not in ("", "fixture"):
+            return None
+        try:
+            _add_sys_path(_agent_dir())
+            from provider.fixture import FixtureProvider
+
+            return FixtureProvider(fixture).complete(text)
+        except Exception:
+            return None
+
     def send(self, text):
         text = (text or "").strip()
+        if self.view == "login":
+            self.note_text = "never a pasted API key (L-17)"
+            return
         if not text:
             self.note_text = "send: empty"
             return
         self.transcript.append("operator: %s" % text)
         if text.endswith("?"):
             self.note_text = "turn-ended: question"
-        else:
-            self.note_text = "sent"
+            return
+        reply = self._complete(text)
+        if reply:
+            self.transcript.append("agent: %s" % reply)
+        self.note_text = "sent"
+        if self.view == "chrome":
+            self.view = "conversation"
+
+    def attach(self):
+        self.note_text = "attach: not allowed in OS mode"
+
+    def inspect(self):
+        if self.view not in _INSPECT_VIEWS and self.view != "login":
+            if self.view in STUB_VIEWS:
+                self.note_text = "not this PR"
+                return
+            self.note_text = "inspect: not this view"
+            return
+        self.note_text = "inspect: %s" % self.view
+
+    def open_intent(self, ident):
+        ident = (ident or "").strip()
+        if not ident:
+            names = _intent_files()
+            if not names:
+                self.note_text = "open: no intents"
+                return
+            ident = names[0]
+        path = _intent_path(ident)
+        if path is None:
+            self.note_text = "open: unknown intent %s" % ident
+            return
+        try:
+            body = _read_text(path).strip()
+        except OSError as exc:
+            self.note_text = "open failed: %s" % exc
+            return
+        self.view = "conversation"
+        self.send(body or ident)
+
+    def rollback(self):
+        # L-19 restore is P7.7; listing generations is inspect-only here.
+        self.note_text = "rollback not this PR (L-19)"
+
+    def _forget_device(self):
+        if self._device_code and self._device_code not in self._secrets:
+            self._secrets.append(self._device_code)
+        self._device_code = ""
+        self._login_provider = None
+
+    def _login_tick(self):
+        if self.login_status != "waiting":
+            return
+        if self._login_provider is None or not self._device_code:
+            return
+        try:
+            result = self._login_provider.poll_token(self._device_code)
+        except Exception as exc:
+            self.login_status = "refused"
+            self.note_text = "%s" % exc
+            self._forget_device()
+            return
+        if result == "ok":
+            self.login_status = "ok"
+            self.note_text = "login ok (L-17); token not in transcript"
+            self._forget_device()
+            return
+        if result == "pending":
+            return
+        if result == "slow_down":
+            return
+        self.login_status = "refused"
+        self.note_text = "device-code %s (L-17)" % result
+        self._forget_device()
+
+    def login_start(self, arg=""):
+        if arg:
+            self.note_text = "never a pasted API key (L-17)"
+            return
+        if self.writes_frozen:
+            self.note_text = "refused: writes frozen (L-12)"
+            return
+        if self.login_status == "waiting":
+            self.note_text = "login: already waiting"
+            return
+        kind = (os.environ.get("AIOS_PROVIDER") or "").strip()
+        if kind == "fixture":
+            self.login_status = "refused"
+            self.note_text = "fixture has no live login (L-17)"
+            return
+        try:
+            _add_sys_path(_agent_dir())
+            from provider.base import ProviderError
+            from provider.live import LiveProvider
+        except Exception as exc:
+            self.login_status = "refused"
+            self.note_text = "live adapter missing: %s (L-17)" % exc
+            return
+        err = io.StringIO()
+        try:
+            provider = LiveProvider()
+            sess = provider.request_device(err=err)
+        except ProviderError as exc:
+            self.login_status = "refused"
+            self.note_text = "%s" % exc
+            return
+        except OSError as exc:
+            self.login_status = "refused"
+            self.note_text = "cannot write OS token: %s (L-16)" % exc
+            return
+        self._login_provider = provider
+        self.login_uri = sess.get("uri") or ""
+        self.login_user_code = sess.get("user_code") or ""
+        self.login_complete = sess.get("complete") or ""
+        self._device_code = sess.get("device_code") or ""
+        if self._device_code:
+            self._secrets.append(self._device_code)
+        self.login_status = "waiting"
+        self.note_text = "login started (L-17)"
+        self._login_tick()
+
+    def login_cancel(self):
+        if self.login_status != "waiting":
+            self.note_text = "login: not started"
+            return
+        self.login_status = "cancelled"
+        self._forget_device()
+        self.note_text = "login cancelled (L-17)"
+
+    def login_poll(self):
+        if self.login_status != "waiting":
+            self.note_text = "login: not waiting"
+            return
+        self._login_tick()
+        if self.login_status == "waiting":
+            self.note_text = "login: waiting (L-17)"
 
     def mode_switch(self, target):
         target = (target or "").strip().lower()
@@ -284,8 +805,29 @@ class Session:
         if cmd == "send":
             self.send(arg)
             return None
+        if cmd == "attach":
+            self.attach()
+            return None
         if cmd == "mode":
             self.mode_switch(arg)
+            return None
+        if cmd in ("inspect", "r") and not arg:
+            self.inspect()
+            return None
+        if cmd == "open":
+            self.open_intent(arg)
+            return None
+        if cmd == "start":
+            self.login_start(arg)
+            return None
+        if cmd == "cancel" and not arg:
+            self.login_cancel()
+            return None
+        if cmd == "poll" and not arg:
+            self.login_poll()
+            return None
+        if cmd == "rollback" and not arg:
+            self.rollback()
             return None
 
         self.note_text = "unknown: %s" % cmd

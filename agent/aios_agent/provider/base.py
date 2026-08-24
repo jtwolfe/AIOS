@@ -23,12 +23,35 @@ class Provider:
         raise ProviderError("provider %s has no login" % self.name)
 
 
+def aios_root():
+    env = os.environ.get("AIOS_ROOT")
+    if env is None:
+        return ""
+    env = env.strip()
+    if not env:
+        raise ProviderError("AIOS_ROOT empty")
+    return os.path.abspath(env)
+
+
+def resolve_path(env_name, default):
+    env = os.environ.get(env_name)
+    if env:
+        return env
+    root = aios_root()
+    if root:
+        return root + default
+    return default
+
+
 def envelope_accepted(path=None):
-    return os.path.exists(path or ACCEPT_STAMP)
+    if path is None:
+        path = resolve_path("AIOS_ACCEPT_STAMP", ACCEPT_STAMP)
+    return os.path.exists(path)
 
 
 def remotes_vetoed(path=None):
-    path = path or ANSWERS_PATH
+    if path is None:
+        path = resolve_path("AIOS_ANSWERS", ANSWERS_PATH)
     if not os.path.isfile(path):
         return False
     with open(path, "r", encoding="utf-8") as fh:

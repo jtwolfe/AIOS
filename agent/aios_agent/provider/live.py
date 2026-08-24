@@ -19,6 +19,7 @@ from provider.base import (
     ProviderError,
     envelope_accepted,
     remotes_vetoed,
+    resolve_path,
 )
 
 # Public Grok CLI client. Same device-code grant as `grok login --device-auth`.
@@ -73,6 +74,59 @@ def _https_uri(value, what="verification_uri"):
     return value
 
 
+def http_from_fixture(path):
+    # Host oracles inject this so tests never call auth.x.ai (L-17).
+    with open(path, "r", encoding="utf-8") as fh:
+        doc = json.load(fh)
+    if not isinstance(doc, dict):
+        raise ProviderError("login http fixture is not a JSON object (L-17)")
+    polls = list(doc.get("polls") or [])
+    state = {"i": 0}
+
+    def http(method, url, data=None, headers=None, timeout=30):
+        url = url or ""
+        if url.endswith("/device/code") or url == DEVICE_CODE_URL:
+            device = doc.get("device")
+            if not isinstance(device, dict):
+                device = {}
+                for key in (
+                    "user_code",
+                    "verification_uri",
+                    "verification_url",
+                    "verification_uri_complete",
+                    "device_code",
+                    "interval",
+                    "expires_in",
+                ):
+                    if key in doc:
+                        device[key] = doc[key]
+            return 200, device
+        if url.endswith("/token") or url == TOKEN_URL:
+            if polls:
+                idx = state["i"]
+                if idx >= len(polls):
+                    idx = len(polls) - 1
+                state["i"] += 1
+                item = polls[idx]
+                if isinstance(item, dict) and "status" in item:
+                    return int(item.get("status") or 200), item.get("body") or {}
+                if not isinstance(item, dict):
+                    item = {}
+                return 200, item
+            tok = doc.get("token")
+            if not isinstance(tok, dict):
+                tok = {}
+                for key in _TOKEN_KEYS:
+                    if key in doc:
+                        tok[key] = doc[key]
+            if tok.get("access_token"):
+                return 200, tok
+            return 400, {"error": "authorization_pending"}
+        raise ProviderError("login http fixture: unexpected url")
+
+    return http
+
+
 def _as_messages(messages):
     if isinstance(messages, str):
         return [{"role": "user", "content": messages}]
@@ -96,10 +150,16 @@ class LiveProvider(Provider):
         http=None,
         sleep=None,
     ):
-        self.token_path = token_path or OS_TOKEN_PATH
-        self.accept_stamp = accept_stamp or ACCEPT_STAMP
-        self.answers_path = answers_path or ANSWERS_PATH
-        self._http = http or http_json
+        self.token_path = token_path or resolve_path("AIOS_OS_TOKEN", OS_TOKEN_PATH)
+        self.accept_stamp = accept_stamp or resolve_path(
+            "AIOS_ACCEPT_STAMP", ACCEPT_STAMP
+        )
+        self.answers_path = answers_path or resolve_path("AIOS_ANSWERS", ANSWERS_PATH)
+        if http is not None:
+            self._http = http
+        else:
+            hook = (os.environ.get("AIOS_PROVIDER_HTTP") or "").strip()
+            self._http = http_from_fixture(hook) if hook else http_json
         self._sleep = sleep or time.sleep
         # L-16: not /home (operator snowflake) and not /etc/aios (etckeeper).
         if self.token_path.startswith("/home/") or self.token_path.startswith(
@@ -107,7 +167,7 @@ class LiveProvider(Provider):
         ):
             raise ProviderError("OS token path is not the P4.2 lock (L-16)")
 
-    def login(self, err=None):
+    def request_device(self, err=None):
         err = err or sys.stderr
         if not envelope_accepted(self.accept_stamp):
             raise ProviderError("live login is after envelope accept (L-17)")
@@ -139,31 +199,54 @@ class LiveProvider(Provider):
         interval = int(payload.get("interval") or 5)
         if interval < 0:
             interval = 5
-        deadline = time.time() + int(payload.get("expires_in") or 600)
-        while time.time() < deadline:
+        return {
+            "user_code": user_code,
+            "uri": uri,
+            "complete": complete,
+            "device_code": device_code,
+            "interval": interval,
+            "deadline": time.time() + int(payload.get("expires_in") or 600),
+        }
+
+    def poll_token(self, device_code):
+        status, tok = self._http(
+            "POST",
+            TOKEN_URL,
+            data={
+                "grant_type": DEVICE_GRANT,
+                "device_code": device_code,
+                "client_id": CLIENT_ID,
+            },
+        )
+        err_code = (tok.get("error") or "") if isinstance(tok, dict) else ""
+        if status == 200 and isinstance(tok, dict) and tok.get("access_token"):
+            self._write_token(tok)
+            return "ok"
+        if err_code == "authorization_pending":
+            return "pending"
+        if err_code == "slow_down":
+            return "slow_down"
+        if err_code in ("expired_token", "access_denied"):
+            return err_code
+        if status != 200:
+            return "pending"
+        return "pending"
+
+    def login(self, err=None):
+        sess = self.request_device(err)
+        interval = sess["interval"]
+        while time.time() < sess["deadline"]:
             self._sleep(interval)
-            status, tok = self._http(
-                "POST",
-                TOKEN_URL,
-                data={
-                    "grant_type": DEVICE_GRANT,
-                    "device_code": device_code,
-                    "client_id": CLIENT_ID,
-                },
-            )
-            err_code = (tok.get("error") or "") if isinstance(tok, dict) else ""
-            if status == 200 and tok.get("access_token"):
-                self._write_token(tok)
+            result = self.poll_token(sess["device_code"])
+            if result == "ok":
                 return
-            if err_code == "authorization_pending":
+            if result == "pending":
                 continue
-            if err_code == "slow_down":
+            if result == "slow_down":
                 interval += 5
                 continue
-            if err_code in ("expired_token", "access_denied"):
-                raise ProviderError("device-code %s (L-17)" % err_code)
-            if status != 200:
-                continue
+            if result in ("expired_token", "access_denied"):
+                raise ProviderError("device-code %s (L-17)" % result)
         raise ProviderError("device-code timed out (L-17)")
 
     def complete(self, messages):
@@ -253,29 +336,39 @@ class LiveProvider(Provider):
                     "aios-agent missing; cannot chown OS token (L-16)"
                 )
             agent_ids = (spec.pw_uid, spec.pw_gid)
-        os.makedirs(parent, mode=0o700, exist_ok=True)
-        os.chmod(parent, 0o700)
-        if agent_ids:
-            os.chown(parent, agent_ids[0], agent_ids[1])
         keep = {}
         for key in _TOKEN_KEYS:
             if key in payload:
                 keep[key] = payload[key]
         if "access_token" not in keep:
             raise ProviderError("device-code produced no access_token (L-17)")
-        fd, tmp = tempfile.mkstemp(prefix=".os.token.", dir=parent)
+        tmp = None
         try:
+            os.makedirs(parent, mode=0o700, exist_ok=True)
+            os.chmod(parent, 0o700)
+            if agent_ids:
+                os.chown(parent, agent_ids[0], agent_ids[1])
+            fd, tmp = tempfile.mkstemp(prefix=".os.token.", dir=parent)
             os.fchmod(fd, 0o600)
             with os.fdopen(fd, "w", encoding="utf-8") as fh:
                 json.dump(keep, fh, separators=(",", ":"))
                 fh.write("\n")
             os.replace(tmp, path)
+            tmp = None
             os.chmod(path, 0o600)
             if agent_ids:
                 os.chown(path, agent_ids[0], agent_ids[1])
+        except OSError as exc:
+            if tmp:
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
+            raise ProviderError("cannot write OS token: %s (L-16)" % exc)
         except Exception:
-            try:
-                os.unlink(tmp)
-            except OSError:
-                pass
+            if tmp:
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
             raise
