@@ -115,6 +115,8 @@ printf '%s\n' '{"responses":[{"actions":[{"tool":"question","text":"which-one?"}
   > "${TMP}/question.json"
 printf '%s\n' '{"responses":[{"question":"which-one?","send":"too-late"}]}' \
   > "${TMP}/compact-question.json"
+printf '%s\n' '{"responses":[{"skill_read":"wake","send":"hello-with-read"}]}' \
+  > "${TMP}/read-send.json"
 printf '%s\n' '{"responses":["idle"]}' > "${TMP}/idlefix.json"
 
 run_turn() {
@@ -232,6 +234,20 @@ if d.get("ended") != "question":
 if d.get("delivered"):
     raise SystemExit("compact send was delivered: %s" % d.get("delivered"))
 ' || fail "compact question must drop sibling send: ${_cq}"
+
+_rs=$(run_turn "${TMP}/read-send.json" "read and send") || true
+printf '%s\n' "${_rs}" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+if d.get("error"):
+    raise SystemExit("error %s" % d.get("error"))
+if d.get("ended") != "sent":
+    raise SystemExit("ended %s" % d.get("ended"))
+if d.get("delivered") != "hello-with-read":
+    raise SystemExit("delivered %s" % d.get("delivered"))
+if "exhausted" in (d.get("error") or ""):
+    raise SystemExit("fixture exhausted after send")
+' || fail "skill_read+send one response must keep delivered: ${_rs}"
 
 _none=$(
   env -u AIOS_ANSWERS -u AIOS_ENVELOPE_WORK -u AIOS_WORK_RUNTIME \

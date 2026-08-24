@@ -201,6 +201,7 @@ def run_turn(asked):
                 prompt,
                 context=context,
                 model_text=last_reply,
+                delivered="\n".join(delivered),
                 ended="failed",
                 outcome="failed",
                 error=str(exc),
@@ -214,6 +215,7 @@ def run_turn(asked):
                 prompt,
                 context=context,
                 model_text=last_reply,
+                delivered="\n".join(delivered),
                 ended="failed",
                 outcome="failed",
                 error=str(exc),
@@ -223,8 +225,9 @@ def run_turn(asked):
         last_reply = reply if isinstance(reply, str) else str(reply or "")
         actions = parse_actions(last_reply)
         if not actions:
-            ended = "idle"
-            outcome = "idle"
+            if not delivered and question is None:
+                ended = "idle"
+                outcome = "idle"
             break
 
         queued = []
@@ -295,7 +298,7 @@ def run_turn(asked):
                 bodies_in_context.add(skill.name)
             messages.append({"role": "user", "content": "\n\n".join(parts)})
             context = _messages_text(messages)
-            if question or error:
+            if question or error or delivered:
                 break
             continue
         break

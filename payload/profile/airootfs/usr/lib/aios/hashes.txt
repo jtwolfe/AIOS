@@ -102,7 +102,7 @@ f4c4b6d04d00766230da67d9fa657403128dd01ccce4ec713384593ae1bd09ff  /usr/lib/syste
 460430dfbc9480c3494621607bb8169fba285ddc0069b57d53a475db8a9783c5  operator-client/tty/notify.py
 ead3cc3cb403e623060323ba8e83c5fb6ab7d2961de9ef5de006fe2d308f2ef6  agent/aios_agent/rollback_gate.py
 a1ed294e109bc17e332625f4217d863a0ae83caecbf7b006a9d3133ff3a72638  checker/policy/work-runtime-git.sh
-16888a7bf276937b05d34f85f118ee5b8be289b063afd582e4020b84d168df24  /srv/aios/seeds/work-runtime/main.py
+c4154969a5efe171f5050a42cf5d4cf4b678403442af714da0b6ab404ba94f2a  /srv/aios/seeds/work-runtime/main.py
 923decfe405a78a31866d0f66cbd02c2b1f9e988334877043fb8e42985f4f1bf  /srv/aios/seeds/work-runtime/provider.py
 737d9b21fd5a785ade61ce4844bace1a38f79b0d9e975beccf52b955cdb25c03  /srv/aios/seeds/work-runtime/skills.py
 1c666865bc48123f6140d3570520903615084aa0676cc784893873bd50d775ef  /srv/aios/seeds/work-runtime/wake.py
