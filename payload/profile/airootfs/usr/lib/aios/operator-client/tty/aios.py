@@ -33,6 +33,15 @@ WORK_VIEWS = (
     "roster",
     "job",
 )
+# Work session catalog: chrome + conversation + work views, not OS tools (L-14).
+WORK_CATALOG = (
+    "chrome",
+    "conversation",
+    "skills",
+    "connectors",
+    "bridge",
+    "store",
+)
 # P7.2 notify bodies land in a later PR.
 STUB_VIEWS = ()
 
@@ -50,6 +59,7 @@ WORK_REFUSED = (
     "refused: work (HI-15); work runtime is off until bootstrap "
     "records an explicit yes"
 )
+_WORK_PRIVILEGED = ("enact", "accept", "reject", "rollback")
 
 ACTIONS = {
     "chrome": ("view", "brake", "send", "mode"),
@@ -60,6 +70,15 @@ ACTIONS = {
     "snapper": ("inspect", "rollback", "view", "brake"),
     "packages": ("inspect", "view", "brake"),
     "login": ("start", "cancel", "poll", "view", "brake"),
+}
+
+_WORK_SHORT = {
+    "h": "chrome",
+    "c": "conversation",
+    "s": "skills",
+    "n": "connectors",
+    "g": "bridge",
+    "t": "store",
 }
 
 _SHORT_VIEW = {
@@ -107,6 +126,24 @@ def _brake_path():
 
 def _brake_on():
     return os.path.isfile(_brake_path())
+
+
+def _answers_path():
+    return os.environ.get("AIOS_ANSWERS") or ANSWERS_PATH
+
+
+def work_runtime_on():
+    path = _answers_path()
+    if not path or not os.path.isfile(path):
+        return False
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError):
+        return False
+    if not isinstance(doc, dict):
+        return False
+    return doc.get("work_runtime") is True
 
 
 def write_brake():
@@ -386,8 +423,12 @@ def _snapper_text():
 
 
 class Session:
-    def __init__(self):
-        self.mode = MODE
+    def __init__(self, mode=None):
+        want = (mode or MODE).strip().lower()
+        if want == "work" and work_runtime_on():
+            self.mode = "work"
+        else:
+            self.mode = MODE
         self.view = "chrome"
         self.transcript = []
         self.braked = _brake_on()
@@ -401,6 +442,16 @@ class Session:
         self._device_code = ""
         self._login_provider = None
         self._secrets = []
+
+    def catalog(self):
+        if self.mode == "work":
+            return WORK_CATALOG
+        return VIEWS
+
+    def shorts(self):
+        if self.mode == "work":
+            return _WORK_SHORT
+        return _SHORT_VIEW
 
     def actions(self):
         return ACTIONS.get(self.view, ("view", "brake", "mode"))
@@ -421,7 +472,7 @@ class Session:
         self._emit(out, "mode: %s" % self.mode)
         self._emit(out, "view: %s" % self.view)
         self._emit(out, "actions: %s" % " ".join(self.actions()))
-        self._emit(out, "catalog: %s" % " ".join(VIEWS))
+        self._emit(out, "catalog: %s" % " ".join(self.catalog()))
         self._emit(out, "brake: %s" % ("on" if self.braked else "off"))
         self._emit(
             out,
@@ -449,7 +500,14 @@ class Session:
         notify.render(self, out)
 
     def _chrome(self, out):
-        self._emit(out, "surface: os")
+        self._emit(out, "surface: %s" % self.mode)
+        if self.mode == "work":
+            self._emit(out, "switch: os allowed (session); installer refused (not firstboot)")
+            self._emit(out, "brake: human-only; freeze privileged writes; TUI stays (L-12)")
+            self._emit(out, "send: conversation line")
+            self._emit(out, "work-views: %s" % " ".join(WORK_CATALOG))
+            self._emit(out, "privileged tools: none (L-14)")
+            return
         self._emit(
             out,
             "switch: work refused (HI-15); installer refused (not firstboot)",

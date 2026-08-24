@@ -18,12 +18,16 @@ Work runtime stays default off (HI-15).
 
 ## Non-negotiable
 
-1. Named OS views only (L-18). Do not invent extra view ids. `brake` is
-   a chrome action (L-12), not a view id.
+1. Named L-18 views only. Do not invent extra view ids. `brake` is
+   a chrome action (L-12), not a view id. OS and work catalogs must
+   not mix (L-14).
 2. One binary. Do not add a second command. Shortcuts belong to an
    installed graphical client later, not this OS contract.
-3. Work summon is refused while HI-15 is default off. Do not open work
-   tools. Do not synthesise `/srv/aios/src/work-runtime`.
+3. Work summon is refused unless `answers.json` has `work_runtime` JSON
+   true (HI-15). Skip, `1`, and `"true"` are not a yes. When yes,
+   `aios work` opens work chrome, not OS tools (L-14). Do not synthesise
+   `/srv/aios/src/work-runtime`. This client must not run inside
+   aios-work.slice.
 4. Emergency brake writes `/srv/aios/state/brake.d/stamp` (or
    `AIOS_BRAKE`). Accept grants a 1731 drop dir; do not chmod
    `/srv/aios/state` 0777 (HI-16). Freeze privileged writes. TUI stays.
