@@ -328,6 +328,10 @@ if ! "${SCRIPT_DIR}/p7-login.sh"; then
   fail "p7-login"
 fi
 
+if ! "${SCRIPT_DIR}/p7-surface-split.sh"; then
+  fail "p7-surface-split"
+fi
+
 if ! "${SCRIPT_DIR}/p9-vm-harness.sh"; then
   fail "p9-vm-harness"
 fi
