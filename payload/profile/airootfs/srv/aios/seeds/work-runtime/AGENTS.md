@@ -29,6 +29,8 @@ routines. Not a person. Not a second operating system. Not privileged.
 8. Do not invent personhood, an identity store, or a parallel envelope.
 9. Default off. This runtime exists on a machine only if bootstrap recorded
    an explicit yes.
+10. Work store (notes, skills, routines, connectors) is git in this tree,
+    not `/srv/aios/memory`.
 
 ## Loop
 

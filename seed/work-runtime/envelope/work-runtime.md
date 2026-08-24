@@ -23,11 +23,16 @@ When enabled:
   `aios-work` so the user instance starts at boot.
 - Resource caps match the `aios-work.slice` floor (MemoryMax / CPUQuota)
   on the user unit. Processes run as uid `aios-work`.
+- Work store (notes, skills, routines, connectors) is git in
+  `/srv/aios/src/work-runtime`, not `/srv/aios/memory`.
 
 When disabled:
 
 - No work-runtime unit is enabled or active (HI-15). No linger-started
   work-runtime service. The work tree is absent or inert.
+- Disable is an envelope patch (`enabled: false`): stop the L-23 user
+  units, leave git. Do not delete `/srv/aios/src/work-runtime`. Do not
+  snapper-rollback the work tree. Work-tree mistakes are ordinary git.
 - The vendor user-unit file may still exist after P8.2. That is not a
   defect. A **system** unit at `/etc/systemd/system/` must not exist.
 - The seed may remain in this GitHub tree.
@@ -46,3 +51,5 @@ When disabled:
   (single line; no `/home`).
 - `git -C /srv/aios/src/work-runtime rev-parse --is-inside-work-tree` is
   true when enabled.
+- `! git -C /srv/aios/memory ls-files | grep -E 'routines|connectors'`
+- After disable: `is-enabled`/`is-active` false; the work git remains.

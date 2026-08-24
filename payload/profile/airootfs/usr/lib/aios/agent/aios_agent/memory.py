@@ -56,6 +56,10 @@ def _git_record(base, rels, ident, message):
     """Commit on agent/*, never on main (HI-03, L-03). Worktree write already happened."""
     if not rels or not os.path.isdir(base):
         return None
+    for rel in rels:
+        text = rel.replace("\\", "/")
+        if "routines" in text.split("/") or "connectors" in text.split("/"):
+            return None
     try:
         probe = _git(base, ["rev-parse", "--is-inside-work-tree"])
     except OSError:
@@ -169,6 +173,7 @@ def ingest(record, root=None):
     payload.pop("TL;DR", None)
     payload.pop("model summary", None)
     base = _root(root)
+    # Work store (routines/connectors) is git in the work tree, not memory.
     exchange = _write(os.path.join(base, "exchanges", ident), payload)
     moment = _write(os.path.join(base, "moments", ident), payload)
     rels = [

@@ -22,3 +22,7 @@ Testable. Terms match the machine glossary in docs/reference.md.
 8. Given experimental enactment, when it is not yet checker-passed, then it
    lives in a worktree or subvolume under a cgroup — not as a live `/usr`
    mutation, and not as a snapper substitute.
+9. Given notes, skills, routines, or connectors for this runtime, when they
+   are stored, then they are git in `/srv/aios/src/work-runtime`, not in
+   `/srv/aios/memory`.
+10. Given disable, when user units stop, then the work-runtime git remains.

@@ -112,4 +112,9 @@ def check(kind, *args):
                 "work runtime stays off until an explicit yes (HI-15)"
             )
         return
+    if kind == "disable":
+        target = args[0] if args else "work-runtime"
+        if target != "work-runtime":
+            raise Denied("not allowlisted: disable %s (HI-15)" % target)
+        return
     raise Denied("unknown action not allowlisted: %s" % kind)

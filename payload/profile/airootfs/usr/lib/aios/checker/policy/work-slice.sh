@@ -115,16 +115,30 @@ if [ -S /run/aios/intent.sock ]; then
   [ "${_mod}" = 660 ] || fail "intent.sock mode is ${_mod}, not 660 (L-05)"
 fi
 
-# Envelope bit default off: a live work tree without an explicit yes is undeclared.
+# Envelope bit default off. Inert git after disable is allowed (HI-15).
+# Keep in sync with goals.py _ENABLED_LINE/_DISABLED_LINE and enact work_runtime_yes.
 _ans=/srv/aios/state/bootstrap-in-progress/answers.json
+_clause=/srv/aios/envelope/work-runtime.md
 _yes=0
-if [ -f "${_ans}" ] \
+_off=0
+if [ -f "${_clause}" ]; then
+  if grep -Eq '^[[:space:]]*enabled[[:space:]]*[:=][[:space:]]*(false|no|0)[[:space:]]*$' \
+    "${_clause}"; then
+    _off=1
+  elif grep -Eq '^[[:space:]]*enabled[[:space:]]*[:=][[:space:]]*(true|yes|1)[[:space:]]*$' \
+    "${_clause}"; then
+    _yes=1
+  fi
+fi
+if [ "${_off}" -eq 0 ] && [ "${_yes}" -eq 0 ] && [ -f "${_ans}" ] \
   && grep -Eq '"accepted"[[:space:]]*:[[:space:]]*true' "${_ans}" \
   && grep -Eq '"work_runtime"[[:space:]]*:[[:space:]]*true' "${_ans}"; then
   _yes=1
 fi
 if [ "${_yes}" -eq 0 ] && [ -e /srv/aios/src ]; then
-  fail "/srv/aios/src exists while work-runtime is not an explicit yes (HI-15)"
+  _tree=/srv/aios/src/work-runtime
+  git -c safe.directory="${_tree}" -C "${_tree}" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+    || fail "/srv/aios/src exists while work-runtime is not an explicit yes (HI-15)"
 fi
 
 exit 0

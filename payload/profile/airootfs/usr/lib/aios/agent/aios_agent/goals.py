@@ -200,8 +200,12 @@ def _is_work_runtime_plan(proposal):
     return False
 
 
+# Keep in sync with enact work_runtime_yes and policy enabled matchers.
 _ENABLED_LINE = re.compile(
     r"^\s*enabled\s*[:=]\s*(true|yes|1)\s*$"
+)
+_DISABLED_LINE = re.compile(
+    r"^\s*enabled\s*[:=]\s*(false|no|0)\s*$"
 )
 
 
@@ -325,17 +329,7 @@ def load_state(path=None):
 
 
 def work_runtime_yes(answers=None, clause=None):
-    """Skip is not a yes (HI-15)."""
-    answers = _answers_path(answers)
-    if os.path.isfile(answers):
-        try:
-            with open(answers, "r", encoding="utf-8") as fh:
-                doc = json.load(fh)
-        except (OSError, ValueError):
-            doc = None
-        if isinstance(doc, dict) and doc.get("accepted") is True:
-            if doc.get("work_runtime") is True:
-                return True
+    """Skip is not a yes (HI-15). Envelope enabled: false wins over answers."""
     clause = _envelope_work(clause)
     if os.path.isfile(clause):
         try:
@@ -347,7 +341,19 @@ def work_runtime_yes(answers=None, clause=None):
             stripped = line.strip()
             if stripped.startswith("#"):
                 continue
+            if _DISABLED_LINE.match(stripped):
+                return False
             if _ENABLED_LINE.match(stripped):
+                return True
+    answers = _answers_path(answers)
+    if os.path.isfile(answers):
+        try:
+            with open(answers, "r", encoding="utf-8") as fh:
+                doc = json.load(fh)
+        except (OSError, ValueError):
+            doc = None
+        if isinstance(doc, dict) and doc.get("accepted") is True:
+            if doc.get("work_runtime") is True:
                 return True
     return False
 

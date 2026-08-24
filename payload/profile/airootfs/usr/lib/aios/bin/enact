@@ -33,7 +33,7 @@ log() {
 }
 
 usage() {
-  printf 'usage: enact {syu|snapper-pre|snapper-post|bootctl|unit|rollback|synthesise} ...\n' >&2
+  printf 'usage: enact {syu|snapper-pre|snapper-post|bootctl|unit|rollback|synthesise|disable} ...\n' >&2
   exit 2
 }
 
@@ -539,18 +539,24 @@ cmd_unit() {
   exec /usr/bin/systemctl --no-ask-password "${_act}" "${_unit}"
 }
 
-# HI-15: skip / "true" / 1 are not a yes. JSON true or compiled enabled: only.
+# HI-15: skip / "true" / 1 are not a yes. Envelope enabled: false wins over answers.
+# Keep matchers in sync with goals.py _ENABLED_LINE / _DISABLED_LINE.
 work_runtime_yes() {
+  _clause="${DESTROOT}/srv/aios/envelope/work-runtime.md"
+  if [ -f "${_clause}" ]; then
+    if grep -Eq '^[[:space:]]*enabled[[:space:]]*[:=][[:space:]]*(false|no|0)[[:space:]]*$' \
+      "${_clause}"; then
+      return 1
+    fi
+    if grep -Eq '^[[:space:]]*enabled[[:space:]]*[:=][[:space:]]*(true|yes|1)[[:space:]]*$' \
+      "${_clause}"; then
+      return 0
+    fi
+  fi
   _ans="${DESTROOT}/srv/aios/state/bootstrap-in-progress/answers.json"
   if [ -f "${_ans}" ] \
     && grep -Eq '"accepted"[[:space:]]*:[[:space:]]*true' "${_ans}" \
     && grep -Eq '"work_runtime"[[:space:]]*:[[:space:]]*true' "${_ans}"; then
-    return 0
-  fi
-  _clause="${DESTROOT}/srv/aios/envelope/work-runtime.md"
-  if [ -f "${_clause}" ] \
-    && grep -Eq '^[[:space:]]*enabled[[:space:]]*[:=][[:space:]]*(true|yes|1)[[:space:]]*$' \
-      "${_clause}"; then
     return 0
   fi
   return 1
@@ -591,6 +597,39 @@ PY
     printf 'enabled: yes\n' > "${_compiled}" \
       || die "write ${_compiled} failed"
   fi
+}
+
+patch_work_runtime_enabled() {
+  _want=$1
+  case "${_want}" in
+    true|false) ;;
+    *) die "work-runtime enabled value not allowlisted: ${_want}" ;;
+  esac
+  _clause="${DESTROOT}/srv/aios/envelope/work-runtime.md"
+  mkdir -p "${DESTROOT}/srv/aios/envelope" \
+    || die "mkdir ${DESTROOT}/srv/aios/envelope failed"
+  if [ ! -f "${_clause}" ]; then
+    _seed="${DESTROOT}/srv/aios/seeds/work-runtime/envelope/work-runtime.md"
+    if [ -f "${_seed}" ]; then
+      cp -a "${_seed}" "${_clause}" || die "copy seed work-runtime.md failed"
+    else
+      printf '%s\n' "# Clause: work runtime" "enabled: ${_want}" \
+        > "${_clause}" || die "write ${_clause} failed"
+      return 0
+    fi
+  fi
+  _tmp="${_clause}.tmp.$$"
+  awk -v want="${_want}" '
+    BEGIN { done = 0 }
+    /^[[:space:]]*enabled[[:space:]]*[:=][[:space:]]*(true|yes|1|false|no|0)[[:space:]]*$/ {
+      if (!done) printf "enabled: %s\n", want
+      done = 1
+      next
+    }
+    { print }
+    END { if (!done) printf "enabled: %s\n", want }
+  ' "${_clause}" > "${_tmp}" || die "patch ${_clause} failed"
+  mv -f "${_tmp}" "${_clause}" || die "replace ${_clause} failed"
 }
 
 materialise_work_tree() {
@@ -657,6 +696,34 @@ enable_work_user_unit() {
     /usr/bin/systemctl --user -M aios-work@ start "${_unit}" \
       || die "systemctl --user -M aios-work@ start ${_unit} failed"
   fi
+}
+
+disable_work_user_unit() {
+  _unit=aios-work-runtime.service
+  _bots=aios-work-runtime-bots.service
+  if [ -n "${DESTROOT}" ]; then
+    rm -f "${DESTROOT}/etc/systemd/user/default.target.wants/${_unit}"
+    rm -f "${DESTROOT}/etc/systemd/user/default.target.wants/${_bots}"
+    return 0
+  fi
+  /usr/bin/systemctl --user -M aios-work@ stop "${_unit}" || true
+  /usr/bin/systemctl --user -M aios-work@ disable "${_unit}" || true
+  /usr/bin/systemctl --user -M aios-work@ stop "${_bots}" || true
+  /usr/bin/systemctl --user -M aios-work@ disable "${_bots}" || true
+}
+
+cmd_disable() {
+  [ "$#" -le 1 ] || die "disable takes optional work-runtime only"
+  _target=${1:-work-runtime}
+  [ "${_target}" = work-runtime ] \
+    || die "not allowlisted: disable ${_target} (HI-15)"
+  patch_work_runtime_enabled false
+  disable_work_user_unit
+  if [ -n "${DESTROOT}" ]; then
+    printf 'disabled %s\n' "${DESTROOT}/srv/aios/src/work-runtime"
+    return 0
+  fi
+  printf 'disabled /srv/aios/src/work-runtime\n'
 }
 
 cmd_synthesise() {
@@ -1056,7 +1123,7 @@ main() {
     -S*|pacman)
       die "partial pacman is not allowlisted (L-04); use enact syu"
       ;;
-    syu|snapper-pre|snapper-post|bootctl|unit|rollback|synthesise|synthesize) ;;
+    syu|snapper-pre|snapper-post|bootctl|unit|rollback|synthesise|synthesize|disable) ;;
     *)
       die "not allowlisted: $1"
       ;;
@@ -1080,6 +1147,19 @@ main() {
     require_not_frozen
     require_accept_stamp
     cmd_synthesise "$@"
+    return
+  fi
+  if [ "${_cmd}" = disable ]; then
+    bind_destroot
+    _dis_target=${1:-work-runtime}
+    [ "${_dis_target}" = work-runtime ] \
+      || die "not allowlisted: disable ${_dis_target} (HI-15)"
+    if [ -z "${AIOS_ROOT-}" ]; then
+      require_root
+    fi
+    require_not_frozen
+    require_accept_stamp
+    cmd_disable "$@"
     return
   fi
   if [ "${_cmd}" = rollback ]; then

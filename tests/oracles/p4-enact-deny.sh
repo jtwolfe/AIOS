@@ -74,6 +74,7 @@ stop aios-agent.service L-12
 restart aios-agent.service L-12
 kill aios-agent.service L-12
 enable aios-work-runtime.service L-23
+disable aios-work-runtime.service L-23
 disable sshd.service aios-*
 EOF
 
