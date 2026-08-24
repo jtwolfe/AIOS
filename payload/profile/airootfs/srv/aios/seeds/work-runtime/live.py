@@ -1,4 +1,4 @@
-"""Work-runtime Grok device-code OAuth (L-17). Own token file, never the OS key."""
+"""Work-runtime Grok device-code OAuth (L-17)."""
 
 import json
 import os
@@ -144,6 +144,20 @@ def _as_messages(messages):
     return out
 
 
+def _env_flag(name):
+    raw = os.environ.get(name)
+    if raw is None:
+        return None
+    val = raw.strip().lower()
+    if not val:
+        raise ProviderError("%s empty" % name)
+    if val in ("yes", "true", "1"):
+        return True
+    if val in ("no", "false", "0"):
+        return False
+    raise ProviderError("%s invalid" % name)
+
+
 def _gate_login(root):
     try:
         enabled, vetoes = envelope_state(root)
@@ -151,8 +165,14 @@ def _gate_login(root):
         raise ProviderError(str(exc))
     if not enabled:
         raise ProviderError("live login is after envelope accept (L-17)")
-    remotes = str(vetoes.get("remotes") or "").strip().lower()
-    if remotes in ("yes", "true", "1"):
+    # compiled.md is in the L-15 write set; AIOS_WORK_REMOTES is the unit pin.
+    pinned = _env_flag("AIOS_WORK_REMOTES")
+    file_veto = str(vetoes.get("remotes") or "").strip().lower() in (
+        "yes",
+        "true",
+        "1",
+    )
+    if pinned is True or file_veto:
         raise ProviderError("remotes vetoed live login (L-17)")
 
 

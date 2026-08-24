@@ -1,10 +1,10 @@
-"""MCP-preferred connectors. Discover, then call. Secrets stay off chat."""
+"""MCP-preferred connectors. Discover, then call."""
 
 import json
 import os
 import re
 
-from provider import OS_TOKEN_PATH, refuse_os_token
+from provider import refuse_os_token, under_os_state
 
 
 class ConnectorError(Exception):
@@ -40,17 +40,38 @@ _AUTH_CHAT = re.compile(
     r"https://auth\.x\.ai/\S+|https://[^\s]+/oauth(?:2)?/authorize\S*",
     re.IGNORECASE,
 )
+# Live token files are JSON keys, not only access_token= env lines.
 _CHAT_SECRETS = (
     "access_token=",
     "refresh_token=",
     "api_key=",
     "authorization: bearer ",
     "xai_api_key",
+    '"access_token"',
+    '"refresh_token"',
+    '"api_key"',
+    '"authorization"',
+    "bearer ",
 )
+_TOKEN_KEYS = ("access_token", "refresh_token", "api_key", "authorization")
+_NAME_OK = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+def _json_secret(value):
+    if isinstance(value, dict):
+        lower_keys = {str(k).lower() for k in value}
+        if lower_keys.intersection(_TOKEN_KEYS):
+            return True
+        return any(_json_secret(item) for item in value.values())
+    if isinstance(value, list):
+        return any(_json_secret(item) for item in value)
+    return False
 
 
 def chat_secret_error(text):
-    raw = text if isinstance(text, str) else str(text or "")
+    raw = text if isinstance(text, str) else (
+        json.dumps(text) if isinstance(text, (dict, list)) else str(text or "")
+    )
     if not raw:
         return None
     lower = raw.lower()
@@ -59,6 +80,12 @@ def chat_secret_error(text):
             return "token in chat fails (P8.6)"
     if _AUTH_CHAT.search(raw):
         return "do not paste authorization links into chat (P8.6)"
+    try:
+        obj = json.loads(raw)
+    except (ValueError, TypeError):
+        obj = None
+    if obj is not None and _json_secret(obj):
+        return "token in chat fails (P8.6)"
     return None
 
 
@@ -71,11 +98,24 @@ def _connectors_dir(root):
         path = env
     else:
         path = os.path.join(root, "connectors")
-    if os.path.abspath(path) == OS_TOKEN_PATH:
-        refuse_os_token(path)
-    if "/srv/aios/state/" in os.path.abspath(path).replace("\\", "/"):
+    if under_os_state(path):
         refuse_os_token(path)
     return path
+
+
+def _safe_connector_name(name):
+    want = str(name or "").strip()
+    if (
+        not want
+        or want != os.path.basename(want)
+        or os.path.isabs(want)
+        or "/" in want
+        or "\\" in want
+        or ".." in want
+        or not _NAME_OK.match(want)
+    ):
+        raise ConnectorError("connector name must be a basename")
+    return want
 
 
 def _read_json(path):
@@ -195,8 +235,7 @@ class ConnectorSession:
                 out[key] = card[key]
         if "verification_uri" not in out and out.get("verification_url"):
             out["verification_uri"] = out["verification_url"]
-        dumped = json.dumps(card).lower()
-        if "access_token" in dumped or "refresh_token" in dumped:
+        if chat_secret_error(json.dumps(card)):
             raise ConnectorError("connect card must not carry a token (P8.6)")
         self.cards.append(out)
         return out
@@ -257,12 +296,17 @@ class ConnectorSession:
             raise ConnectorError("connector install spec is not JSON")
         if not isinstance(doc, dict):
             raise ConnectorError("connector install spec is not a JSON object")
-        name = str(doc.get("name") or "").strip()
-        if not name:
-            raise ConnectorError("connector install missing name")
-        folder = _connectors_dir(self.root)
+        err = chat_secret_error(json.dumps(doc))
+        if err:
+            raise ConnectorError(err)
+        name = _safe_connector_name(doc.get("name"))
+        folder = os.path.realpath(_connectors_dir(self.root))
         os.makedirs(folder, mode=0o700, exist_ok=True)
+        folder = os.path.realpath(folder)
         path = os.path.join(folder, "%s.json" % name)
+        real = os.path.realpath(path)
+        if os.path.dirname(real) != folder:
+            raise ConnectorError("connector install path escaped connectors/")
         tmp = path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as fh:
             json.dump(doc, fh, indent=2, sort_keys=True)

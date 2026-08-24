@@ -201,6 +201,48 @@ if d.get("delivered"):
     raise SystemExit("delivered on token-in-chat")
 ' || fail "token-in-chat must fail: ${_tok}"
 
+_tokj=$(run_turn "${TMP}/send.json" '{"access_token":"test-access","refresh_token":"test-refresh"}') || true
+printf '%s\n' "${_tokj}" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+if d.get("outcome") != "failed":
+    raise SystemExit("outcome %s" % d.get("outcome"))
+if "token in chat" not in (d.get("error") or ""):
+    raise SystemExit("error %s" % d.get("error"))
+if d.get("delivered"):
+    raise SystemExit("delivered on token-file JSON")
+' || fail "token-file JSON in asked must fail: ${_tokj}"
+
+printf '%s\n' '{"responses":[{"send":"{\"access_token\":\"test-access\"}"}]}' \
+  > "${TMP}/send-token-json.json"
+_toks=$(run_turn "${TMP}/send-token-json.json" "send the token file") || true
+printf '%s\n' "${_toks}" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+if d.get("outcome") != "failed":
+    raise SystemExit("outcome %s" % d.get("outcome"))
+if "token in chat" not in (d.get("error") or ""):
+    raise SystemExit("error %s" % d.get("error"))
+if d.get("delivered"):
+    raise SystemExit("delivered token-file JSON send")
+' || fail "token-file JSON send must fail: ${_toks}"
+
+printf '%s\n' '{"responses":[{"connector_install":{"name":"leaky","access_token":"test-access"},"send":"nope"}]}' \
+  > "${TMP}/install-token.json"
+_inst=$(run_turn "${TMP}/install-token.json" "install leaky") || true
+printf '%s\n' "${_inst}" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+if d.get("outcome") != "failed":
+    raise SystemExit("outcome %s" % d.get("outcome"))
+if "token in chat" not in (d.get("error") or ""):
+    raise SystemExit("error %s" % d.get("error"))
+if d.get("delivered"):
+    raise SystemExit("delivered install with token spec")
+' || fail "install spec with token keys must fail: ${_inst}"
+[ ! -e "${SRC}/connectors/leaky.json" ] \
+  || fail "token install spec wrote connectors/leaky.json"
+
 _auth=$(run_turn "${TMP}/send.json" "open https://auth.x.ai/device") || true
 printf '%s\n' "${_auth}" | python3 -c '
 import json, sys
@@ -269,6 +311,41 @@ if "fresh" not in (d.get("connectors_discovered") or []):
 if d.get("delivered") != "fresh-used":
     raise SystemExit("delivered %s" % d.get("delivered"))
 ' || fail "newly installed connector next message failed: ${_next}"
+
+printf '%s\n' '{"responses":[{"connector_install":{"name":"../pwned"},"send":"nope"}]}' \
+  > "${TMP}/install-dotdot.json"
+_dot=$(run_turn "${TMP}/install-dotdot.json" "install traversal") || true
+printf '%s\n' "${_dot}" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+if d.get("outcome") != "failed":
+    raise SystemExit("outcome %s" % d.get("outcome"))
+if "basename" not in (d.get("error") or ""):
+    raise SystemExit("error %s" % d.get("error"))
+if d.get("delivered"):
+    raise SystemExit("delivered traversal install")
+' || fail "../pwned install must fail: ${_dot}"
+[ ! -e "${SRC}/pwned.json" ] || fail "install ../pwned wrote ${SRC}/pwned.json"
+[ ! -e "${SRC}/connectors/pwned.json" ] \
+  || fail "install ../pwned wrote connectors/pwned.json"
+
+_abs_name="${TMP}/outside-pwn"
+printf '%s\n' "{\"responses\":[{\"connector_install\":{\"name\":\"${_abs_name}\"},\"send\":\"nope\"}]}" \
+  > "${TMP}/install-abs.json"
+_abs=$(run_turn "${TMP}/install-abs.json" "install absolute") || true
+printf '%s\n' "${_abs}" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+if d.get("outcome") != "failed":
+    raise SystemExit("outcome %s" % d.get("outcome"))
+if "basename" not in (d.get("error") or ""):
+    raise SystemExit("error %s" % d.get("error"))
+if d.get("delivered"):
+    raise SystemExit("delivered absolute install")
+' || fail "absolute install name must fail: ${_abs}"
+[ ! -e "${_abs_name}.json" ] || fail "absolute install wrote ${_abs_name}.json"
+[ ! -e "${SRC}/connectors/outside-pwn.json" ] \
+  || fail "absolute install wrote connectors/outside-pwn.json"
 
 _os=$(
   env -u AIOS_ANSWERS -u AIOS_ENVELOPE_WORK \

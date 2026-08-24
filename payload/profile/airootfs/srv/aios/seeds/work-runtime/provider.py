@@ -1,4 +1,4 @@
-"""Work fixture (default) and live Grok adapter. Not the OS token (L-16)."""
+"""Work fixture (default) and live Grok adapter."""
 
 import json
 import os
@@ -28,6 +28,23 @@ def refuse_os_token(path=None):
     raise ProviderError("work uid cannot read the OS token (L-16): %s" % path)
 
 
+def under_os_state(path):
+    if not path:
+        return False
+    abs_path = os.path.abspath(path).replace("\\", "/")
+    if abs_path == OS_TOKEN_PATH:
+        return True
+    marker = "/srv/aios/state"
+    if abs_path == marker or abs_path.startswith(marker + "/"):
+        return True
+    idx = abs_path.find(marker)
+    if idx >= 0:
+        rest = abs_path[idx + len(marker) :]
+        if rest == "" or rest.startswith("/"):
+            return True
+    return False
+
+
 def _guard_path(path):
     if not path:
         return
@@ -35,9 +52,7 @@ def _guard_path(path):
     if base == "os.token" or base.startswith("os.token."):
         refuse_os_token(path)
     abs_path = os.path.abspath(path)
-    if abs_path == OS_TOKEN_PATH or abs_path.startswith("/srv/aios/state/"):
-        refuse_os_token(path)
-    if "/srv/aios/state/" in abs_path.replace("\\", "/"):
+    if under_os_state(path):
         refuse_os_token(path)
     if abs_path.startswith("/home/") or abs_path.startswith("/etc/aios/"):
         raise ProviderError("work token path is not the P8.10 lock (L-16)")

@@ -194,6 +194,38 @@ if calls:
 
 with open(compiled, "w") as fh:
     fh.write("enabled: yes\nvetoes.remotes: no\n")
+os.environ["AIOS_WORK_REMOTES"] = "yes"
+calls_pin = []
+
+def http_pin(method, url, data=None, headers=None, timeout=30):
+    calls_pin.append(url)
+    raise AssertionError("http must not run when remotes are pinned")
+
+p = LiveProvider(token_path=tok, http=http_pin, sleep=lambda s: None, root=src)
+try:
+    p.login(err=io.StringIO())
+except ProviderError as exc:
+    if "remotes" not in str(exc):
+        raise SystemExit("expected env remotes veto, got %s" % exc)
+else:
+    raise SystemExit("work-writable remotes no overrode AIOS_WORK_REMOTES")
+if calls_pin:
+    raise SystemExit("http ran under AIOS_WORK_REMOTES")
+os.environ.pop("AIOS_WORK_REMOTES", None)
+
+from provider import _guard_path, under_os_state
+if not under_os_state("/srv/aios/state"):
+    raise SystemExit("under_os_state missed /srv/aios/state")
+try:
+    _guard_path("/srv/aios/state")
+except ProviderError as exc:
+    if "L-16" not in str(exc):
+        raise SystemExit("expected L-16 for /srv/aios/state, got %s" % exc)
+else:
+    raise SystemExit("/srv/aios/state accepted")
+
+with open(compiled, "w") as fh:
+    fh.write("enabled: yes\nvetoes.remotes: no\n")
 
 pending = {"n": 0}
 

@@ -519,7 +519,7 @@ def run_turn(asked):
             continue
         break
     else:
-        error = "skill read exceeded this-turn rounds"
+        error = "tool rounds exceeded this turn"
         ended = "failed"
         outcome = "failed"
 
